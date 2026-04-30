@@ -1,9 +1,19 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { ProtocolAnalysisHandlers } from '@server/domains/protocol-analysis/handlers/handler-class';
+import type { ToolResponse } from '@server/types';
 
-function parseContent(res: { content: Array<{ type: string; text: string }> }) {
-  return JSON.parse(res.content[0]!.text);
+function parseContent(res: ToolResponse) {
+  const textBlock = res.content.find(
+    (item): item is Extract<ToolResponse['content'][number], { type: 'text'; text: string }> =>
+      item.type === 'text',
+  );
+
+  if (!textBlock) {
+    throw new Error('Expected a text content block');
+  }
+
+  return JSON.parse(textBlock.text);
 }
 
 describe('ProtocolAnalysisHandlers — handleProtoFingerprint behavioral tests', () => {

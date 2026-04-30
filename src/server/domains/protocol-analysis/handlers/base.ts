@@ -1,0 +1,62 @@
+/**
+ * ProtocolAnalysisBaseHandlers — shared state, events, and lazy engines.
+ */
+
+import type { StateMachine } from '@modules/protocol-analysis';
+import { ProtocolPatternEngine, StateMachineInferrer } from '@modules/protocol-analysis';
+import type { EventBus, ServerEventMap } from '@server/EventBus';
+import type { ProtocolAtomicEvent, ProtocolAtomicEventPayload } from './shared';
+
+export const EMPTY_STATE_MACHINE: StateMachine = {
+  states: [],
+  transitions: [],
+  initial: '',
+  initialState: '',
+  finalStates: [],
+};
+
+export class ProtocolAnalysisBaseHandlers {
+  protected engine?: ProtocolPatternEngine;
+  protected inferrer?: StateMachineInferrer;
+  protected eventBus?: EventBus<ServerEventMap>;
+
+  constructor(
+    engine?: ProtocolPatternEngine,
+    inferrer?: StateMachineInferrer,
+    eventBus?: EventBus<ServerEventMap>,
+  ) {
+    this.engine = engine;
+    this.inferrer = inferrer;
+    this.eventBus = eventBus;
+  }
+
+  protected emitEvent<K extends ProtocolAtomicEvent>(
+    event: K,
+    payload: ProtocolAtomicEventPayload<K>,
+  ): void {
+    void this.eventBus?.emit(event, {
+      ...payload,
+      timestamp: new Date().toISOString(),
+    } as ServerEventMap[K]);
+  }
+
+  protected getEngine(): ProtocolPatternEngine {
+    if (!this.engine) {
+      this.engine = new ProtocolPatternEngine();
+    }
+
+    return this.engine;
+  }
+
+  protected getInferrer(): StateMachineInferrer {
+    if (!this.inferrer) {
+      this.inferrer = new StateMachineInferrer();
+    }
+
+    return this.inferrer;
+  }
+
+  protected errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
+}

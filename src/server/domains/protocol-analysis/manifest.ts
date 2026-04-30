@@ -1,5 +1,6 @@
 import type { DomainManifest, MCPServerContext } from '@server/domains/shared/registry';
-import { bindByDepKey, toolLookup } from '@server/domains/shared/registry';
+import { defineMethodRegistrations, toolLookup } from '@server/domains/shared/registry';
+import { asToolResponse } from '@server/domains/shared/response';
 import { protocolAnalysisTools } from './definitions';
 import type { ProtocolAnalysisHandlers } from './handlers';
 
@@ -7,8 +8,30 @@ const DOMAIN = 'protocol-analysis';
 const DEP_KEY = 'protocolAnalysisHandlers';
 type H = ProtocolAnalysisHandlers;
 const t = toolLookup(protocolAnalysisTools);
-const b = (invoke: (handlers: H, args: Record<string, unknown>) => Promise<unknown>) =>
-  bindByDepKey<H>(DEP_KEY, invoke);
+const registrations = defineMethodRegistrations<H, (typeof protocolAnalysisTools)[number]['name']>({
+  domain: DOMAIN,
+  depKey: DEP_KEY,
+  lookup: t,
+  wrapResult: asToolResponse,
+  entries: [
+    { tool: 'proto_define_pattern', method: 'handleDefinePattern' },
+    { tool: 'proto_auto_detect', method: 'handleAutoDetect' },
+    { tool: 'proto_infer_fields', method: 'handleInferFields' },
+    { tool: 'proto_infer_state_machine', method: 'handleInferStateMachine' },
+    { tool: 'proto_export_schema', method: 'handleExportSchema' },
+    { tool: 'proto_visualize_state', method: 'handleVisualizeState' },
+    { tool: 'payload_template_build', method: 'handlePayloadTemplateBuild' },
+    { tool: 'payload_mutate', method: 'handlePayloadMutate' },
+    { tool: 'ethernet_frame_build', method: 'handleEthernetFrameBuild' },
+    { tool: 'arp_build', method: 'handleArpBuild' },
+    { tool: 'raw_ip_packet_build', method: 'handleRawIpPacketBuild' },
+    { tool: 'icmp_echo_build', method: 'handleIcmpEchoBuild' },
+    { tool: 'checksum_apply', method: 'handleChecksumApply' },
+    { tool: 'pcap_write', method: 'handlePcapWrite' },
+    { tool: 'pcap_read', method: 'handlePcapRead' },
+    { tool: 'proto_fingerprint', method: 'handleProtoFingerprint' },
+  ],
+});
 
 async function ensure(ctx: MCPServerContext): Promise<H> {
   const { ProtocolAnalysisHandlers } = await import('./handlers');
@@ -29,88 +52,7 @@ const manifest = {
   depKey: DEP_KEY,
   profiles: ['full'],
   ensure,
-  registrations: [
-    {
-      tool: t('proto_define_pattern'),
-      domain: DOMAIN,
-      bind: b((handlers, args) => handlers.handleDefinePattern(args)),
-    },
-    {
-      tool: t('proto_auto_detect'),
-      domain: DOMAIN,
-      bind: b((handlers, args) => handlers.handleAutoDetect(args)),
-    },
-    {
-      tool: t('proto_infer_fields'),
-      domain: DOMAIN,
-      bind: b((handlers, args) => handlers.handleInferFields(args)),
-    },
-    {
-      tool: t('proto_infer_state_machine'),
-      domain: DOMAIN,
-      bind: b((handlers, args) => handlers.handleInferStateMachine(args)),
-    },
-    {
-      tool: t('proto_export_schema'),
-      domain: DOMAIN,
-      bind: b((handlers, args) => handlers.handleExportSchema(args)),
-    },
-    {
-      tool: t('proto_visualize_state'),
-      domain: DOMAIN,
-      bind: b((handlers, args) => handlers.handleVisualizeState(args)),
-    },
-    {
-      tool: t('payload_template_build'),
-      domain: DOMAIN,
-      bind: b((handlers, args) => handlers.handlePayloadTemplateBuild(args)),
-    },
-    {
-      tool: t('payload_mutate'),
-      domain: DOMAIN,
-      bind: b((handlers, args) => handlers.handlePayloadMutate(args)),
-    },
-    {
-      tool: t('ethernet_frame_build'),
-      domain: DOMAIN,
-      bind: b((handlers, args) => handlers.handleEthernetFrameBuild(args)),
-    },
-    {
-      tool: t('arp_build'),
-      domain: DOMAIN,
-      bind: b((handlers, args) => handlers.handleArpBuild(args)),
-    },
-    {
-      tool: t('raw_ip_packet_build'),
-      domain: DOMAIN,
-      bind: b((handlers, args) => handlers.handleRawIpPacketBuild(args)),
-    },
-    {
-      tool: t('icmp_echo_build'),
-      domain: DOMAIN,
-      bind: b((handlers, args) => handlers.handleIcmpEchoBuild(args)),
-    },
-    {
-      tool: t('checksum_apply'),
-      domain: DOMAIN,
-      bind: b((handlers, args) => handlers.handleChecksumApply(args)),
-    },
-    {
-      tool: t('pcap_write'),
-      domain: DOMAIN,
-      bind: b((handlers, args) => handlers.handlePcapWrite(args)),
-    },
-    {
-      tool: t('pcap_read'),
-      domain: DOMAIN,
-      bind: b((handlers, args) => handlers.handlePcapRead(args)),
-    },
-    {
-      tool: t('proto_fingerprint'),
-      domain: DOMAIN,
-      bind: b((handlers, args) => handlers.handleProtoFingerprint(args)),
-    },
-  ],
+  registrations,
   prerequisites: {
     proto_auto_detect: [
       {
