@@ -85,12 +85,10 @@ describe('CoreAnalysisHandlers', () => {
     const body = parseJson<DeobfuscateResponse>(
       await handlers.handleDeobfuscate({
         code: 'a()',
-        aggressive: true,
       }),
     );
     expect(deps.deobfuscator.deobfuscate).toHaveBeenCalledWith({
       code: 'a()',
-      aggressive: true,
     });
     expect(body.success).toBe(true);
   });
@@ -159,27 +157,20 @@ describe('CoreAnalysisHandlers', () => {
       code: 'raw',
       success: true,
       astOptimized: false,
-      warnings: [
-        'useASTOptimization is deprecated and ignored; legacy AST post-processing has been removed.',
-      ],
     });
 
     const body = parseJson<AdvancedDeobfuscateResponse>(
       await handlers.handleDeobfuscate({
         code: 'obf',
         engine: 'webcrack',
-        useASTOptimization: true,
-        aggressiveVM: true,
-        timeout: 3210,
+        detectOnly: true,
         unpack: false,
       }),
     );
 
     expect(deps.advancedDeobfuscator.deobfuscate).toHaveBeenCalledWith({
       code: 'obf',
-      useASTOptimization: true,
-      aggressiveVM: true,
-      timeout: 3210,
+      detectOnly: true,
       unpack: false,
     });
     expect(body.code).toBe('raw');
@@ -223,7 +214,7 @@ describe('CoreAnalysisHandlers', () => {
       applied: false,
       code: 'original-code',
       optionsUsed: { jsx: true, mangle: false, unminify: true, unpack: true },
-      reason: 'webcrack requires Node.js 20.19+ or 22.12+; current runtime is 20.0.0',
+      reason: 'webcrack requires Node.js 22.12+ or 24.x; current runtime is 20.0.0',
     });
 
     const response = parseJson<BaseResponse>(
@@ -232,7 +223,7 @@ describe('CoreAnalysisHandlers', () => {
 
     expect(response.success).toBe(false);
     expect(response.error).toBe(
-      'webcrack requires Node.js 20.19+ or 22.12+; current runtime is 20.0.0',
+      'webcrack requires Node.js 22.12+ or 24.x; current runtime is 20.0.0',
     );
     expect(response.optionsUsed).toEqual({
       jsx: true,

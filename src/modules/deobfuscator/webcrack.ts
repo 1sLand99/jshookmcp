@@ -79,10 +79,6 @@ type MappingMetadata = {
   fromPath: string;
 };
 
-async function importOptionalModule<T>(specifier: string): Promise<T> {
-  return (await import(specifier)) as T;
-}
-
 function normalizeOptions(
   options: WebcrackInvocationOptions,
 ): Required<Pick<DeobfuscateOptions, 'jsx' | 'mangle' | 'unminify' | 'unpack'>> {
@@ -103,15 +99,11 @@ function isSupportedNodeVersion(): boolean {
     return false;
   }
 
-  if (major === 20) {
-    return minor >= 19;
-  }
-
   if (major === 22) {
     return minor >= 12;
   }
 
-  return major > 22;
+  return major === 24;
 }
 
 function matchesRule(module: WebcrackModuleLike, rule: DeobfuscateMappingRule): boolean {
@@ -231,7 +223,7 @@ export async function runWebcrack(
   const optionsUsed = normalizeOptions(options);
 
   if (!isSupportedNodeVersion()) {
-    const reason = `webcrack requires Node.js 20.19+ or 22.12+; current runtime is ${process.versions.node}`;
+    const reason = `webcrack requires Node.js 22.12+ or 24.x; current runtime is ${process.versions.node}`;
     logger.warn(reason);
     return {
       applied: false,
@@ -241,29 +233,14 @@ export async function runWebcrack(
     };
   }
 
-  const sandboxOption: unknown = undefined;
   try {
-    // @ts-expect-error -- optional dependency that may fail to compile on Node 24+
-    await import('isolated-vm');
-  } catch {
-    // SECURITY: Do NOT fall back to node:vm — it is not a security boundary.
-    // Without isolated-vm, webcrack runs without a custom sandbox.
-    // Deobfuscation of untrusted code is not recommended in this mode.
-    logger.warn(
-      'isolated-vm is unavailable (likely Node 24 incompatibility). ' +
-        'Deobfuscation sandbox is disabled — do not process untrusted code.',
-    );
-  }
-
-  try {
-    const { webcrack } = await importOptionalModule<WebcrackModuleImport>('webcrack');
+    const { webcrack } = (await import('webcrack')) as WebcrackModuleImport;
     const result = await webcrack(code, {
       jsx: optionsUsed.jsx,
       unpack: optionsUsed.unpack,
       deobfuscate: true,
       unminify: optionsUsed.unminify,
       mangle: optionsUsed.mangle,
-      ...(sandboxOption ? { sandbox: sandboxOption } : {}),
     });
 
     const remapped = result.bundle

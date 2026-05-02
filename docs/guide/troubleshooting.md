@@ -6,32 +6,22 @@ This guide covers common issues and their solutions.
 
 ## Node.js Installation Issues
 
-### isolated-vm Build Failures on Node 22/24
+### webcrack Unsupported Node Version
 
-**Symptom**: Installation fails with `node-gyp` errors related to `isolated-vm`.
+**Symptom**: `webcrack`-based tools return a runtime error such as `webcrack requires Node.js 22.12+ or 24.x`.
 
-**Cause**: `isolated-vm` (used by webcrack) lacks prebuilt binaries for Node 22 (ABI=127) and Node 24 (ABI=137).
+**Cause**: `webcrack@2.16.0` only supports Node 22.x and 24.x. Node 20 is no longer supported for this feature set.
 
 **Solution**:
 
 ```bash
-# Option 1: Use a supported Node.js version
-nvm install 20.19.0
-nvm use 20.19.0
-
-# Or use a supported Node 22 release
+# Use a supported Node 22 release
 nvm install 22.12.0
 nvm use 22.12.0
 
-# Option 2: Let Node 22/24 compile from source (slow)
-# This may take 10+ minutes on first install
-npm install --build-from-source
-
-# Option 3: Use pnpm with ignore-scripts (webcrack features disabled)
-npm i -g pnpm
-pnpm config set ignore-scripts true
-pnpm install
-# Note: webcrack-based features will be unavailable
+# Or switch to Node 24
+nvm install 24.0.0
+nvm use 24.0.0
 ```
 
 **Verification**:
