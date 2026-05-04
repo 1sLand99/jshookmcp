@@ -92,7 +92,7 @@ describe('ConsoleHandlers', () => {
     expect(consoleMonitor.execute).toHaveBeenCalledWith('6 * 7');
     expect(body).toEqual({
       success: true,
-      result: { value: 42 },
+      result: { wrapped: { value: 42 } },
     });
   });
 

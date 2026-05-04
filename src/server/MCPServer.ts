@@ -15,6 +15,7 @@ import type { ToolProfile } from '@server/ToolCatalog';
 import { getToolDomain } from '@server/ToolCatalog';
 import { ToolExecutionRouter } from '@server/ToolExecutionRouter';
 import { ToolCallContextGuard } from '@server/ToolCallContextGuard';
+import { LargeDataOffloader } from '@server/ToolResponseOffloader';
 import { createToolHandlerMap } from '@server/ToolHandlerMap';
 import type { ToolArgs } from '@server/types';
 import { resolveToolsForRegistration } from '@server/MCPServer.registration';
@@ -181,6 +182,8 @@ export class MCPServer implements MCPServerContext {
   public enabledDomains: Set<string>;
   public readonly router: ToolExecutionRouter;
   public readonly contextGuard: ToolCallContextGuard;
+  /** Offloads large response data (>512KB) to disk / DetailedDataManager to keep context lean. */
+  public readonly largeDataOffloader: LargeDataOffloader;
   public readonly handlerDeps: ToolHandlerDeps;
   public readonly toolAutocompleteHandlers = new Map<
     string,
@@ -423,6 +426,10 @@ export class MCPServer implements MCPServerContext {
       }
       return null;
     });
+
+    // Large-data offloader: writes payloads >512KB to disk / DetailedDataManager
+    this.largeDataOffloader = new LargeDataOffloader(this.detailedData);
+
     this.server = new McpServer(
       { name: config.mcp.name, version: config.mcp.version },
       {
@@ -606,6 +613,10 @@ export class MCPServer implements MCPServerContext {
       } finally {
         if (timeoutTimer) clearTimeout(timeoutTimer);
       }
+
+      // Offload large response data (>512KB) to disk / DetailedDataManager
+      // to prevent context bloat while preserving data for later retrieval.
+      this.largeDataOffloader.offload(name, response);
 
       // Track consecutive tool calls for repeat loop detection
       this.contextGuard.recordCall(name);

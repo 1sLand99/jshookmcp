@@ -61,11 +61,13 @@ export class BrowserControlHandlers {
 
   private async syncTabRegistryWithCollectorPages(context: string): Promise<void> {
     try {
-      const resolvedPages = await this.deps.collector.listResolvedPages();
+      // Use listPages() instead of listResolvedPages() — the latter calls resolvePageTargetHandle()
+      // for every target simultaneously, which blocks indefinitely on WebGL/Canvas-heavy tabs.
+      const pages = await this.deps.collector.listPages();
       const registry = this.deps.getTabRegistry();
       registry.reconcilePages(
-        resolvedPages.map((entry) => entry.page),
-        resolvedPages.map(({ page: _page, ...meta }) => meta),
+        pages.map(() => null as unknown as import('rebrowser-puppeteer-core').Page),
+        pages,
       );
     } catch (error) {
       logger.warn(

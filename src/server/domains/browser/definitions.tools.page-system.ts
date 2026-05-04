@@ -21,6 +21,16 @@ export const browserPageSystemTools: Tool[] = [
     t
       .desc('Execute JS in console context.')
       .string('expression', 'JavaScript expression')
+      .number(
+        'maxSize',
+        'Max result size in bytes before offloading (default 50KB → detailId ref)',
+        {
+          default: 51200,
+          minimum: 1024,
+          maximum: 104857600,
+        },
+      )
+      .boolean('stripBase64', 'Strip base64 strings from result', { default: false })
       .requiredOpenWorld('expression'),
   ),
   tool('page_inject_script', (t) =>

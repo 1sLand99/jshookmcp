@@ -356,6 +356,21 @@ export class PageController {
   }
 
   async screenshot(options?: ScreenshotOptions): Promise<Buffer> {
+    // Prefer CDP path: avoids the Network.enable timeout that page.screenshot()
+    // triggers on WebGL/Canvas-heavy tabs.
+    if (this.hasAttachedTargetSession()) {
+      const mgr = this.collector.getBrowserTargetSessionManager();
+      if (mgr) {
+        const buf = await mgr.captureScreenshot({
+          format: options?.type ?? 'png',
+          quality: options?.quality,
+          clip: options?.clip,
+        });
+        logger.info(`Screenshot taken via CDP${options?.path ? `: ${options.path}` : ''}`);
+        return buf;
+      }
+    }
+
     const page = await this.collector.getActivePage();
     const screenshotOpts: Record<string, unknown> = {
       path: options?.path,

@@ -75,6 +75,7 @@ function createMockPage(overrides: Record<string, any> = {}) {
 function createMockCollector(page: any) {
   return {
     getActivePage: vi.fn(async () => page),
+    getAttachedTargetSession: vi.fn(() => null),
   } as any;
 }
 

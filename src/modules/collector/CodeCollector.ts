@@ -94,6 +94,9 @@ export class CodeCollector {
     responseReceived?: (params: unknown) => void;
   } = {};
   private activePageIndex: number | null = null;
+  /** Cached Puppeteer Page for the selected tab, to avoid repeated CDP target.page() calls
+   *  which can hang on WebGL/Canvas-heavy tabs (e.g. games). */
+  private cachedActivePage: Page | null = null;
   private currentHeadless: boolean | null = null;
   private currentLaunchOptions: ResolvedChromeLaunchOptions | null = null;
   private explicitlyClosed: boolean = false;
@@ -290,6 +293,8 @@ export class CodeCollector {
     this.currentLaunchOptions = null;
     this.connectedToExistingBrowser = false;
     this.chromePid = null;
+    this.activePageIndex = null;
+    this.cachedActivePage = null;
     void this.browserTargetSessionManager?.dispose();
     this.browserTargetSessionManager = null;
     if (this.cdpSession) {
@@ -302,6 +307,7 @@ export class CodeCollector {
     await this.clearAllData();
     this.explicitlyClosed = markExplicitlyClosed;
     this.activePageIndex = null;
+    this.cachedActivePage = null;
 
     const browser = this.browser;
     const disconnectOnly = this.connectedToExistingBrowser;
@@ -403,6 +409,9 @@ export class CodeCollector {
     return this.connectedToExistingBrowser;
   }
   async getActivePage(): Promise<Page> {
+    if (this.cachedActivePage) {
+      return this.cachedActivePage;
+    }
     if (!this.browser) {
       if (this.explicitlyClosed) {
         throw new PrerequisiteError(
@@ -498,7 +507,29 @@ export class CodeCollector {
       throw new Error(`Page index ${index} out of range (0-${pages.length - 1})`);
     }
     this.activePageIndex = index;
-    logger.info(`Active page set to index ${index}: ${pages[index]!.url}`);
+
+    // Resolve and cache the selected page immediately. This avoids repeated
+    // target.page() calls on WebGL/Canvas-heavy tabs (each call hangs).
+    // Only this one target is resolved — no cascade thanks to listPages()
+    // being used in syncTabRegistryWithCollectorPages instead of listResolvedPages().
+    try {
+      const pageTargets = this.getPageTargets();
+      this.cachedActivePage = await this.resolvePageTargetHandle(
+        pageTargets[index]!,
+        8000, // 8s timeout — WebGL tabs typically hang, this lets us fail fast
+      );
+      logger.info(`Active page index set to ${index}: ${pages[index]!.url} (cached)`);
+    } catch (error) {
+      // WebGL / game tabs: resolvePageTargetHandle times out. Leave cache null
+      // so getActivePage() falls through to the lazy path (which will also timeout,
+      // but callers that use CDP directly via browser_evaluate_cdp_target are unaffected).
+      this.cachedActivePage = null;
+      logger.warn(
+        `Failed to cache page handle for index ${index}: ` +
+          `${error instanceof Error ? error.message : String(error)}. ` +
+          `Falling back to lazy resolve on next use.`,
+      );
+    }
   }
   async createPage(url?: string): Promise<Page> {
     if (!this.browser) {

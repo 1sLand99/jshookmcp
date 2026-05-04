@@ -84,7 +84,10 @@ describe('PageController', () => {
       frames: vi.fn().mockReturnValue([]),
       mainFrame: vi.fn().mockImplementation(() => page),
     };
-    collector = { getActivePage: vi.fn().mockResolvedValue(page) };
+    collector = {
+      getActivePage: vi.fn().mockResolvedValue(page),
+      getAttachedTargetSession: vi.fn(() => null),
+    };
     controller = new PageController(collector);
   });
 

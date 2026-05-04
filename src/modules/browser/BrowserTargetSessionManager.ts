@@ -148,6 +148,56 @@ export class BrowserTargetSessionManager {
       : (response.result?.value ?? null);
   }
 
+  /**
+   * Capture a screenshot using CDP's Page.captureScreenshot.
+   * This does NOT go through Puppeteer's page.screenshot(), avoiding the
+   * Network.enable timeout that occurs on WebGL/Canvas-heavy tabs.
+   */
+  async captureScreenshot(options?: {
+    format?: 'png' | 'jpeg';
+    quality?: number;
+    clip?: { x: number; y: number; width: number; height: number };
+  }): Promise<Buffer> {
+    const session = this.requireAttachedTargetSession();
+
+    // Ensure Page domain is enabled before capturing
+    try {
+      await session.send('Page.enable', {});
+    } catch {
+      // Page.enable may already be active — ignore errors
+    }
+
+    const params: Record<string, unknown> = {
+      format: options?.format ?? 'png',
+    };
+    if (options?.quality !== undefined) {
+      params.quality = options.quality;
+    }
+    if (options?.clip) {
+      params.clip = {
+        x: options.clip.x,
+        y: options.clip.y,
+        width: options.clip.width,
+        height: options.clip.height,
+        scale: 1,
+      };
+    }
+
+    // Wrap with 30s timeout to avoid hanging on unresponsive sessions
+    const response = (await Promise.race([
+      session.send('Page.captureScreenshot', params),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Page.captureScreenshot timed out after 30s')), 30000),
+      ),
+    ])) as { data?: string };
+
+    if (!response?.data) {
+      throw new Error('Page.captureScreenshot returned no data');
+    }
+
+    return Buffer.from(response.data, 'base64');
+  }
+
   async addScriptToEvaluateOnNewDocument(source: string): Promise<unknown> {
     const session = this.requireAttachedTargetSession();
     return await session.send('Page.addScriptToEvaluateOnNewDocument', { source });
