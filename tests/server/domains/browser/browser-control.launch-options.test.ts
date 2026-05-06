@@ -16,6 +16,8 @@ import { BrowserControlHandlers } from '@server/domains/browser/handlers/browser
 interface CollectorMock {
   launch: Mock<(args: any) => Promise<any>>;
   getStatus: Mock<() => Promise<{ connected: boolean; pages?: number }>>;
+  listPages: Mock<() => Promise<Array<{ index: number; url: string; title: string }>>>;
+  selectPage: Mock<(index: number) => Promise<void>>;
 }
 
 function createHandlers() {
@@ -30,6 +32,8 @@ function createHandlers() {
       },
     })),
     getStatus: vi.fn(async () => ({ connected: true, pages: 1 })),
+    listPages: vi.fn(async () => [{ index: 0, url: 'about:blank', title: '' }]),
+    selectPage: vi.fn(async () => {}),
   };
 
   const handlers = new BrowserControlHandlers({
@@ -77,10 +81,15 @@ describe('BrowserControlHandlers launch options', () => {
       args: ['--site-per-process', '--js-flags=--trace-opt'],
       enableV8NativesSyntax: true,
     });
+    expect(collector.listPages).toHaveBeenCalled();
+    expect(collector.selectPage).toHaveBeenCalledWith(0);
     expect(body.success).toBe(true);
     expect(body['launchAction']).toBe('relaunched');
     expect(body['relaunchReason']).toBe('launch-options-changed');
     expect(body['v8NativeSyntaxEnabled']).toBe(true);
     expect(body['launchArgs']).toEqual(['--site-per-process', '--js-flags=--allow-natives-syntax']);
+    expect(body['selectedIndex']).toBe(0);
+    expect(body['currentUrl']).toBe('about:blank');
+    expect(body['totalPages']).toBe(1);
   });
 });

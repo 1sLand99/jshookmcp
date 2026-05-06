@@ -277,6 +277,16 @@ export class BrowserControlHandlers {
         if (launch.action === 'relaunched') {
           this.markMonitoringContextChanged('browser_launch_relaunch');
         }
+
+        // Auto-select the first tab so page_navigate / page_evaluate work immediately after launch.
+        const pages = await this.deps.collector.listPages();
+        const registry = this.deps.getTabRegistry();
+        if (pages.length > 0) {
+          await this.deps.collector.selectPage(0);
+          registry.setCurrentByIndex(0);
+        }
+        const currentPage = pages[0];
+
         const status = await this.deps.collector.getStatus();
 
         return R.ok()
@@ -290,6 +300,10 @@ export class BrowserControlHandlers {
             relaunchReason: launch.reason ?? null,
             v8NativeSyntaxEnabled: launch.launchOptions.v8NativeSyntaxEnabled,
             launchArgs: launch.launchOptions.args,
+            selectedIndex: pages.length > 0 ? 0 : null,
+            currentUrl: currentPage?.url ?? null,
+            currentTitle: currentPage?.title ?? null,
+            totalPages: pages.length,
             status,
           })
           .json();
