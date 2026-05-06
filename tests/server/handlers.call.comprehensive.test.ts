@@ -239,11 +239,11 @@ describe('MCPServer.search.handlers.call — comprehensive edge cases', () => {
 
       await handleCallTool(ctx, {
         name: 'test_tool',
-        parameters: { url: 'https://api.iwara.tv/search', method: 'GET' },
+        parameters: { url: 'https://example.com/get', method: 'GET' },
       });
 
       expect(ctx.executeToolWithTracking).toHaveBeenCalledWith('test_tool', {
-        url: 'https://api.iwara.tv/search',
+        url: 'https://example.com/get',
         method: 'GET',
       });
     });
@@ -253,11 +253,11 @@ describe('MCPServer.search.handlers.call — comprehensive edge cases', () => {
 
       await handleCallTool(ctx, {
         name: 'test_tool',
-        parameters: '{"url": "https://api.iwara.tv/videos", "limit": 1}',
+        parameters: '{"url": "https://example.com/videos", "limit": 1}',
       });
 
       expect(ctx.executeToolWithTracking).toHaveBeenCalledWith('test_tool', {
-        url: 'https://api.iwara.tv/videos',
+        url: 'https://example.com/videos',
         limit: 1,
       });
     });
@@ -291,6 +291,20 @@ describe('MCPServer.search.handlers.call — comprehensive edge cases', () => {
         key: 'from_args',
       });
     });
+
+    it('accepts "arguments" as a JSON stringified wrapper (MCP client standard field)', async () => {
+      const ctx = createCtx();
+
+      await handleCallTool(ctx, {
+        name: 'http2_probe',
+        arguments: '{"url": "https://example.com/search", "method": "GET"}',
+      });
+
+      expect(ctx.executeToolWithTracking).toHaveBeenCalledWith('http2_probe', {
+        url: 'https://example.com/search',
+        method: 'GET',
+      });
+    });
   });
 
   describe('args spread flat (Format B — no wrapper key)', () => {
@@ -299,13 +313,13 @@ describe('MCPServer.search.handlers.call — comprehensive edge cases', () => {
 
       await handleCallTool(ctx, {
         name: 'http2_probe',
-        url: 'https://api.iwara.tv/search',
+        url: 'https://example.com/search',
         method: 'GET',
         timeoutMs: 20000,
       });
 
       expect(ctx.executeToolWithTracking).toHaveBeenCalledWith('http2_probe', {
-        url: 'https://api.iwara.tv/search',
+        url: 'https://example.com/search',
         method: 'GET',
         timeoutMs: 20000,
       });
