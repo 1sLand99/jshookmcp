@@ -299,13 +299,13 @@ describe('TlsBotHandlers — TLS/HTTP fingerprint/Bot behavioral tests', () => {
       const requests = [
         {
           requestId: 'r1',
-          url: 'https://a.com/1',
+          url: 'https://example.com/1',
           method: 'GET',
           headers: { 'user-agent': 'Chrome/120', accept: '*/*', 'accept-language': 'en' },
         },
         {
           requestId: 'r2',
-          url: 'https://a.com/2',
+          url: 'https://example.com/2',
           method: 'GET',
           headers: { 'user-agent': 'Chrome/119', accept: '*/*', 'accept-language': 'en' },
         },
@@ -323,7 +323,7 @@ describe('TlsBotHandlers — TLS/HTTP fingerprint/Bot behavioral tests', () => {
       const ua = 'Mozilla/5.0 Chrome/120';
       const requests = Array.from({ length: 5 }, (_, i) => ({
         requestId: `r${i}`,
-        url: `https://a.com/${i}`,
+        url: `https://example.com/${i}`,
         method: 'GET',
         headers: { 'user-agent': ua, accept: '*/*', 'accept-language': 'en' },
       }));
@@ -340,7 +340,7 @@ describe('TlsBotHandlers — TLS/HTTP fingerprint/Bot behavioral tests', () => {
     it('clamps consistencyScore to 0 when all requests drift', async () => {
       const requests = Array.from({ length: 3 }, (_, i) => ({
         requestId: `r${i}`,
-        url: `https://a.com/${i}`,
+        url: `https://example.com/${i}`,
         method: 'GET',
         headers: { 'user-agent': `Chrome/${120 + i}`, accept: '*/*', 'accept-language': 'en' },
       }));
