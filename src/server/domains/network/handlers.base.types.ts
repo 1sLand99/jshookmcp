@@ -35,6 +35,8 @@ export interface NetworkRequestPayload {
   method: string;
   type?: string;
   timestamp?: number;
+  /** Which layer captured this request: CDP protocol, in-page JS interceptor, or external proxy. */
+  captureSource?: 'cdp' | 'inpage' | 'proxy';
   [key: string]: unknown;
 }
 

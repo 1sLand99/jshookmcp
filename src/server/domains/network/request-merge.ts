@@ -42,7 +42,7 @@ function normalizeInjectedRequest(
     type: asOptionalString(request.type) ?? source,
     timestamp,
     injected: true,
-    captureSource: source.toLowerCase(),
+    captureSource: 'inpage',
   };
 }
 
@@ -114,10 +114,10 @@ function consumeTimestampMatchedIndex(
 export async function getMergedNetworkRequestsFromMonitor(
   consoleMonitor: NetworkRequestMonitorLike,
 ): Promise<NetworkRequestPayload[]> {
-  const cdpRequests = consoleMonitor
+  const cdpRequests: NetworkRequestPayload[] = consoleMonitor
     .getNetworkRequests()
     .filter((req: unknown): req is NetworkRequestPayload => isNetworkRequestPayload(req))
-    .map((request) => ({ ...request }));
+    .map((request) => ({ ...request, captureSource: 'cdp' }));
 
   const [xhrRequests, fetchRequests] = await Promise.all([
     typeof consoleMonitor.getXHRRequests === 'function'

@@ -42,11 +42,21 @@ export class ExtensionRegistryHandlers {
     const result = await Promise.resolve(context(contextArgs));
     this.emitEvent('extension.executed', { pluginId, contextName });
 
+    const permSet = manifest?.permissions as string[] | undefined;
+    const permissions = {
+      allowTools: Array.isArray(permSet) ? permSet : [],
+      filesystemAccess: !!(manifest?.permissions as Record<string, unknown> | undefined)?.[
+        'filesystem'
+      ],
+      envVarAccess: !!(manifest?.permissions as Record<string, unknown> | undefined)?.['env'],
+    };
+
     return asJsonResponse({
       success: true,
       manifest,
       contextName,
       result,
+      permissions,
     });
   }
 

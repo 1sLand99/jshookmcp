@@ -20,6 +20,9 @@ export interface TaskHandoff {
   description: string;
   constraints?: string[];
   targetDomain?: string;
+  decision?: string;
+  risks?: string[];
+  nextSteps?: string[];
   pageUrl?: string;
   createdAt: number;
   completedAt?: number;
@@ -54,6 +57,9 @@ export class CoordinationHandlers {
     const description = args.description as string;
     const constraints = args.constraints as string[] | undefined;
     const targetDomain = args.targetDomain as string | undefined;
+    const decision = args.decision as string | undefined;
+    const risks = args.risks as string[] | undefined;
+    const nextSteps = args.nextSteps as string[] | undefined;
 
     // Auto-capture active page URL if available
     let pageUrl: string | undefined;
@@ -75,6 +81,9 @@ export class CoordinationHandlers {
       description,
       constraints,
       targetDomain,
+      decision,
+      risks,
+      nextSteps,
       pageUrl,
       createdAt: Date.now(),
     };
@@ -87,6 +96,9 @@ export class CoordinationHandlers {
       description: handoff.description,
       constraints: handoff.constraints,
       targetDomain: handoff.targetDomain,
+      decision: handoff.decision,
+      risks: handoff.risks,
+      nextSteps: handoff.nextSteps,
       pageUrl: handoff.pageUrl,
       createdAt: new Date(handoff.createdAt).toISOString(),
       totalActiveHandoffs: this.handoffs.size,
@@ -205,6 +217,9 @@ export class CoordinationHandlers {
       description: h.description,
       constraints: h.constraints,
       targetDomain: h.targetDomain,
+      decision: h.decision,
+      risks: h.risks,
+      nextSteps: h.nextSteps,
       pageUrl: h.pageUrl,
       createdAt: new Date(h.createdAt).toISOString(),
       completedAt: h.completedAt ? new Date(h.completedAt).toISOString() : undefined,

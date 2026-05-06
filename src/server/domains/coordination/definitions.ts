@@ -8,6 +8,9 @@ export const coordinationTools: Tool[] = [
       .string('description', 'Task description')
       .array('constraints', { type: 'string' }, 'Constraints for the specialist')
       .string('targetDomain', 'Suggested domain for the specialist')
+      .string('decision', 'Key design decision made in this phase')
+      .array('risks', { type: 'string' }, 'Identified risks for the specialist')
+      .array('nextSteps', { type: 'string' }, 'Concrete next actions for the specialist')
       .required('description'),
   ),
   tool('complete_task_handoff', (t) =>
