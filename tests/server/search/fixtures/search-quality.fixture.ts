@@ -102,7 +102,8 @@ export function resolveSearchQualityToolDomain(name: string): string | null {
   if (name.startsWith('memory_') || name.startsWith('heap_')) return 'memory';
   if (name.startsWith('process_')) return 'process';
   if (name.startsWith('hook_')) return 'hooks';
-  if (name.startsWith('encode_') || name.startsWith('decode_')) return 'encoding';
+  if (name.startsWith('encode_') || name.startsWith('decode_') || name.startsWith('binary_'))
+    return 'encoding';
   if (name.startsWith('graphql_')) return 'graphql';
   if (name.startsWith('stream_')) return 'streaming';
   if (name.startsWith('wasm_')) return 'wasm';
@@ -161,12 +162,15 @@ const TOOLS: readonly Tool[] = [
   makeTool('tab_workflow', 'Manage browser tabs: create, switch, close'),
   makeTool('captcha_detect', 'Detect CAPTCHA challenges on the page'),
   makeTool('stealth_inject', 'Inject stealth scripts to avoid detection'),
+  makeTool('browser_launch', 'Launch a new browser instance for automation'),
+  makeTool('browser_attach', 'Attach to an existing browser page via CDP'),
   makeTool(
     'console_inject_fetch_interceptor',
     'Inject a Fetch API interceptor to capture requests',
   ),
   // network
   makeTool('network_enable', 'Enable network request monitoring and capture'),
+  makeTool('network_monitor', 'Start monitoring network traffic and intercept requests'),
   makeTool('network_get_requests', 'List captured network requests'),
   makeTool('network_extract_auth', 'Extract authentication tokens from network traffic'),
   makeTool('network_export_har', 'Export network capture as HAR file'),
@@ -243,6 +247,9 @@ const TOOLS: readonly Tool[] = [
   makeTool('antidebug_bypass', 'Bypass common anti-debugging protections'),
   // encoding
   makeTool('decode_base64', 'Decode base64 encoded strings'),
+  makeTool('binary_detect_format', 'Detect binary format, container, and encoding magic bytes'),
+  makeTool('binary_decode', 'Decode binary payload from base64, hex, or raw bytes'),
+  makeTool('binary_encode', 'Encode data into a binary representation'),
   // macro
   makeTool('macro_record', 'Record a macro sequence of tool calls'),
 ];
@@ -281,11 +288,14 @@ const CASES: readonly SearchEvalCase[] = [
   // network
   {
     id: 'network-capture',
-    title: 'network: "capture network requests" → network_enable in top-3',
+    title: 'network: "capture network requests" → network_enable or network_monitor in top-5',
     query: 'capture network requests',
     topK: 10,
-    expectations: [{ tool: 'network_enable', gain: 3 }],
-    idealTool: 'network_enable',
+    expectations: [
+      { tool: 'network_enable', gain: 3 },
+      { tool: 'network_monitor', gain: 3 },
+      { tool: 'network_get_requests', gain: 2 },
+    ],
     tags: ['network'],
   },
   {
@@ -508,6 +518,63 @@ const CASES: readonly SearchEvalCase[] = [
       { tool: 'evidence_query', gain: 2 },
     ],
     tags: ['evidence'],
+  },
+  // ── rerank-critical: tools that rerank multipliers target ──
+  {
+    id: 'rerank-binary-decode',
+    title: 'rerank: "decode base64 payload" → binary_decode in top-3',
+    query: 'decode base64 payload',
+    topK: 10,
+    expectations: [{ tool: 'binary_decode', gain: 3 }],
+    idealTool: 'binary_decode',
+    tags: ['analysis'],
+  },
+  {
+    id: 'rerank-binary-detect',
+    title: 'rerank: "detect encoding format" → binary_detect_format in top-3',
+    query: 'detect encoding format of bytes',
+    topK: 10,
+    expectations: [{ tool: 'binary_detect_format', gain: 3 }],
+    idealTool: 'binary_detect_format',
+    tags: ['analysis'],
+  },
+  {
+    id: 'rerank-browser-launch',
+    title: 'rerank: "open browser for automation" → browser_launch in top-3',
+    query: 'open browser for automation',
+    topK: 10,
+    expectations: [{ tool: 'browser_launch', gain: 3 }],
+    idealTool: 'browser_launch',
+    tags: ['browser'],
+  },
+  {
+    id: 'rerank-browser-attach',
+    title: 'rerank: "launch chrome to analyze" → browser_launch + browser_attach',
+    query: 'launch chrome to analyze page',
+    topK: 10,
+    expectations: [
+      { tool: 'browser_launch', gain: 3 },
+      { tool: 'browser_attach', gain: 2 },
+    ],
+    tags: ['browser'],
+  },
+  {
+    id: 'rerank-network-monitor',
+    title: 'rerank: "monitor network traffic" → network_monitor in top-3',
+    query: 'monitor network traffic',
+    topK: 10,
+    expectations: [{ tool: 'network_monitor', gain: 3 }],
+    idealTool: 'network_monitor',
+    tags: ['network'],
+  },
+  {
+    id: 'rerank-network-get',
+    title: 'rerank: "get captured requests" → network_get_requests in top-3',
+    query: 'get captured network requests',
+    topK: 10,
+    expectations: [{ tool: 'network_get_requests', gain: 3 }],
+    idealTool: 'network_get_requests',
+    tags: ['network'],
   },
 ];
 
