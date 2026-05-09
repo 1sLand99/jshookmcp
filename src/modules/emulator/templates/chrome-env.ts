@@ -178,6 +178,10 @@ export const chromeEnvironmentTemplate = {
       addEventListener() {}
     },
     WebSocket: class WebSocket {
+      url = '';
+      constructor(url?: string) {
+        this.url = url ?? '';
+      }
       send() {}
       close() {}
       addEventListener() {}

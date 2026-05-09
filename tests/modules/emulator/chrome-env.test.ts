@@ -298,7 +298,6 @@ describe('chromeEnvironmentTemplate', () => {
     });
 
     it('WebSocket accepts url and has required methods', () => {
-      // @ts-expect-error — auto-suppressed [TS2554]
       const ws = new chromeEnvironmentTemplate.constructors.WebSocket(
         buildTestUrl('test', { scheme: 'ws', suffix: 'bare', path: '/' }),
       );
