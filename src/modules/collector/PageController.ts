@@ -4,6 +4,10 @@ import { PAGE_FRAME_SELECTOR_TIMEOUT_MS, PAGE_NETWORK_IDLE_TIMEOUT_MS } from '@s
 import { setTimeout as asyncSetTimeout } from 'node:timers/promises';
 import type { Page, Frame } from 'rebrowser-puppeteer-core';
 import type { BrowserTargetInfo } from '@modules/browser/BrowserTargetSessionManager';
+import {
+  toChromeCompatibleWaitUntil,
+  type PageNavigationWaitUntil,
+} from '@modules/browser/navigation-wait-until';
 
 export interface FrameResolveOptions {
   /** URL substring to match against frame URLs */
@@ -13,7 +17,7 @@ export interface FrameResolveOptions {
 }
 
 export interface NavigationOptions {
-  waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2';
+  waitUntil?: PageNavigationWaitUntil;
   timeout?: number;
 }
 
@@ -68,6 +72,12 @@ interface UploadContextLike {
 export class PageController {
   constructor(private collector: CodeCollector) {}
 
+  private getChromeNavigationWaitUntil(
+    waitUntil: PageNavigationWaitUntil = 'networkidle',
+  ): ReturnType<typeof toChromeCompatibleWaitUntil> {
+    return toChromeCompatibleWaitUntil(waitUntil);
+  }
+
   async getBrowser(): Promise<ReturnType<CodeCollector['getBrowser']>> {
     return this.collector.getBrowser();
   }
@@ -105,7 +115,7 @@ export class PageController {
     const startTime = Date.now();
 
     await page.goto(url, {
-      waitUntil: options?.waitUntil || 'networkidle2',
+      waitUntil: this.getChromeNavigationWaitUntil(options?.waitUntil),
       timeout: options?.timeout || 30000,
     });
 
@@ -125,7 +135,7 @@ export class PageController {
   async reload(options?: NavigationOptions): Promise<void> {
     const page = await this.collector.getActivePage();
     await page.reload({
-      waitUntil: options?.waitUntil || 'networkidle2',
+      waitUntil: this.getChromeNavigationWaitUntil(options?.waitUntil),
       timeout: options?.timeout || 30000,
     });
     logger.info('Page reloaded');
@@ -267,7 +277,7 @@ export class PageController {
   async waitForNavigation(timeout?: number): Promise<void> {
     const page = await this.collector.getActivePage();
     await page.waitForNavigation({
-      waitUntil: 'networkidle2',
+      waitUntil: this.getChromeNavigationWaitUntil(),
       timeout: timeout || 30000,
     });
     logger.info('Navigation completed');
@@ -453,6 +463,12 @@ export class PageController {
   }
 
   async clearCookies(): Promise<void> {
+    if (this.collector.isExistingBrowserConnection()) {
+      throw new Error(
+        'Cannot clear cookies on an attached browser. ' +
+          'This operation is restricted to browsers launched by jshook to prevent accidental modification of user data.',
+      );
+    }
     const page = await this.collector.getActivePage();
     const cookies = await page.cookies();
     await page.deleteCookie(...cookies);
@@ -549,6 +565,12 @@ export class PageController {
   }
 
   async clearLocalStorage(): Promise<void> {
+    if (this.collector.isExistingBrowserConnection()) {
+      throw new Error(
+        'Cannot clear localStorage on an attached browser. ' +
+          'This operation is restricted to browsers launched by jshook to prevent accidental modification of user data.',
+      );
+    }
     const page = await this.collector.getActivePage();
 
     await page.evaluate(() => {

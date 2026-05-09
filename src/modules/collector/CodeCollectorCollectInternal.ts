@@ -2,6 +2,7 @@ import type { CollectCodeOptions, CollectCodeResult, CodeFile } from '@internal-
 import type { CDPSession, Page } from 'rebrowser-puppeteer-core';
 import type { CodeSummary, SmartCollectOptions } from '@modules/collector/SmartCodeCollector';
 import { logger } from '@utils/logger';
+import { toChromeCompatibleWaitUntil } from '@modules/browser/navigation-wait-until';
 import {
   collectInlineScripts,
   collectServiceWorkers,
@@ -350,7 +351,7 @@ export async function collectInnerImpl(
 
     logger.info(`Navigating to: ${options.url}`);
     await page.goto(options.url, {
-      waitUntil: 'networkidle2',
+      waitUntil: toChromeCompatibleWaitUntil(),
       timeout: options.timeout || self.config.timeout,
     });
 

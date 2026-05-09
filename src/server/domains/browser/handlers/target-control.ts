@@ -35,6 +35,56 @@ export class TargetControlHandlers {
     }
   }
 
+  private async syncAttachedPageContext(target: {
+    targetId?: string;
+    type?: string;
+    url?: string;
+    title?: string;
+  }): Promise<{
+    contextSwitched: boolean;
+    selectedIndex: number | null;
+    selectedPageId: string | null;
+    currentUrl: string | null;
+    currentTitle: string | null;
+  }> {
+    if (target.type !== 'page' || !target.targetId) {
+      return {
+        contextSwitched: false,
+        selectedIndex: null,
+        selectedPageId: null,
+        currentUrl: target.url ?? null,
+        currentTitle: target.title ?? null,
+      };
+    }
+
+    const resolved = await this.deps.collector.selectResolvedPageByTargetId(target.targetId);
+    if (!resolved) {
+      return {
+        contextSwitched: false,
+        selectedIndex: null,
+        selectedPageId: null,
+        currentUrl: target.url ?? null,
+        currentTitle: target.title ?? null,
+      };
+    }
+
+    const registry = this.deps.getTabRegistry();
+    const pageId = registry.upsertPage(resolved.page, {
+      index: resolved.index,
+      url: resolved.url,
+      title: resolved.title,
+    });
+    registry.setCurrentPageId(pageId);
+
+    return {
+      contextSwitched: true,
+      selectedIndex: resolved.index,
+      selectedPageId: pageId,
+      currentUrl: resolved.url,
+      currentTitle: resolved.title,
+    };
+  }
+
   async clearAttachedTargetContext(context: string): Promise<{
     detached: boolean;
     targetId: string | null;
@@ -153,11 +203,13 @@ export class TargetControlHandlers {
       }
 
       const target = await this.deps.collector.attachCdpTarget(targetId);
+      const pageContext = await this.syncAttachedPageContext(target);
       this.markMonitoringContextChanged('browser_attach_cdp_target');
 
       return R.ok().build({
         attached: true,
         target,
+        ...pageContext,
       });
     } catch (error) {
       logger.error('Failed to attach CDP target:', error);

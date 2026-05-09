@@ -8,6 +8,7 @@ import type {
   PuppeteerConfig,
 } from '@internal-types/index';
 import { logger } from '@utils/logger';
+import { toChromeCompatibleWaitUntil } from '@modules/browser/navigation-wait-until';
 import { PrerequisiteError } from '@errors/PrerequisiteError';
 import { CodeCache } from '@modules/collector/CodeCache';
 import { SmartCodeCollector } from '@modules/collector/SmartCodeCollector';
@@ -468,8 +469,8 @@ export class CodeCollector {
     }
 
     const targets = this.getPageTargets();
-    const pages = await Promise.all(
-      targets.map(async (target, index) => {
+    const pages: Array<ResolvedPageDescriptor | null> = await Promise.all(
+      targets.map(async (target, index): Promise<ResolvedPageDescriptor | null> => {
         try {
           const page = await this.resolvePageTargetHandle(target, timeoutMs);
           let title = '';
@@ -489,7 +490,7 @@ export class CodeCollector {
             url: target.url(),
             title,
             page,
-          } satisfies ResolvedPageDescriptor;
+          };
         } catch {
           return null;
         }
@@ -497,6 +498,32 @@ export class CodeCollector {
     );
 
     return pages.filter((page): page is ResolvedPageDescriptor => page !== null);
+  }
+  async selectResolvedPageByTargetId(targetId: string): Promise<ResolvedPageDescriptor | null> {
+    if (!this.browser) return null;
+
+    const targets = this.getPageTargets();
+    for (const target of targets) {
+      try {
+        const session = await target.createCDPSession();
+        const { targetInfo } = (await session.send('Target.getTargetInfo')) as {
+          targetInfo: { targetId: string };
+        };
+        await session.detach();
+        if (targetInfo.targetId === targetId) {
+          const resolvedPages = await this.listResolvedPages();
+          const match = resolvedPages.find((entry) => entry.url === target.url()) ?? null;
+          if (!match) return null;
+          this.activePageIndex = match.index;
+          this.cachedActivePage = match.page;
+          return match;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
   }
   async selectPage(index: number): Promise<void> {
     if (!this.browser) {
@@ -540,7 +567,7 @@ export class CodeCollector {
     await this.applyAntiDetection(page);
     if (url) {
       await page.goto(url, {
-        waitUntil: 'networkidle2',
+        waitUntil: toChromeCompatibleWaitUntil(),
         timeout: this.config.timeout,
       });
     }
