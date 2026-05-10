@@ -68,7 +68,7 @@ export class ProxyHandlers {
             // Keep the original PEM if Node crypto can't parse it
           }
 
-          fs.writeFileSync(keyPath, ca.key);
+          fs.writeFileSync(keyPath, ca.key, { mode: 0o600 });
           fs.writeFileSync(certPath, ca.cert);
         }
 
