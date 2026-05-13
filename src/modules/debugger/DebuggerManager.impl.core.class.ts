@@ -251,11 +251,35 @@ export class DebuggerManager {
   }
 
   /**
-   * Ensure CDP session is active, reconnect if needed
+   * Ensure CDP session is active, with zombie detection.
+   * If the session reference is non-null but unresponsive (e.g. after
+   * browser reattach swapped the underlying WebSocket), reset and reinit.
    */
   async ensureSession(): Promise<void> {
     if (!this.enabled || !this.cdpSession) {
       logger.info('CDP session not active, reinitializing...');
+      await this.init();
+      return;
+    }
+
+    // Zombie detection: verify the CDP session actually responds
+    try {
+      await Promise.race([
+        this.cdpSession.send('Runtime.evaluate', { expression: '1', returnByValue: true }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('session_unreachable')), 3000),
+        ),
+      ]);
+      return; // Session is healthy
+    } catch {
+      logger.warn('Debugger CDP session unresponsive (zombie), reinitializing...');
+      this.enabled = false;
+      this.cdpSession = null;
+      this.advancedFeatureSession = null;
+      this.xhrManager = null;
+      this.eventManager = null;
+      this.blackboxManager = null;
+      this.watchManager = null;
       await this.init();
     }
   }

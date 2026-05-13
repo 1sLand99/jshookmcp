@@ -21,7 +21,7 @@ Request capture, response extraction, HAR export, safe replay, and performance t
 - browser + network
 - network + workflow
 
-## Full tool list (31)
+## Full tool list (33)
 
 | Tool | Description |
 | --- | --- |
@@ -50,6 +50,8 @@ Request capture, response extraction, HAR export, safe replay, and performance t
 | `network_rtt_measure` | Measure round-trip time to a target URL. |
 | `network_traceroute` | Run an ICMP traceroute. |
 | `network_icmp_probe` | Run an ICMP echo probe. |
+| `dns_resolve` | Resolve a hostname to DNS records using the system resolver. |
+| `dns_reverse` | Reverse DNS lookup — find hostnames for an IP address. |
 | `network_extract_auth` | Extract authentication data from captured network requests. |
 | `network_export_har` | Export captured network traffic as HAR. |
 | `network_replay_request` | Replay a captured network request with optional changes. |

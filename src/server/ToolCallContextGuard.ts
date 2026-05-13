@@ -65,6 +65,19 @@ const CONTEXT_SENSITIVE_PREFIXES = [
 /** Max consecutive identical calls before injecting a warning. */
 const MAX_CONSECUTIVE_REPEATS = 3;
 
+/** Raw network tools exempt from context-sensitivity (no browser/UI needed). */
+const NETWORK_RAW_TOOLS = new Set([
+  'network_icmp_probe',
+  'network_traceroute',
+  'network_rtt_measure',
+  'http_request_build',
+  'http_plain_request',
+  'http2_probe',
+  'http2_frame_build',
+  'dns_resolve',
+  'dns_reverse',
+]);
+
 /** Meta-tools excluded from repeat detection — agents legitimately chain these. */
 const REPEAT_GUARD_EXCLUDES = new Set([
   'search_tools',
@@ -102,6 +115,11 @@ export class ToolCallContextGuard {
   isContextSensitive(toolName: string): boolean {
     const cached = this.contextSensitiveCache.get(toolName);
     if (cached !== undefined) return cached;
+
+    if (NETWORK_RAW_TOOLS.has(toolName)) {
+      this.contextSensitiveCache.set(toolName, false);
+      return false;
+    }
 
     const result = CONTEXT_SENSITIVE_PREFIXES.some((p) => toolName.startsWith(p));
     this.contextSensitiveCache.set(toolName, result);

@@ -131,6 +131,21 @@ export const transportTools: Tool[] = [
       .string('debugDataEncoding', 'Encoding for debugDataText: utf8 or ascii. Default: utf8')
       .requiredOpenWorld('frameType'),
   ),
+  tool('dns_resolve', (t) =>
+    t
+      .desc('Resolve a hostname to DNS records using the system resolver.')
+      .string('hostname', 'Hostname to resolve (e.g. google.com)')
+      .string('rrType', 'DNS record type: A, AAAA, MX, TXT, NS, CNAME, SOA, PTR, SRV, or ANY', {
+        default: 'A',
+      })
+      .requiredOpenWorld('hostname'),
+  ),
+  tool('dns_reverse', (t) =>
+    t
+      .desc('Reverse DNS lookup — find hostnames for an IP address.')
+      .string('ip', 'IP address to reverse lookup (e.g. 8.8.8.8)')
+      .requiredOpenWorld('ip'),
+  ),
   tool('network_rtt_measure', (t) =>
     t
       .desc('Measure round-trip time to a target URL.')

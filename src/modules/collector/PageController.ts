@@ -646,8 +646,9 @@ async function checkPageCDPHealth(page: Page, timeoutMs = 500): Promise<void> {
   const timer = asyncSetTimeout(timeoutMs, undefined, { signal: ac.signal }).then(() => {
     throw new Error('cdp_unreachable');
   });
+  let cdp: import('rebrowser-puppeteer-core').CDPSession | null = null;
   try {
-    const cdp = await Promise.race([page.createCDPSession(), timer as unknown as Promise<never>]);
+    cdp = await Promise.race([page.createCDPSession(), timer as unknown as Promise<never>]);
     await Promise.race([
       cdp.send('Runtime.evaluate', { expression: '1', returnByValue: true }),
       timer as unknown as Promise<never>,
@@ -665,6 +666,13 @@ async function checkPageCDPHealth(page: Page, timeoutMs = 500): Promise<void> {
     throw err;
   } finally {
     ac.abort();
+    if (cdp) {
+      try {
+        await cdp.detach();
+      } catch {
+        // Best-effort detach — session may already be closed
+      }
+    }
   }
 }
 
@@ -710,18 +718,27 @@ export async function evaluateOnContextWithTimeout<Args extends readonly unknown
   // Fail fast: detect zombie CDP sessions before they block evaluate().
   await checkPageCDPHealth(page);
 
-  return Promise.race([
-    context.evaluate(
-      pageFunction as string | ((...args: never[]) => Result),
-      ...([...args] as never[]),
-    ),
-    new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new Error(`page.evaluate timed out after ${timeoutMs}ms`)),
-        timeoutMs,
+  // Race evaluate against a timer; clear the timer when evaluate wins so we don't
+  // leave a dangling setTimeout. NOTE: Playwright/Puppeteer don't expose a clean
+  // way to cancel an in-flight evaluate(), so the JS still runs to completion in
+  // the page — the timeout only protects the caller from blocking forever.
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      context.evaluate(
+        pageFunction as string | ((...args: never[]) => Result),
+        ...([...args] as never[]),
       ),
-    ),
-  ]);
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error(`page.evaluate timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  }
 }
 
 export async function evaluateWithTimeout<Args extends readonly unknown[], Result>(

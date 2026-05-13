@@ -21,7 +21,7 @@
 - browser + network
 - network + workflow
 
-## 工具清单（31）
+## 工具清单（33）
 
 | 工具 | 说明 |
 | --- | --- |
@@ -50,6 +50,8 @@
 | `network_rtt_measure` | 测量到目标主机的网络往返时间（RTT），支持 TCP、TLS 和 HTTP 三种探测模式。多次迭代平滑抖动，返回 min/max/avg/p50/p95 统计数据。非回环目标需要显式授权。 |
 | `network_traceroute` | 基于 ICMP 的路由追踪，逐跳返回 RTT 与错误分类。Windows 无需管理员权限；Linux/macOS 需要 root 或 CAP_NET_RAW。 |
 | `network_icmp_probe` | ICMP 探测，支持 TTL 控制与错误分类。Windows 无需管理员权限；Linux/macOS 需要 root 或 CAP_NET_RAW。 |
+| `dns_resolve` | 待补充中文：Resolve a hostname to DNS records using the system resolver. |
+| `dns_reverse` | 待补充中文：Reverse DNS lookup — find hostnames for an IP address. |
 | `network_extract_auth` | 从网络请求中提取认证凭据（Token、Cookie、API Key、签名等）。 |
 | `network_export_har` | 将网络请求记录导出为 HAR 文件。 |
 | `network_replay_request` | 重新发送某个已捕获的网络请求，支持按需修改请求内容。可通过 sessionProfile 注入浏览器会话的 Cookie、User-Agent 和 Accept-Language。 |

@@ -385,5 +385,7 @@
   "network_bot_detect_analyze": "分析已捕获请求的机器人检测信号（TLS 指纹、Header 顺序、时序模式）。",
   "proto_fingerprint": "从 hex 载荷样本识别协议类型（TLS、HTTP、DNS、WebSocket、SSH）。",
   "sourcemap_parse_v4": "解析 Source Map，支持 ECMA-426 v4 scope/debug-id；无 v4 字段时回退 v3。",
-  "page_upload_files": "向 <input type=\"file\"> 元素上传一个或多个本地文件。"
+  "page_upload_files": "向 <input type=\"file\"> 元素上传一个或多个本地文件。",
+  "dns_resolve": "待补充中文：Resolve a hostname to DNS records using the system resolver.",
+  "dns_reverse": "待补充中文：Reverse DNS lookup — find hostnames for an IP address."
 }

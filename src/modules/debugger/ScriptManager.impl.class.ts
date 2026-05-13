@@ -56,6 +56,7 @@ export class ScriptManager {
   private keywordIndex: Map<string, KeywordIndexEntry[]> = new Map();
   private scriptChunks: Map<string, ScriptChunk[]> = new Map();
   private readonly CHUNK_SIZE = 100 * 1024;
+  private readonly MAX_KEYWORD_INDEX_ENTRIES = 50000;
 
   constructor(private collector: CodeCollector) {}
 
@@ -134,10 +135,41 @@ export class ScriptManager {
     return this.init();
   }
 
-  async getAllScripts(includeSource = false, maxScripts = 1000): Promise<ScriptInfo[]> {
+  /**
+   * Ensure the CDP session is healthy (non-zombie).
+   * After a browser reattach, the old session reference may be non-null
+   * while the underlying WebSocket is dead. This check catches that case.
+   */
+  private async ensureCdpSession(): Promise<void> {
     if (!this.cdpSession) {
       await this.init();
+      return;
     }
+    if (!this.initialized) {
+      await this.init();
+      return;
+    }
+    try {
+      await Promise.race([
+        this.cdpSession.send('Runtime.evaluate', { expression: '1', returnByValue: true }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('session_unreachable')), 3000),
+        ),
+      ]);
+    } catch {
+      logger.warn('ScriptManager CDP session unresponsive (zombie), reinitializing...');
+      this.cdpSession = null;
+      this.initialized = false;
+      this.scripts.clear();
+      this.scriptsByUrl.clear();
+      this.keywordIndex.clear();
+      this.scriptChunks.clear();
+      await this.init();
+    }
+  }
+
+  async getAllScripts(includeSource = false, maxScripts = 1000): Promise<ScriptInfo[]> {
+    await this.ensureCdpSession();
 
     const scripts = Array.from(this.scripts.values());
 
@@ -205,9 +237,7 @@ export class ScriptManager {
       throw new Error('Either scriptId or url parameter must be provided');
     }
 
-    if (!this.cdpSession) {
-      await this.init();
-    }
+    await this.ensureCdpSession();
 
     let targetScript: ScriptInfo | undefined;
 
@@ -245,9 +275,7 @@ export class ScriptManager {
   }
 
   async findScriptsByUrl(urlPattern: string): Promise<ScriptInfo[]> {
-    if (!this.cdpSession) {
-      await this.init();
-    }
+    await this.ensureCdpSession();
 
     const pattern = urlPattern.replace(/\*/g, '.*');
     const regex = new RegExp(pattern);
@@ -287,9 +315,7 @@ export class ScriptManager {
       context: string;
     }>;
   }> {
-    if (!this.cdpSession) {
-      await this.init();
-    }
+    await this.ensureCdpSession();
 
     const { isRegex = false, caseSensitive = false, contextLines = 3, maxMatches = 100 } = options;
 
@@ -469,6 +495,20 @@ export class ScriptManager {
     }
 
     logger.debug(` Indexed ${this.keywordIndex.size} keywords for ${url}`);
+
+    // Evict oldest entries when keyword index exceeds capacity
+    if (this.keywordIndex.size > this.MAX_KEYWORD_INDEX_ENTRIES) {
+      const excess = this.keywordIndex.size - this.MAX_KEYWORD_INDEX_ENTRIES;
+      let evicted = 0;
+      for (const [key] of this.keywordIndex) {
+        if (evicted >= excess) break;
+        this.keywordIndex.delete(key);
+        evicted++;
+      }
+      logger.debug(
+        ` Keyword index pruned ${evicted} entries (cap: ${this.MAX_KEYWORD_INDEX_ENTRIES})`,
+      );
+    }
   }
 
   private chunkScript(scriptId: string, content: string): void {

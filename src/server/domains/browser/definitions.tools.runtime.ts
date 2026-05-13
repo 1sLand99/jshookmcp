@@ -66,8 +66,7 @@ export const browserRuntimeTools: Tool[] = [
         description: 'Firefox about:config overrides (camoufox)',
         additionalProperties: true,
       })
-      .boolean('mainWorldEval', 'Main world eval (camoufox)', { default: false })
-      .boolean('enableCache', 'Enable cache (camoufox)', { default: false })
+      .boolean('mainWorldEval', 'Main world eval (camoufox)', { default: true })
       .openWorld(),
   ),
   tool('camoufox_server', (t) =>
@@ -116,7 +115,7 @@ export const browserRuntimeTools: Tool[] = [
         description: 'Firefox about:config overrides (launch)',
         additionalProperties: true,
       })
-      .boolean('mainWorldEval', 'Main world eval (launch)', { default: false })
+      .boolean('mainWorldEval', 'Main world eval (launch)', { default: true })
       .boolean('enableCache', 'Enable cache (launch)', { default: false })
       .required('action')
       .destructive(),

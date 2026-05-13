@@ -25,8 +25,24 @@ export class HookManager {
 
   private readonly MAX_HOOK_RECORDS = 1000;
   private readonly MAX_TOTAL_RECORDS = 10000;
+  private readonly MAX_HOOKS = 200;
 
   async createHook(options: HookOptions): Promise<HookResult> {
+    // Evict oldest hook when at capacity
+    if (this.hookScripts.size >= this.MAX_HOOKS) {
+      let oldestId: string | null = null;
+      let oldestTime = Infinity;
+      for (const [id, meta] of this.hookMetadata) {
+        if (meta.createdAt < oldestTime) {
+          oldestTime = meta.createdAt;
+          oldestId = id;
+        }
+      }
+      if (oldestId) {
+        logger.warn(`Hook limit (${this.MAX_HOOKS}) reached, evicting oldest: ${oldestId}`);
+        this.deleteHook(oldestId);
+      }
+    }
     logger.info(`Creating hook for ${options.target} (type: ${options.type})...`);
 
     try {

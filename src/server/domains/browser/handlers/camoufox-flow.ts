@@ -34,7 +34,7 @@ function extractCamoufoxConfig(args: Record<string, unknown>): CamoufoxBrowserCo
     fingerprint: argObject(args, 'fingerprint'),
     webglConfig: argObject(args, 'webglConfig'),
     firefoxUserPrefs: argObject(args, 'firefoxUserPrefs'),
-    mainWorldEval: argBool(args, 'mainWorldEval', false),
+    mainWorldEval: argBool(args, 'mainWorldEval', true),
     enableCache: argBool(args, 'enableCache', false),
   };
 }

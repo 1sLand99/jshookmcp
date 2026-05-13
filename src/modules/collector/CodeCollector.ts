@@ -504,12 +504,12 @@ export class CodeCollector {
 
     const targets = this.getPageTargets();
     for (const target of targets) {
+      let session: CDPSession | null = null;
       try {
-        const session = await target.createCDPSession();
+        session = await target.createCDPSession();
         const { targetInfo } = (await session.send('Target.getTargetInfo')) as {
           targetInfo: { targetId: string };
         };
-        await session.detach();
         if (targetInfo.targetId === targetId) {
           const resolvedPages = await this.listResolvedPages();
           const match = resolvedPages.find((entry) => entry.url === target.url()) ?? null;
@@ -520,6 +520,14 @@ export class CodeCollector {
         }
       } catch {
         continue;
+      } finally {
+        if (session) {
+          try {
+            await session.detach();
+          } catch {
+            // Best-effort detach — session may already be closed
+          }
+        }
       }
     }
 

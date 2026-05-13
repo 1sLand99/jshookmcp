@@ -438,6 +438,7 @@ export function performHttp2ProbeInternal(options: {
   maxBodyBytes: number;
   effectivePort: number;
   requestedAlpnProtocols: string[];
+  connectTimeoutMs?: number;
 }): Promise<{
   responseHeaders: http2.IncomingHttpHeaders;
   bodyBuffer: Buffer;
@@ -454,6 +455,7 @@ export function performHttp2ProbeInternal(options: {
     maxBodyBytes,
     effectivePort,
     requestedAlpnProtocols,
+    connectTimeoutMs = 10_000,
   } = options;
   let observedAlpnProtocol: string | null = null;
 
@@ -475,11 +477,19 @@ export function performHttp2ProbeInternal(options: {
             ALPNProtocols: requestedAlpnProtocols,
             rejectUnauthorized: true,
           });
+          // Connect timeout — fail fast on TCP/TLS handshake hang (e.g. Cloudflare TCP drop)
+          const connectTimer = setTimeout(() => {
+            socket.destroy(
+              new Error(`Timed out connecting to ${url.toString()} (${connectTimeoutMs}ms)`),
+            );
+          }, connectTimeoutMs);
+          socket.once('secureConnect', () => {
+            clearTimeout(connectTimer);
+            observedAlpnProtocol = normalizeAlpnProtocol(socket.alpnProtocol);
+          });
+          socket.once('error', () => clearTimeout(connectTimer));
           socket.setTimeout(timeoutMs, () => {
             socket.destroy(new Error(`Timed out probing HTTP/2 endpoint ${url.toString()}`));
-          });
-          socket.once('secureConnect', () => {
-            observedAlpnProtocol = normalizeAlpnProtocol(socket.alpnProtocol);
           });
           connectedSocket = socket;
           return socket;

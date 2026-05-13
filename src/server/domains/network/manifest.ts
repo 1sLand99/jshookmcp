@@ -1,9 +1,5 @@
 import type { DomainManifest, MCPServerContext } from '@server/domains/shared/registry';
-import {
-  defineMethodRegistrations,
-  ensureBrowserCore,
-  toolLookup,
-} from '@server/domains/shared/registry';
+import { defineMethodRegistrations, toolLookup } from '@server/domains/shared/registry';
 import { advancedTools } from '@server/domains/network/definitions';
 import type { AdvancedToolHandlers } from '@server/domains/network/index';
 
@@ -47,6 +43,8 @@ const registrations = defineMethodRegistrations<H, (typeof advancedTools)[number
     { tool: 'network_rtt_measure', method: 'handleNetworkRttMeasure' },
     { tool: 'network_traceroute', method: 'handleNetworkTraceroute' },
     { tool: 'network_icmp_probe', method: 'handleNetworkIcmpProbe' },
+    { tool: 'dns_resolve', method: 'handleDnsResolve' },
+    { tool: 'dns_reverse', method: 'handleDnsReverse' },
     { tool: 'network_extract_auth', method: 'handleNetworkExtractAuth' },
     { tool: 'network_export_har', method: 'handleNetworkExportHar' },
     { tool: 'network_replay_request', method: 'handleNetworkReplayRequest' },
@@ -56,9 +54,31 @@ const registrations = defineMethodRegistrations<H, (typeof advancedTools)[number
   ],
 });
 
+// Tools that can operate without a browser. Everything else requires ensureBrowserCore.
+const RAW_NETWORK_TOOLS = new Set([
+  'http_request_build',
+  'http_plain_request',
+  'http2_probe',
+  'http2_frame_build',
+  'network_rtt_measure',
+  'network_traceroute',
+  'network_icmp_probe',
+  'dns_resolve',
+  'dns_reverse',
+]);
+
 async function ensure(ctx: MCPServerContext): Promise<H> {
   const { AdvancedToolHandlers } = await import('@server/domains/network/index');
-  await ensureBrowserCore(ctx);
+
+  // Skip browser-core initialization if only raw tools are being activated
+  const needsBrowser =
+    !(ctx.activatedToolNames instanceof Set) ||
+    [...ctx.activatedToolNames].some((name) => !RAW_NETWORK_TOOLS.has(name));
+
+  if (needsBrowser) {
+    const { ensureBrowserCore } = await import('@server/registry/ensure-browser-core');
+    await ensureBrowserCore(ctx);
+  }
 
   if (!ctx.advancedHandlers) {
     ctx.advancedHandlers = new AdvancedToolHandlers(

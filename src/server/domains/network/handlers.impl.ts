@@ -199,6 +199,8 @@ export class AdvancedToolHandlers {
   handleNetworkTraceroute = (args: Record<string, unknown>) =>
     this.raw.handleNetworkTraceroute(args);
   handleNetworkIcmpProbe = (args: Record<string, unknown>) => this.raw.handleNetworkIcmpProbe(args);
+  handleDnsResolve = (args: Record<string, unknown>) => this.raw.handleDnsResolve(args);
+  handleDnsReverse = (args: Record<string, unknown>) => this.raw.handleDnsReverse(args);
   handleHttpRequestBuild = (args: Record<string, unknown>) => this.raw.handleHttpRequestBuild(args);
   handleHttpPlainRequest = (args: Record<string, unknown>) => this.raw.handleHttpPlainRequest(args);
   handleHttp2Probe = (args: Record<string, unknown>) => this.raw.handleHttp2Probe(args);

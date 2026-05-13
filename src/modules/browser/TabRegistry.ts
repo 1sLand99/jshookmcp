@@ -111,12 +111,24 @@ export class TabRegistry<PageLike = unknown> {
       activeIds.add(pageId);
     }
 
-    // Mark pages not in the current list as stale
+    // Mark pages not in the current list as stale, and prune entries that
+    // were already stale from a previous reconcile. This prevents unbounded
+    // growth while preserving stale entries for one cycle so that
+    // getCurrentTabInfo can report stale aliases.
+    const toDelete: string[] = [];
     for (const [pageId, entry] of this.tabsById) {
-      if (!activeIds.has(pageId) && !entry.stale) {
-        entry.stale = true;
-        logger.debug(`[TabRegistry] Page ${pageId} marked stale`);
+      if (!activeIds.has(pageId)) {
+        if (entry.stale) {
+          toDelete.push(pageId);
+        } else {
+          entry.stale = true;
+          logger.debug(`[TabRegistry] Page ${pageId} marked stale`);
+        }
       }
+    }
+    for (const pageId of toDelete) {
+      this.tabsById.delete(pageId);
+      logger.debug(`[TabRegistry] Page ${pageId} pruned (was already stale)`);
     }
 
     // Clear currentPageId if it became stale

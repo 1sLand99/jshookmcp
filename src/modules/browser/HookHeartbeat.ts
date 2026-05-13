@@ -127,7 +127,15 @@ export class HookHeartbeat {
 
     for (const [id, script] of this.scripts) {
       try {
-        await this.page.evaluate(script.source);
+        await Promise.race([
+          this.page.evaluate(script.source),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error('HookHeartbeat: page.evaluate timed out after 10s')),
+              10000,
+            ),
+          ),
+        ]);
       } catch (error) {
         logger.warn(`[HookHeartbeat] Failed to re-inject script "${id}":`, error);
         // Don't stop — try remaining scripts
