@@ -386,6 +386,6 @@
   "proto_fingerprint": "从 hex 载荷样本识别协议类型（TLS、HTTP、DNS、WebSocket、SSH）。",
   "sourcemap_parse_v4": "解析 Source Map，支持 ECMA-426 v4 scope/debug-id；无 v4 字段时回退 v3。",
   "page_upload_files": "向 <input type=\"file\"> 元素上传一个或多个本地文件。",
-  "dns_resolve": "待补充中文：Resolve a hostname to DNS records using the system resolver.",
-  "dns_reverse": "待补充中文：Reverse DNS lookup — find hostnames for an IP address."
+  "dns_resolve": "通过系统解析器将主机名解析为 DNS 记录（A/AAAA/CNAME/MX/TXT 等）。",
+  "dns_reverse": "反向 DNS 查询——根据 IP 地址查找对应的主机名。"
 }
