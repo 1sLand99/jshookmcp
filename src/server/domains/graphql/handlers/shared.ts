@@ -6,7 +6,7 @@
  */
 
 import type { Page } from 'rebrowser-puppeteer-core';
-import { isSsrfTarget } from '@server/domains/network/ssrf-policy';
+import { isSsrfTarget } from '@utils/network/ssrf-policy';
 import { ToolError } from '@errors/ToolError';
 import { PrerequisiteError } from '@errors/PrerequisiteError';
 import type {

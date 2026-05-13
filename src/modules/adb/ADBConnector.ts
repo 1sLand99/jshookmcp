@@ -14,6 +14,8 @@ import { ADB_VERSION_CHECK_TIMEOUT_MS } from '@src/constants';
 import { createWriteStream } from 'node:fs';
 import type { Duplex, Readable } from 'node:stream';
 import type { ADBDevice, ADBForwardEntry, APKInfo, ADBShellResult, CDPTarget } from './types.js';
+import { PrerequisiteError } from '@errors/PrerequisiteError';
+import { ToolError } from '@errors/ToolError';
 
 const execFileAsync = promisify(execFile);
 const ADB_AVAILABILITY_TTL_MS = 5 * 60_000;
@@ -33,14 +35,16 @@ async function loadAdbkit(): Promise<AdbkitModule | null> {
 }
 
 function adbUnavailableError(): never {
-  throw new Error(
+  throw new PrerequisiteError(
     'ADB server binary not found in PATH. Install Android Platform Tools: ' +
       'https://developer.android.com/studio/command-line/adb',
   );
 }
 
 function sdkUnavailableError(): never {
-  throw new Error('@devicefarmer/adbkit is not installed. Run: npm install @devicefarmer/adbkit');
+  throw new PrerequisiteError(
+    '@devicefarmer/adbkit is not installed. Run: npm install @devicefarmer/adbkit',
+  );
 }
 
 /**
@@ -229,7 +233,7 @@ export class ADBConnector {
 
     // Validate serial to prevent command injection
     if (!/^[a-zA-Z0-9._:@-]+$/.test(serial)) {
-      throw new Error(`Invalid device serial format: ${serial}`);
+      throw new ToolError('VALIDATION', `Invalid device serial format: ${serial}`);
     }
 
     // Use execFileSync with argument array to prevent shell injection
@@ -259,7 +263,7 @@ export class ADBConnector {
     // Parse "package:/data/app/~~xxx/base.apk" format
     const match = stdout.match(/package:(.+)/);
     if (!match) {
-      throw new Error(`Package "${packageName}" not found on device ${serial}`);
+      throw new ToolError('NOT_FOUND', `Package "${packageName}" not found on device ${serial}`);
     }
     const apkPath = match[1] as string;
 
@@ -313,10 +317,11 @@ export class ADBConnector {
     } catch (err) {
       // Clean up forward on failure
       await this.removeForward(serial, hostPort).catch(() => {});
-      throw new Error(
+      throw new ToolError(
+        'CONNECTION',
         `Failed to fetch WebView targets: ${err instanceof Error ? err.message : String(err)}. Ensure the app has ` +
           `android:debuggable="true".`,
-        { cause: err },
+        { cause: err instanceof Error ? err : undefined },
       );
     }
   }

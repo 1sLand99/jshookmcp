@@ -108,16 +108,15 @@ const manifest: DomainManifest<typeof DEP_KEY, H, typeof DOMAIN> = {
       /(抓包|拦截|监控|hook).*(网络|请求|响应|api|流量)/i,
     ],
     priority: 100,
-    tools: [
-      'run_extension_workflow',
-      'list_extension_workflows',
-      'network_monitor',
-      'page_navigate',
-      'network_get_requests',
-    ],
+    // Only list tools owned by this domain. workflow-domain tools
+    // (run_extension_workflow / list_extension_workflows) belong to the
+    // workflow manifest; routing them here caused an ownership conflict
+    // because both manifests claimed the same names.
+    tools: ['network_monitor', 'page_navigate', 'network_get_requests'],
     hint:
-      'Network capture workflow: prefer extension workflows first; otherwise bootstrap browser/page state ->' +
-      'enable capture -> navigate or act -> inspect captured requests',
+      'Network capture workflow: bootstrap browser/page state ->' +
+      ' enable capture -> navigate or act -> inspect captured requests.' +
+      ' (Tip: list_extension_workflows can suggest higher-level recipes.)',
   },
 
   prerequisites: {

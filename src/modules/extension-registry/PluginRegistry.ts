@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { getExtensionRegistryDir, getProjectRoot } from '@utils/outputPaths';
@@ -262,6 +263,22 @@ export class PluginRegistry {
 
     const source = await response.text();
     const outputPath = path.join(this.moduleCacheDir, `${sanitizeId(pluginId)}.mjs`);
+
+    // Content-addressable cache check: skip rewrite when the existing copy is
+    // byte-identical to the freshly fetched source. Avoids touching mtime,
+    // invalidating dynamic-import caches, and re-paying disk-write cost for
+    // unchanged remote modules.
+    const newHash = createHash('sha256').update(source).digest('hex');
+    try {
+      const existing = await readFile(outputPath, 'utf8');
+      const existingHash = createHash('sha256').update(existing).digest('hex');
+      if (existingHash === newHash) {
+        return outputPath;
+      }
+    } catch {
+      // Cached copy missing or unreadable — fall through to write.
+    }
+
     await mkdir(this.moduleCacheDir, { recursive: true });
     await writeFile(outputPath, source, 'utf8');
     return outputPath;

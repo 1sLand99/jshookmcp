@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { probeCommand, type ProbeResult } from '@modules/external/ToolProbe';
 import { logger } from '@utils/logger';
 import { GHIDRA_TIMEOUT_MS } from '@src/constants';
+import { PrerequisiteError } from '@errors/PrerequisiteError';
 
 const GHIDRA_MAX_BUFFER_BYTES = 16 * 1024 * 1024;
 
@@ -87,7 +88,7 @@ export class GhidraAnalyzer {
   ): Promise<string> {
     const availability = await this.getAvailability();
     if (!availability.available) {
-      throw new Error(availability.reason ?? 'Ghidra analyzeHeadless is not available');
+      throw new PrerequisiteError(availability.reason ?? 'Ghidra analyzeHeadless is not available');
     }
 
     await access(binaryPath);

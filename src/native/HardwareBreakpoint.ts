@@ -9,6 +9,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { BREAKPOINT_HIT_TIMEOUT_MS, BREAKPOINT_TRACE_MAX_HITS } from '@src/constants';
+import { ToolError } from '@errors/ToolError';
 import type {
   BreakpointAccess,
   BreakpointConfig,
@@ -203,7 +204,7 @@ export class HardwareBreakpointEngine {
         return i;
       }
     }
-    throw new Error('All 4 hardware breakpoint registers (DR0-DR3) are in use');
+    throw new ToolError('PREREQUISITE', 'All 4 hardware breakpoint registers (DR0-DR3) are in use');
   }
 
   private applyDRToAllThreads(

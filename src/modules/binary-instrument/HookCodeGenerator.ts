@@ -4,6 +4,7 @@ import type {
   HookParameter,
   HookTemplate,
 } from './types';
+import { ToolError } from '@errors/ToolError';
 
 type HookCategory =
   | 'jni'
@@ -41,7 +42,10 @@ export class HookCodeGenerator {
 
   exportScript(templates: HookTemplate[], format: string): string {
     if (format !== 'frida') {
-      throw new Error('Unsupported export format');
+      throw new ToolError(
+        'VALIDATION',
+        `Unsupported export format: "${format}". Only "frida" is supported.`,
+      );
     }
 
     const lines = [

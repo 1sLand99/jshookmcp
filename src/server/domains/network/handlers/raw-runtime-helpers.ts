@@ -13,7 +13,7 @@ import {
   resolveNetworkTarget,
   type NetworkAuthorizationInput,
   type ResolvedNetworkTarget,
-} from '@server/domains/network/ssrf-policy';
+} from '@utils/network/ssrf-policy';
 import { BufferChain } from '@utils/BufferChain';
 
 export const HTTP_TOKEN_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;

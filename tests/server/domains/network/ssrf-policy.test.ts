@@ -11,7 +11,7 @@ import {
   isPrivateHost,
   isSsrfTarget,
   resolveNetworkTarget,
-} from '@server/domains/network/ssrf-policy';
+} from '@utils/network/ssrf-policy';
 import { TEST_HOSTS, TEST_URLS, TEST_HTTP_URLS, withPath } from '@tests/shared/test-urls';
 
 describe('network ssrf-policy helpers', () => {

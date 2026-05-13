@@ -30,6 +30,7 @@ import { createPlatformProvider } from './platform/factory.js';
 import type { PlatformMemoryAPI } from './platform/PlatformMemoryAPI.js';
 import type { ProcessHandle } from './platform/types.js';
 import { formatAddress, parseAddress } from './formatAddress';
+import { ToolError } from '@errors/ToolError';
 
 export interface ScanResult {
   sessionId: string;
@@ -78,7 +79,7 @@ export class MemoryScanner {
 
     const { patternBytes } = parsePattern(value, valueType === 'pointer' ? 'uint64' : valueType);
     if (patternBytes.length === 0) {
-      throw new Error(`Invalid pattern for type ${valueType}: "${value}"`);
+      throw new ToolError('VALIDATION', `Invalid pattern for type ${valueType}: "${value}"`);
     }
 
     const targetBuf = Buffer.from(patternBytes);
@@ -181,7 +182,10 @@ export class MemoryScanner {
     const valueSize = getValueSize(valueType);
 
     if (valueSize === 0) {
-      throw new Error('Next-scan is not supported for variable-length types (hex/string)');
+      throw new ToolError(
+        'VALIDATION',
+        'Next-scan is not supported for variable-length types (hex/string)',
+      );
     }
 
     // Parse target values if provided
@@ -249,7 +253,10 @@ export class MemoryScanner {
     const maxAddresses = options.maxResults ?? SCAN_UNKNOWN_INITIAL_MAX_ADDRESSES;
 
     if (valueSize === 0) {
-      throw new Error('Unknown initial scan is not supported for variable-length types');
+      throw new ToolError(
+        'VALIDATION',
+        'Unknown initial scan is not supported for variable-length types',
+      );
     }
 
     const sessionId = scanSessionManager.createSession(pid, options);
@@ -427,13 +434,14 @@ export class MemoryScanner {
     const start = performance.now();
 
     if (pattern.length === 0) {
-      throw new Error('Group scan requires at least one value pattern');
+      throw new ToolError('VALIDATION', 'Group scan requires at least one value pattern');
     }
 
     // Calculate total pattern size
     const maxOffset = Math.max(...pattern.map((p) => p.offset + getValueSize(p.type)));
     if (maxOffset > SCAN_GROUP_MAX_PATTERN_SIZE) {
-      throw new Error(
+      throw new ToolError(
+        'VALIDATION',
         `Group pattern too large: ${maxOffset} bytes (max ${SCAN_GROUP_MAX_PATTERN_SIZE})`,
       );
     }
@@ -555,7 +563,7 @@ export class MemoryScanner {
     const result = await this.nmm.scanMemory(pid, value, patternType);
 
     if (!result.success) {
-      throw new Error(result.error ?? 'Scan failed');
+      throw new ToolError('RUNTIME', result.error ?? 'Scan failed');
     }
 
     const sessionId = scanSessionManager.createSession(pid, options);

@@ -6,6 +6,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { CODE_CAVE_MIN_SIZE } from '@src/constants';
+import { ToolError } from '@errors/ToolError';
 import type { PatchOperation, CodeCave } from './CodeInjector.types';
 import {
   openProcessForMemory,
@@ -201,7 +202,7 @@ export class CodeInjector {
         PAGE.EXECUTE_READWRITE,
       );
       if (addr === 0n) {
-        throw new Error('VirtualAllocEx failed');
+        throw new ToolError('RUNTIME', 'VirtualAllocEx failed');
       }
       return `0x${addr.toString(16).toUpperCase()}`;
     } finally {

@@ -14,7 +14,7 @@ import {
   withPath,
 } from '@tests/shared/test-urls';
 
-vi.mock('@server/domains/network/ssrf-policy', () => ({
+vi.mock('@utils/network/ssrf-policy', () => ({
   isLoopbackHost: (host: string) => host === 'localhost' || host === '127.0.0.1',
   isPrivateHost: (host: string) =>
     host === '10.0.0.1' || host === '192.168.1.1' || host === 'localhost' || host === '127.0.0.1',

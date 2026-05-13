@@ -7,6 +7,8 @@ import type { ScriptManager } from '@server/domains/shared/modules';
 import type { ConsoleMonitor } from '@server/domains/shared/modules';
 import { AICaptchaDetector } from '@server/domains/shared/modules';
 import { argString } from '@server/domains/shared/parse-args';
+import { asErrorResponse } from '@server/domains/shared/response';
+import { ToolError } from '@errors/ToolError';
 import { DetailedDataManager } from '@utils/DetailedDataManager';
 import { getConfig } from '@utils/config';
 import { resolveOutputDirectory } from '@utils/outputPaths';
@@ -384,42 +386,34 @@ export class BrowserToolHandlers {
       case 'clear': {
         const expectedCount = args['expectedCount'];
         if (typeof expectedCount !== 'number' || expectedCount < 0) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text:
-                  'action=clear requires expectedCount (number). Call action=get first to obtain the current' +
-                  'cookie count.',
-              },
-            ],
-            isError: true,
-          };
+          return asErrorResponse(
+            new ToolError(
+              'VALIDATION',
+              'action=clear requires expectedCount (number). Call action=get first to obtain the current cookie count.',
+              { toolName: 'page_cookies' },
+            ),
+          );
         }
         const current = await this.pageData.getPageCookieCount();
         if (current !== expectedCount) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text:
-                  `Cookie count mismatch: expected ${expectedCount} but found ${current}. Call ` +
-                  `action=get to refresh, ` +
-                  `then retry with the correct count.`,
-              },
-            ],
-            isError: true,
-          };
+          return asErrorResponse(
+            new ToolError(
+              'VALIDATION',
+              `Cookie count mismatch: expected ${expectedCount} but found ${current}. Call action=get to refresh, then retry with the correct count.`,
+              { toolName: 'page_cookies', details: { expected: expectedCount, actual: current } },
+            ),
+          );
         }
         return this.pageData.handlePageClearCookies(args);
       }
       default:
-        return {
-          content: [
-            { type: 'text', text: `Invalid action: "${action}". Expected one of: get, set, clear` },
-          ],
-          isError: true,
-        };
+        return asErrorResponse(
+          new ToolError(
+            'VALIDATION',
+            `Invalid action: "${action}". Expected one of: get, set, clear`,
+            { toolName: 'page_cookies' },
+          ),
+        );
     }
   }
 
@@ -439,12 +433,11 @@ export class BrowserToolHandlers {
       case 'set':
         return this.pageData.handlePageSetLocalStorage(args);
       default:
-        return {
-          content: [
-            { type: 'text', text: `Invalid action: "${action}". Expected one of: get, set` },
-          ],
-          isError: true,
-        };
+        return asErrorResponse(
+          new ToolError('VALIDATION', `Invalid action: "${action}". Expected one of: get, set`, {
+            toolName: 'page_local_storage',
+          }),
+        );
     }
   }
 

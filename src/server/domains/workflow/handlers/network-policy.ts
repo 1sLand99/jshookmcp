@@ -4,7 +4,7 @@
 
 import { lookup } from 'node:dns/promises';
 import { BlockList, isIP } from 'node:net';
-import { isLoopbackHost, isPrivateHost } from '@server/domains/network/ssrf-policy';
+import { isLoopbackHost, isPrivateHost } from '@utils/network/ssrf-policy';
 
 export interface WorkflowNetworkHostPattern {
   scope: 'host' | 'hostname';

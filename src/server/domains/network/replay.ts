@@ -20,7 +20,7 @@ import {
   resolveNetworkTarget,
   type NetworkAuthorizationInput,
   type ResolvedNetworkTarget,
-} from '@server/domains/network/ssrf-policy';
+} from '@utils/network/ssrf-policy';
 
 const STRIPPED_HEADERS = new Set([
   'host',
@@ -35,7 +35,7 @@ const STRIPPED_HEADERS = new Set([
   'upgrade',
 ]);
 
-export { isLoopbackHost, isPrivateHost, isSsrfTarget } from '@server/domains/network/ssrf-policy';
+export { isLoopbackHost, isPrivateHost, isSsrfTarget } from '@utils/network/ssrf-policy';
 
 import type { SessionProfile } from '@internal-types/SessionProfile';
 

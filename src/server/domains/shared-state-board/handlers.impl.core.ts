@@ -11,6 +11,8 @@ import { StateBoardStore } from './handlers/shared';
 import { StoreHandlers } from './handlers/store-handlers';
 import { WatchHandlers } from './handlers/watch-handlers';
 import { IOHandlers } from './handlers/io-handlers';
+import { ToolError } from '@errors/ToolError';
+import { asErrorResponse } from '@server/domains/shared/response';
 
 export type { StateEntry, StateChangeRecord, StateWatch, StateBoardStats } from './handlers/shared';
 
@@ -91,15 +93,15 @@ export class SharedStateBoardHandlers {
       case 'clear':
         return this.storeHandlers.handleClear(args);
       default:
-        return Promise.resolve({
-          content: [
-            {
-              type: 'text',
-              text: `Invalid action: "${action}". Expected one of: set, get, delete, list, history, clear`,
-            },
-          ],
-          isError: true,
-        });
+        return Promise.resolve(
+          asErrorResponse(
+            new ToolError(
+              'VALIDATION',
+              `Invalid action: "${action}". Expected one of: set, get, delete, list, history, clear`,
+              { toolName: 'state_board' },
+            ),
+          ),
+        );
     }
   }
   handleStats() {

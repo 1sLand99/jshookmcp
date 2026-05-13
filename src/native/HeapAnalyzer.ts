@@ -10,6 +10,7 @@
 import { logger } from '@utils/logger';
 import koffi from 'koffi';
 import { openProcessForMemory, CloseHandle, ReadProcessMemory } from '@native/Win32API';
+import { ToolError } from '@errors/ToolError';
 import {
   HEAP_ENUMERATE_MAX_BLOCKS,
   HEAP_SPRAY_THRESHOLD,
@@ -82,7 +83,7 @@ export class HeapAnalyzer {
     const apis = getHeapApis();
     const hSnap = apis.CreateToolhelp32Snapshot(TH32CS.SNAPHEAPLIST, pid);
     if (hSnap === -1n && typeof hSnap === 'bigint') {
-      throw new Error(`Failed to create heap snapshot for PID ${pid}`);
+      throw new ToolError('RUNTIME', `Failed to create heap snapshot for PID ${pid}`);
     }
 
     const heaps: HeapInfo[] = [];

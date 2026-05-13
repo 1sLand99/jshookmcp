@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import type { ConnectionOptions as TlsConnectionOptions } from 'node:tls';
-import { isLoopbackHost, isPrivateHost } from '@server/domains/network/ssrf-policy';
+import { isLoopbackHost, isPrivateHost } from '@utils/network/ssrf-policy';
 import { argString } from '@server/domains/shared/parse-args';
 import { errorMessage } from './common';
 

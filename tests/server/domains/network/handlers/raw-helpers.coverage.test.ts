@@ -16,7 +16,7 @@ const ssrfState = vi.hoisted(() => ({
   http2Connect: vi.fn(),
 }));
 
-vi.mock('@server/domains/network/ssrf-policy', () => ({
+vi.mock('@utils/network/ssrf-policy', () => ({
   createNetworkAuthorizationPolicy: (...args: unknown[]) =>
     ssrfState.createNetworkAuthorizationPolicy(...args),
   hasAuthorizedTargets: (...args: unknown[]) => ssrfState.hasAuthorizedTargets(...args),

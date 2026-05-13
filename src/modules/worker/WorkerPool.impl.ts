@@ -534,12 +534,19 @@ export class WorkerPool extends WorkerPoolImpl {
       clearInterval(this.healthCheckTimer);
     }
 
-    await Promise.race([
-      this.drain(),
-      new Promise<void>((resolve) => {
-        setTimeout(resolve, timeoutMs);
-      }),
-    ]);
+    // Race drain against a timeout, but clean up the timer when drain wins
+    // so we don't leave a dangling setTimeout pinning the event loop.
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        this.drain(),
+        new Promise<void>((resolve) => {
+          timeoutId = setTimeout(resolve, timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+    }
 
     this.rejectAllPending(`Worker pool shutdown timed out after ${timeoutMs}ms`);
     await this.terminate();

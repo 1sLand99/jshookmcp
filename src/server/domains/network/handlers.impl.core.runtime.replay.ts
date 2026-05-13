@@ -3,7 +3,7 @@ import { extractAuthFromRequests } from '@server/domains/network/auth-extractor'
 import { buildHar } from '@server/domains/network/har';
 import type { BuildHarParams } from '@server/domains/network/har';
 import { replayRequest } from '@server/domains/network/replay';
-import type { NetworkAuthorizationInput } from '@server/domains/network/ssrf-policy';
+import type { NetworkAuthorizationInput } from '@utils/network/ssrf-policy';
 import type { SessionProfile } from '@internal-types/SessionProfile';
 import { AdvancedHandlersBase } from '@server/domains/network/handlers.base';
 import { R } from '@server/domains/shared/ResponseBuilder';

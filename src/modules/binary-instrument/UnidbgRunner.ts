@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { access } from 'node:fs/promises';
 import { logger } from '@utils/logger';
 import { UNIDBG_TIMEOUT_MS } from '@src/constants';
+import { ToolError } from '@errors/ToolError';
+import { PrerequisiteError } from '@errors/PrerequisiteError';
 
 const UNIDBG_MAX_BUFFER_BYTES = 8 * 1024 * 1024;
 
@@ -48,19 +50,21 @@ export class UnidbgRunner {
   ): Promise<{ sessionId: string; soPath: string; arch: string }> {
     const resolvedJar = jarPath ?? process.env['UNIDBG_JAR'];
     if (!resolvedJar) {
-      throw new Error('UNIDBG_JAR is not configured. Set the UNIDBG_JAR env var or pass jarPath.');
+      throw new PrerequisiteError(
+        'UNIDBG_JAR is not configured. Set the UNIDBG_JAR env var or pass jarPath.',
+      );
     }
 
     try {
       await access(resolvedJar);
     } catch {
-      throw new Error(`Unidbg JAR not found: ${resolvedJar}`);
+      throw new ToolError('NOT_FOUND', `Unidbg JAR not found: ${resolvedJar}`);
     }
 
     try {
       await access(soPath);
     } catch {
-      throw new Error(`Shared library not found: ${soPath}`);
+      throw new ToolError('NOT_FOUND', `Shared library not found: ${soPath}`);
     }
 
     const sessionId = randomUUID();
@@ -111,7 +115,7 @@ export class UnidbgRunner {
   ): Promise<unknown> {
     const session = this.sessions.get(sessionId);
     if (!session) {
-      throw new Error(`No unidbg session found for ${sessionId}`);
+      throw new ToolError('NOT_FOUND', `No unidbg session found for ${sessionId}`);
     }
 
     const jarPath = process.env['UNIDBG_JAR'];
@@ -169,7 +173,7 @@ export class UnidbgRunner {
   async trace(sessionId: string): Promise<unknown> {
     const session = this.sessions.get(sessionId);
     if (!session) {
-      throw new Error(`No unidbg session found for ${sessionId}`);
+      throw new ToolError('NOT_FOUND', `No unidbg session found for ${sessionId}`);
     }
 
     const jarPath = process.env['UNIDBG_JAR'];
