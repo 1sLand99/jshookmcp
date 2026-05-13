@@ -1,7 +1,8 @@
 /**
- * Legacy compatibility SSE handler retained for direct imports/tests.
- *
- * Current runtime wiring uses handlers.impl.core.ts + handlers/sse-handlers.ts.
+ * @deprecated Legacy compatibility SSE handler retained for direct
+ * imports/tests. Current runtime wiring uses
+ * `handlers.impl.core.ts` + `handlers/sse-handlers.ts`. Do not add new
+ * behaviour here — patch the new module and migrate tests instead.
  */
 import type {
   SseEnableResult,

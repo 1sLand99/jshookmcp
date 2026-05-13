@@ -149,11 +149,14 @@ export class MemoryController {
           CloseHandle(handle);
         }
       } catch {
-        // If write fails, deactivate
+        // If write fails, deactivate and fully evict from the index
+        // so stale entries don't accumulate.
         entry.isActive = false;
         if (entry.timer) clearInterval(entry.timer);
+        this.freezes.delete(entry.id);
       }
     }, interval);
+    if (typeof entry.timer.unref === 'function') entry.timer.unref();
 
     this.freezes.set(entry.id, entry);
     return entry;

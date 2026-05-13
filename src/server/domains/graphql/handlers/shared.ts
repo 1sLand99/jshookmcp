@@ -7,6 +7,8 @@
 
 import type { Page } from 'rebrowser-puppeteer-core';
 import { isSsrfTarget } from '@server/domains/network/ssrf-policy';
+import { ToolError } from '@errors/ToolError';
+import { PrerequisiteError } from '@errors/PrerequisiteError';
 import type {
   InterceptRequest,
   PreviewPayload,
@@ -32,10 +34,21 @@ export function toError(error: unknown, context?: Record<string, unknown>) {
     success: false,
     error: getErrorMessage(error),
   };
+  // Surface structured error code when the caller raised a ToolError /
+  // PrerequisiteError so clients can branch on `code` instead of regex
+  // matching the message.
+  if (error instanceof ToolError) {
+    payload.code = error.code;
+    if (error.toolName) payload.toolName = error.toolName;
+    if (error.details) payload.details = error.details;
+  }
   if (context) {
     payload.context = context;
   }
 
+  // Prerequisite errors are user-correctable — do NOT set isError so the
+  // MCP client treats them as graceful guidance rather than tool failure.
+  const isPrerequisite = error instanceof PrerequisiteError;
   return {
     content: [
       {
@@ -43,7 +56,7 @@ export function toError(error: unknown, context?: Record<string, unknown>) {
         text: JSON.stringify(payload, null, 2),
       },
     ],
-    isError: true,
+    ...(isPrerequisite ? {} : { isError: true }),
   };
 }
 

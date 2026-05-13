@@ -20,8 +20,13 @@ export class WatchHandlers {
     const namespace = argString(args, 'namespace', 'default');
     const pollIntervalMs = argNumber(args, 'pollIntervalMs', 1000);
 
+    // Evict expired watches before accepting a new one so the cap reflects
+    // active subscriptions, not zombies left by clients that crashed mid-poll.
+    this.store.pruneExpiredWatches();
+
     const watchId = `watch_${randomUUID().slice(0, 8)}`;
     const isPattern = key.includes('*');
+    const now = Date.now();
 
     const watch: StateWatch = {
       id: watchId,
@@ -29,9 +34,10 @@ export class WatchHandlers {
       namespace,
       pattern: isPattern,
       pollIntervalMs,
-      lastChecked: Date.now(),
+      lastChecked: now,
       lastVersion: {},
-      createdAt: Date.now(),
+      createdAt: now,
+      expiresAt: now + this.store.watchIdleTtlMs,
     };
 
     const prefix = `${namespace}:`;
@@ -133,6 +139,7 @@ export class WatchHandlers {
     }
 
     watch.lastChecked = now;
+    watch.expiresAt = now + this.store.watchIdleTtlMs;
 
     return {
       watchId,

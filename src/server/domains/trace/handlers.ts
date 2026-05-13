@@ -14,6 +14,8 @@ import type { CDPSessionLike } from '@modules/trace/TraceRecorder';
 import { resolveArtifactPath } from '@utils/artifacts';
 import { argEnum } from '@server/domains/shared/parse-args';
 import { R } from '@server/domains/shared/ResponseBuilder';
+import { ToolError } from '@errors/ToolError';
+import { PrerequisiteError } from '@errors/PrerequisiteError';
 import {
   asBoolean,
   asNumber,
@@ -58,7 +60,7 @@ export class TraceToolHandlers {
 
     const eventBus = this.ctx.eventBus;
     if (!eventBus) {
-      throw new Error('EventBus not available on server context');
+      throw new PrerequisiteError('EventBus not available on server context');
     }
 
     let cdpSession: CDPSessionLike | null = null;
@@ -141,7 +143,7 @@ export class TraceToolHandlers {
     const dbPath = args['dbPath'] as string | undefined;
 
     if (!sql) {
-      throw new Error('sql parameter is required');
+      throw new ToolError('VALIDATION', 'sql parameter is required');
     }
 
     let result: TraceQueryResult;
@@ -154,8 +156,8 @@ export class TraceToolHandlers {
       } else {
         const activeDb = this.recorder.getDB();
         if (!activeDb) {
-          throw new Error(
-            'GRACEFUL: No active recording and no dbPath specified. Start a recording or provide a dbPath.',
+          throw new PrerequisiteError(
+            'No active recording and no dbPath specified. Start a recording or provide a dbPath.',
           );
         }
         activeDb.flush();
@@ -183,7 +185,7 @@ export class TraceToolHandlers {
     const timeDomain = (args['timeDomain'] as 'wall' | 'monotonic' | undefined) ?? 'wall';
 
     if (!timestamp) {
-      throw new Error('timestamp parameter is required');
+      throw new ToolError('VALIDATION', 'timestamp parameter is required');
     }
 
     let tempDb: TraceDB | null = null;
@@ -309,7 +311,7 @@ export class TraceToolHandlers {
     const returnSummary = asBoolean(args['returnSummary'], false);
 
     if (!requestId) {
-      throw new Error('requestId parameter is required');
+      throw new ToolError('VALIDATION', 'requestId parameter is required');
     }
 
     let tempDb: TraceDB | null = null;
@@ -320,7 +322,10 @@ export class TraceToolHandlers {
 
       const resource = db.getNetworkResource(requestId);
       if (!resource) {
-        throw new Error(`No recorded network flow found for requestId: ${requestId}`);
+        throw new ToolError(
+          'NOT_FOUND',
+          `No recorded network flow found for requestId: ${requestId}`,
+        );
       }
 
       const chunks = includeChunks ? db.getNetworkChunks(requestId, chunkLimit) : [];
@@ -358,7 +363,7 @@ export class TraceToolHandlers {
     const dbPath = args['dbPath'] as string | undefined;
 
     if (!snapshotId1 || !snapshotId2) {
-      throw new Error('snapshotId1 and snapshotId2 are required');
+      throw new ToolError('VALIDATION', 'snapshotId1 and snapshotId2 are required');
     }
 
     let tempDb: TraceDB | null = null;
@@ -375,10 +380,10 @@ export class TraceToolHandlers {
       );
 
       if (snap1Result.rowCount === 0) {
-        throw new Error(`Snapshot with id ${snapshotId1} not found`);
+        throw new ToolError('NOT_FOUND', `Snapshot with id ${snapshotId1} not found`);
       }
       if (snap2Result.rowCount === 0) {
-        throw new Error(`Snapshot with id ${snapshotId2} not found`);
+        throw new ToolError('NOT_FOUND', `Snapshot with id ${snapshotId2} not found`);
       }
 
       const snap1Row = rowToObject(snap1Result.columns, snap1Result.rows[0]!);
@@ -524,10 +529,10 @@ export class TraceToolHandlers {
       shouldClose = true;
     } else if (this.recorder.getState() === 'recording') {
       const activeDb = this.recorder.getDB();
-      if (!activeDb) throw new Error('Active recording has no database');
+      if (!activeDb) throw new PrerequisiteError('Active recording has no database');
       db = activeDb;
     } else {
-      throw new Error('GRACEFUL: No trace database specified and no active recording');
+      throw new PrerequisiteError('No trace database specified and no active recording');
     }
 
     try {

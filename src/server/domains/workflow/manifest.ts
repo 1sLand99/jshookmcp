@@ -60,6 +60,30 @@ const manifest = {
     tools: ['run_extension_workflow', 'list_extension_workflows'],
     hint: 'Extension workflow: list available workflows -> run the best matching workflow',
   },
+
+  // Surface the implicit dependency on browser/network domains: most workflow
+  // tools call into a live page or recorded network state. Declaring this
+  // here ensures the activation/router layer can show useful guidance instead
+  // of letting handlers fall over on the first call.
+  prerequisites: {
+    page_script_run: [
+      { condition: 'Browser must be launched', fix: 'Call browser_launch or browser_attach first' },
+    ],
+    api_probe_batch: [
+      { condition: 'Browser must be launched', fix: 'Call browser_launch or browser_attach first' },
+      {
+        condition: 'Network monitoring must be enabled',
+        fix: 'Call network_monitor(enable) first',
+      },
+    ],
+    js_bundle_search: [
+      { condition: 'Browser must be launched', fix: 'Call browser_launch or browser_attach first' },
+    ],
+    run_extension_workflow: [
+      { condition: 'Browser must be launched', fix: 'Call browser_launch or browser_attach first' },
+    ],
+  },
+
   registrations,
 } satisfies DomainManifest<typeof DEP_KEY, H, typeof DOMAIN>;
 
