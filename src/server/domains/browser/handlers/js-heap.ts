@@ -119,7 +119,7 @@ export class JSHeapSearchHandlers {
 
         const snapshotData = snapshotChunks.join('');
         snapshotChunks.length = 0;
-        const matches = this.searchSnapshot(snapshotData, pattern, maxResults, caseSensitive);
+        const matches = await this.searchSnapshot(snapshotData, pattern, maxResults, caseSensitive);
         const result = {
           success: true,
           pattern,
@@ -151,12 +151,15 @@ export class JSHeapSearchHandlers {
     });
   }
 
-  private searchSnapshot(
+  private async searchSnapshot(
     snapshotData: string,
     pattern: string,
     maxResults: number,
     caseSensitive: boolean,
-  ): HeapSearchMatch[] {
+  ): Promise<HeapSearchMatch[]> {
+    // Yield to the event loop every N nodes so a large snapshot doesn't pin
+    // the main thread (large pages can produce 200k+ string nodes).
+    const YIELD_INTERVAL = 1000;
     try {
       let parsed: unknown;
       try {
@@ -205,6 +208,9 @@ export class JSHeapSearchHandlers {
       const stringsArr = stringsRaw as string[];
 
       for (let i = 0; i < nodeCount && matches.length < maxResults; i++) {
+        if (i > 0 && i % YIELD_INTERVAL === 0) {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
         const base = i * nodeFieldCount;
         const typeOrdinal = nodesRaw[base + typeIdx] as number;
         const nameOrdinal = nodesRaw[base + nameIdx] as number;

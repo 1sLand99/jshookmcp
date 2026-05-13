@@ -35,11 +35,25 @@ const mocks = vi.hoisted(() => {
     return clientInstance;
   };
 
+  // execFile mock: callback-style (Node's child_process.execFile API).
+  // ensureAdbAvailable() uses promisify(execFile), so we honour the callback signature.
+  const execFileMock = vi.fn(
+    (
+      _cmd: string,
+      _args: string[],
+      _opts: unknown,
+      cb: (err: Error | null, stdout: string, stderr: string) => void,
+    ) => {
+      cb(null, 'Android Debug Bridge version 1.0.41', '');
+    },
+  );
+
   return {
     clientInstance,
     deviceClient,
     ClientCtor,
     checkADBBinary: vi.fn(() => true),
+    execFileMock,
     writeStreamOn: vi.fn(),
     writeStreamPipe: vi.fn(),
     // Expose reset for the internal module cache
@@ -49,6 +63,8 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('node:child_process', () => ({
   execSync: mocks.checkADBBinary,
+  execFile: mocks.execFileMock,
+  execFileSync: vi.fn(),
 }));
 
 vi.mock('@devicefarmer/adbkit', () => {
@@ -65,7 +81,7 @@ vi.mock('node:fs', () => ({
   })),
 }));
 
-import { ADBConnector } from '@modules/adb/ADBConnector';
+import { ADBConnector, resetAdbAvailabilityCache } from '@modules/adb/ADBConnector';
 import type { ADBDevice } from '@modules/adb/types';
 import { TEST_URLS } from '@tests/shared/test-urls';
 
@@ -73,6 +89,17 @@ describe('ADBConnector', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.checkADBBinary.mockReturnValue(true);
+    mocks.execFileMock.mockImplementation(
+      (
+        _cmd: string,
+        _args: string[],
+        _opts: unknown,
+        cb: (err: Error | null, stdout: string, stderr: string) => void,
+      ) => {
+        cb(null, 'Android Debug Bridge version 1.0.41', '');
+      },
+    );
+    resetAdbAvailabilityCache();
     // Reset the internal client cache so each test gets a fresh connector
     void import('@modules/adb/ADBConnector').then((_mod) => {
       // Access the module's internal cache via a new instance
@@ -80,17 +107,25 @@ describe('ADBConnector', () => {
   });
 
   describe('checkADBAvailable', () => {
-    it('returns true when ADB binary is in PATH', () => {
+    it('returns true when ADB binary is in PATH', async () => {
       const connector = new ADBConnector();
-      expect(connector.checkADBAvailable()).toBe(true);
+      expect(await connector.checkADBAvailable()).toBe(true);
     });
 
-    it('returns false when ADB binary is not in PATH', () => {
-      mocks.checkADBBinary.mockImplementation(() => {
-        throw new Error('command not found');
-      });
+    it('returns false when ADB binary is not in PATH', async () => {
+      mocks.execFileMock.mockImplementation(
+        (
+          _cmd: string,
+          _args: string[],
+          _opts: unknown,
+          cb: (err: Error | null, stdout: string, stderr: string) => void,
+        ) => {
+          cb(new Error('command not found'), '', '');
+        },
+      );
+      resetAdbAvailabilityCache();
       const connector = new ADBConnector();
-      expect(connector.checkADBAvailable()).toBe(false);
+      expect(await connector.checkADBAvailable()).toBe(false);
     });
   });
 
@@ -117,9 +152,17 @@ describe('ADBConnector', () => {
     });
 
     it('throws when ADB binary is unavailable', async () => {
-      mocks.checkADBBinary.mockImplementation(() => {
-        throw new Error('command not found');
-      });
+      mocks.execFileMock.mockImplementation(
+        (
+          _cmd: string,
+          _args: string[],
+          _opts: unknown,
+          cb: (err: Error | null, stdout: string, stderr: string) => void,
+        ) => {
+          cb(new Error('command not found'), '', '');
+        },
+      );
+      resetAdbAvailabilityCache();
       const connector = new ADBConnector();
       await expect(connector.listDevices()).rejects.toThrow('ADB server binary not found');
     });
@@ -135,9 +178,17 @@ describe('ADBConnector', () => {
     });
 
     it('throws when ADB binary is unavailable', async () => {
-      mocks.checkADBBinary.mockImplementation(() => {
-        throw new Error('command not found');
-      });
+      mocks.execFileMock.mockImplementation(
+        (
+          _cmd: string,
+          _args: string[],
+          _opts: unknown,
+          cb: (err: Error | null, stdout: string, stderr: string) => void,
+        ) => {
+          cb(new Error('command not found'), '', '');
+        },
+      );
+      resetAdbAvailabilityCache();
       const connector = new ADBConnector();
       await expect(connector.shellCommand('emulator-5554', 'ls')).rejects.toThrow(
         'ADB server binary not found',
@@ -153,9 +204,17 @@ describe('ADBConnector', () => {
     });
 
     it('throws when ADB binary is unavailable', async () => {
-      mocks.checkADBBinary.mockImplementation(() => {
-        throw new Error('command not found');
-      });
+      mocks.execFileMock.mockImplementation(
+        (
+          _cmd: string,
+          _args: string[],
+          _opts: unknown,
+          cb: (err: Error | null, stdout: string, stderr: string) => void,
+        ) => {
+          cb(new Error('command not found'), '', '');
+        },
+      );
+      resetAdbAvailabilityCache();
       const connector = new ADBConnector();
       await expect(connector.forwardPort('emulator-5554', 9222, 9222)).rejects.toThrow(
         'ADB server binary not found',

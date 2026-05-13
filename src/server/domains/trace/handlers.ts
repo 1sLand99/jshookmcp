@@ -77,6 +77,7 @@ export class TraceToolHandlers {
     const session = await this.recorder.start(eventBus, cdpSession, {
       cdpDomains,
       recordMemoryDeltas: recordMemoryDeltas ?? true,
+      ownsSession: cdpSession !== null,
       network: {
         recordResponseBodies,
         streamResponseChunks,

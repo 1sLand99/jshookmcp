@@ -1,17 +1,40 @@
-import * as crypto from 'crypto';
-import * as fs from 'fs';
-import * as path from 'path';
+import { createPrivateKey } from 'node:crypto';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { logger } from '@utils/logger';
 import { R } from '@server/domains/shared/ResponseBuilder';
-const ResponseBuilder = {
-  success: (data: any) => R.ok().merge(data).json(),
-  error: (msg: string) => R.fail(msg).mcpError().json(),
-};
 import {
   argNumber,
   argBool,
   argStringRequired,
   argString,
 } from '@server/domains/shared/parse-args';
+
+const ResponseBuilder = {
+  success: (data: Record<string, unknown>) => R.ok().merge(data).json(),
+  error: (msg: string) => R.fail(msg).mcpError().json(),
+};
+
+const CAPTURE_BUFFER_MAX = 5000;
+
+interface CaptureEntry {
+  type: 'request' | 'response';
+  id: string;
+  method?: string;
+  url?: string;
+  status?: number;
+  headers?: Record<string, string>;
+  timestamp: number;
+}
+
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function compileUrlPattern(urlPattern: string): RegExp {
   const trimmed = urlPattern.trim();
@@ -25,18 +48,62 @@ function compileUrlPattern(urlPattern: string): RegExp {
 }
 
 export class ProxyHandlers {
-  private server: any = null;
-  private caPathDir: string;
+  private server: unknown = null;
+  private readonly caPathDir: string;
   private currentPort: number | null = null;
-  private captureBuffer: any[] = [];
-  private mockttpModule: any = null;
+  private captureBuffer: CaptureEntry[] = [];
+  private mockttpModule: typeof import('mockttp') | null = null;
+  private caReady = false;
 
   constructor() {
-    // Store CA in OS tmp dir or user dir
-    // For convenience we'll try to put it in <home>/.jshookmcp/ca
+    // Resolve CA dir without touching disk — actual mkdir happens lazily in ensureCa().
     const home = process.env.HOME || process.env.USERPROFILE || '/tmp';
     this.caPathDir = path.join(home, '.jshookmcp', 'ca');
-    fs.mkdirSync(this.caPathDir, { recursive: true });
+  }
+
+  /** Push capture entry with bounded buffer (FIFO). */
+  private appendCapture(entry: CaptureEntry): void {
+    this.captureBuffer.push(entry);
+    if (this.captureBuffer.length > CAPTURE_BUFFER_MAX) {
+      this.captureBuffer.shift();
+    }
+  }
+
+  /** Lazily ensure CA dir + key/cert exist. Idempotent, async. */
+  private async ensureCa(
+    mockttp: typeof import('mockttp'),
+  ): Promise<{ key: string; cert: string; certPath: string }> {
+    const keyPath = path.join(this.caPathDir, 'ca.key');
+    const certPath = path.join(this.caPathDir, 'ca.pem');
+
+    if (!this.caReady) {
+      await mkdir(this.caPathDir, { recursive: true });
+      this.caReady = true;
+    }
+
+    const hasKey = await pathExists(keyPath);
+    const hasCert = await pathExists(certPath);
+
+    if (!hasKey || !hasCert) {
+      logger.info('[proxy] generating new CA certificates');
+      const ca = await mockttp.generateCACertificate();
+
+      // Normalize to PKCS#8 for cross-platform compatibility (asn1.js schema
+      // resolution can fail on some Linux CI environments).
+      try {
+        const keyObj = createPrivateKey(ca.key);
+        ca.key = keyObj.export({ type: 'pkcs8', format: 'pem' }).toString();
+      } catch {
+        // Keep the original PEM if Node crypto can't parse it.
+      }
+
+      await writeFile(keyPath, ca.key, { mode: 0o600 });
+      await writeFile(certPath, ca.cert);
+    }
+
+    const key = await readFile(keyPath, 'utf8');
+    const cert = await readFile(certPath, 'utf8');
+    return { key, cert, certPath };
   }
 
   async handleProxyStart(args: Record<string, unknown>) {
@@ -51,39 +118,29 @@ export class ProxyHandlers {
       const mockttp = this.mockttpModule ?? (await import('mockttp'));
       this.mockttpModule = mockttp;
 
+      let caCertPath: string | null = null;
+      let server: ReturnType<typeof mockttp.getLocal>;
       if (useHttps) {
-        const keyPath = path.join(this.caPathDir, 'ca.key');
-        const certPath = path.join(this.caPathDir, 'ca.pem');
-
-        if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
-          console.log('[Proxy] generating new CA certificates...');
-          const ca = await mockttp.generateCACertificate();
-
-          // Normalize to PKCS#8 for cross-platform compatibility (asn1.js schema
-          // resolution can fail on some Linux CI environments)
-          try {
-            const keyObj = crypto.createPrivateKey(ca.key);
-            ca.key = keyObj.export({ type: 'pkcs8', format: 'pem' }).toString();
-          } catch {
-            // Keep the original PEM if Node crypto can't parse it
-          }
-
-          fs.writeFileSync(keyPath, ca.key, { mode: 0o600 });
-          fs.writeFileSync(certPath, ca.cert);
-        }
-
-        const key = fs.readFileSync(keyPath, 'utf8');
-        const cert = fs.readFileSync(certPath, 'utf8');
-        this.server = mockttp.getLocal({
-          https: { key, cert },
-          cors: true,
-        });
+        const { key, cert, certPath } = await this.ensureCa(mockttp);
+        caCertPath = certPath;
+        server = mockttp.getLocal({ https: { key, cert }, cors: true });
       } else {
-        this.server = mockttp.getLocal();
+        server = mockttp.getLocal();
       }
 
-      this.server.on('request', (req: any) => {
-        this.captureBuffer.push({
+      // mockttp types only declare 'rule-event' for .on(); 'request'/'response' are
+      // actually emitted at runtime but missing from the .d.ts. Cast to a wider event API.
+      const eventEmitter = server as unknown as {
+        on(event: string, handler: (payload: unknown) => void): void;
+      };
+      eventEmitter.on('request', (raw) => {
+        const req = raw as {
+          id: string;
+          method: string;
+          url: string;
+          headers: Record<string, string>;
+        };
+        this.appendCapture({
           type: 'request',
           id: req.id,
           method: req.method,
@@ -91,12 +148,10 @@ export class ProxyHandlers {
           headers: req.headers,
           timestamp: Date.now(),
         });
-        // limit buffer
-        if (this.captureBuffer.length > 5000) this.captureBuffer.shift();
       });
-
-      this.server.on('response', (res: any) => {
-        this.captureBuffer.push({
+      eventEmitter.on('response', (raw) => {
+        const res = raw as { id: string; statusCode: number; headers: Record<string, string> };
+        this.appendCapture({
           type: 'response',
           id: res.id,
           status: res.statusCode,
@@ -105,17 +160,19 @@ export class ProxyHandlers {
         });
       });
 
-      await this.server.start(port);
+      await server.start(port);
+      this.server = server;
       this.currentPort = port;
 
       return ResponseBuilder.success({
-        message: `Proxy started.`,
+        message: 'Proxy started.',
         port: this.currentPort,
-        caCertPath: useHttps ? path.join(this.caPathDir, 'ca.pem') : null,
+        caCertPath,
       });
-    } catch (e: any) {
+    } catch (e) {
       this.server = null;
-      return ResponseBuilder.error(`Failed to start proxy: ${e.message}`);
+      const message = e instanceof Error ? e.message : String(e);
+      return ResponseBuilder.error(`Failed to start proxy: ${message}`);
     }
   }
 
@@ -123,7 +180,7 @@ export class ProxyHandlers {
     if (!this.server) {
       return ResponseBuilder.error('Proxy is not running.');
     }
-    await this.server.stop();
+    await (this.server as { stop: () => Promise<void> }).stop();
     this.server = null;
     this.currentPort = null;
     return ResponseBuilder.success({ message: 'Proxy stopped successfully' });
@@ -140,12 +197,12 @@ export class ProxyHandlers {
 
   async handleProxyExportCa(_args: Record<string, unknown>) {
     const certPath = path.join(this.caPathDir, 'ca.pem');
-    if (!fs.existsSync(certPath)) {
+    if (!(await pathExists(certPath))) {
       return ResponseBuilder.error(
         'CA certificate not found. Start the proxy with HTTPS enabled first.',
       );
     }
-    const certContent = fs.readFileSync(certPath, 'utf8');
+    const certContent = await readFile(certPath, 'utf8');
     return ResponseBuilder.success({
       path: certPath,
       content: certContent,
@@ -163,14 +220,25 @@ export class ProxyHandlers {
 
     try {
       const matcher = compileUrlPattern(urlPattern);
-      let builder: any;
-      if (method === 'GET') builder = this.server.forGet(matcher);
-      else if (method === 'POST') builder = this.server.forPost(matcher);
-      else if (method === 'PUT') builder = this.server.forPut(matcher);
-      else if (method === 'DELETE') builder = this.server.forDelete(matcher);
-      else builder = this.server.forAnyRequest();
+      const server = this.server as {
+        forGet: (m: RegExp) => unknown;
+        forPost: (m: RegExp) => unknown;
+        forPut: (m: RegExp) => unknown;
+        forDelete: (m: RegExp) => unknown;
+        forAnyRequest: () => unknown;
+      };
+      let builder: {
+        thenPassThrough: () => Promise<{ id: string }>;
+        thenCloseConnection: () => Promise<{ id: string }>;
+        thenReply: (status: number, body: string) => Promise<{ id: string }>;
+      };
+      if (method === 'GET') builder = server.forGet(matcher) as typeof builder;
+      else if (method === 'POST') builder = server.forPost(matcher) as typeof builder;
+      else if (method === 'PUT') builder = server.forPut(matcher) as typeof builder;
+      else if (method === 'DELETE') builder = server.forDelete(matcher) as typeof builder;
+      else builder = server.forAnyRequest() as typeof builder;
 
-      let endpoint;
+      let endpoint: { id: string };
       if (action === 'forward') {
         endpoint = await builder.thenPassThrough();
       } else if (action === 'block') {
@@ -187,16 +255,17 @@ export class ProxyHandlers {
         message: 'Rule added successfully',
         endpointId: endpoint.id,
       });
-    } catch (e: any) {
-      return ResponseBuilder.error(`Failed to add rule: ${e.message}`);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return ResponseBuilder.error(`Failed to add rule: ${message}`);
     }
   }
 
   async handleProxyGetRequests(args: Record<string, unknown>) {
     const urlFilter = argString(args, 'urlFilter');
-    let results = this.captureBuffer;
+    let results: CaptureEntry[] = this.captureBuffer;
     if (urlFilter) {
-      results = results.filter((r) => r.url && r.url.includes(urlFilter));
+      results = results.filter((r) => r.url !== undefined && r.url.includes(urlFilter));
     }
     return ResponseBuilder.success({
       count: results.length,
@@ -217,14 +286,14 @@ export class ProxyHandlers {
       );
     }
     const certPath = path.join(this.caPathDir, 'ca.pem');
-    if (!fs.existsSync(certPath)) {
+    if (!(await pathExists(certPath))) {
       return ResponseBuilder.error(
         'CA certificate not found. Start the proxy with HTTPS enabled first.',
       );
     }
 
-    const { exec } = await import('child_process');
-    const { promisify } = await import('util');
+    const { exec } = await import('node:child_process');
+    const { promisify } = await import('node:util');
     const execAsync = promisify(exec);
 
     const deviceSerial = argString(args, 'deviceSerial');
@@ -269,8 +338,9 @@ export class ProxyHandlers {
         deviceId: deviceSerial || 'default',
         instructions,
       });
-    } catch (e: any) {
-      return ResponseBuilder.error(`Failed to configure ADB device: ${e.message}`);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return ResponseBuilder.error(`Failed to configure ADB device: ${message}`);
     }
   }
 }

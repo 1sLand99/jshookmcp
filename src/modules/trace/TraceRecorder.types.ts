@@ -6,6 +6,8 @@ export interface CDPSessionLike {
   on(event: string, handler: (params: unknown) => void): void;
   off(event: string, handler: (params: unknown) => void): void;
   send(method: string, params?: Record<string, unknown>): Promise<unknown>;
+  /** Detach the CDP session. Optional — present on Puppeteer/Playwright sessions. */
+  detach?(): Promise<void>;
 }
 
 export interface TraceNetworkCaptureOptions {
@@ -29,6 +31,11 @@ export interface TraceRecorderOptions {
   recordMemoryDeltas?: boolean;
   /** Network flow/body capture settings. */
   network?: TraceNetworkCaptureOptions;
+  /**
+   * Whether the recorder owns the CDP session lifetime. When true, the recorder
+   * will call `session.detach()` (if available) on stop/failed-start. Default: false.
+   */
+  ownsSession?: boolean;
 }
 
 /** Current state of the trace recorder. */

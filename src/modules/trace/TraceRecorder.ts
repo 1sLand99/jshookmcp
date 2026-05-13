@@ -36,6 +36,7 @@ export class TraceRecorder {
   private cdpListeners = new Map<string, CDPEventHandler>();
   private enabledCdpDomains = new Set<string>();
   private cdpSession: CDPSessionLike | null = null;
+  private ownsCdpSession = false;
   private eventCount = 0;
   private memoryDeltaCount = 0;
   private heapSnapshotCount = 0;
@@ -86,6 +87,7 @@ export class TraceRecorder {
     this.cdpListeners.clear();
     this.enabledCdpDomains.clear();
     this.cdpSession = cdpSession;
+    this.ownsCdpSession = options?.ownsSession ?? false;
 
     try {
       const networkOptions = this.networkCapture.configure(options?.network);
@@ -301,7 +303,17 @@ export class TraceRecorder {
         );
       }
       this.enabledCdpDomains.clear();
+      if (this.ownsCdpSession && typeof this.cdpSession.detach === 'function') {
+        try {
+          await this.cdpSession.detach();
+        } catch (err) {
+          (cleanupErrors ??= []).push(
+            `cdpSession.detach failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
       this.cdpSession = null;
+      this.ownsCdpSession = false;
     }
 
     if (this.db) {
@@ -388,7 +400,13 @@ export class TraceRecorder {
       );
     }
     this.enabledCdpDomains.clear();
+    if (this.cdpSession && this.ownsCdpSession && typeof this.cdpSession.detach === 'function') {
+      await this.cdpSession.detach().catch(() => {
+        // Best-effort cleanup after failed start
+      });
+    }
     this.cdpSession = null;
+    this.ownsCdpSession = false;
 
     if (this.db) {
       try {
