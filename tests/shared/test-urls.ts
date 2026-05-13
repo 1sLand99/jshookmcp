@@ -197,5 +197,9 @@ export function buildTestUrl(
   return withPath(`${scheme}://${host}`, path);
 }
 
-export const E2E_DEFAULT_TARGET_URL = 'https://vmoranv.github.io/jshookmcp/';
-export const E2E_DEFAULT_TARGET_GLOB = '*vmoranv.github.io/jshookmcp/*';
+export const E2E_TARGET_HOST = 'vmoranv.github.io';
+export const E2E_TARGET_PATH = 'jshookmcp';
+export const E2E_SPOOFED_TARGET_HOST = 'vmoranvxgithubxio';
+export const E2E_DEFAULT_TARGET_URL = `https://${E2E_TARGET_HOST}/${E2E_TARGET_PATH}/`;
+export const E2E_DEFAULT_TARGET_GLOB = `*${E2E_TARGET_HOST}/${E2E_TARGET_PATH}/*`;
+export const E2E_SPOOFED_TARGET_URL = `https://${E2E_SPOOFED_TARGET_HOST}/${E2E_TARGET_PATH}/`;

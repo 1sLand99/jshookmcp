@@ -1,5 +1,6 @@
 import type { Page } from 'rebrowser-puppeteer-core';
 import { logger } from '@utils/logger';
+import { matchesWildcardPattern } from '@utils/matchesWildcardPattern';
 
 export function shouldCollectUrlImpl(url: string, filterRules?: string[]): boolean {
   if (!filterRules || filterRules.length === 0) {
@@ -7,8 +8,7 @@ export function shouldCollectUrlImpl(url: string, filterRules?: string[]): boole
   }
 
   for (const rule of filterRules) {
-    const regex = new RegExp(rule.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*+/g, '.*'));
-    if (regex.test(url)) {
+    if (matchesWildcardPattern(url, rule)) {
       return true;
     }
   }

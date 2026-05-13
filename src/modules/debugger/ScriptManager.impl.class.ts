@@ -2,6 +2,7 @@ import type { CDPSession } from 'rebrowser-puppeteer-core';
 import type { CodeCollector } from '@modules/collector/CodeCollector';
 import { setImmediate as waitForImmediate } from 'node:timers/promises';
 import { logger } from '@utils/logger';
+import { matchesWildcardPattern } from '@utils/matchesWildcardPattern';
 import {
   extractFunctionTreeCore,
   type ExtractFunctionTreeResult,
@@ -257,11 +258,8 @@ export class ScriptManager {
     if (scriptId) {
       targetScript = this.scripts.get(scriptId);
     } else if (url) {
-      const urlPattern = url.replace(/\*/g, '.*');
-      const regex = new RegExp(urlPattern);
-
       for (const [scriptUrl, scripts] of this.scriptsByUrl.entries()) {
-        if (regex.test(scriptUrl)) {
+        if (matchesWildcardPattern(scriptUrl, url)) {
           targetScript = scripts[0];
           break;
         }
@@ -290,12 +288,10 @@ export class ScriptManager {
   async findScriptsByUrl(urlPattern: string): Promise<ScriptInfo[]> {
     await this.ensureCdpSession();
 
-    const pattern = urlPattern.replace(/\*/g, '.*');
-    const regex = new RegExp(pattern);
     const results: ScriptInfo[] = [];
 
     for (const [url, scripts] of this.scriptsByUrl.entries()) {
-      if (regex.test(url)) {
+      if (matchesWildcardPattern(url, urlPattern)) {
         results.push(...scripts);
       }
     }

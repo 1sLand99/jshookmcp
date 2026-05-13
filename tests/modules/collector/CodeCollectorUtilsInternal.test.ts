@@ -17,7 +17,12 @@ import {
   navigateWithRetryImpl,
   shouldCollectUrlImpl,
 } from '@modules/collector/CodeCollectorUtilsInternal';
-import { TEST_URLS, withPath } from '@tests/shared/test-urls';
+import {
+  E2E_DEFAULT_TARGET_URL,
+  E2E_SPOOFED_TARGET_URL,
+  TEST_URLS,
+  withPath,
+} from '@tests/shared/test-urls';
 
 describe('CodeCollector utils internals', () => {
   beforeEach(() => {
@@ -28,6 +33,15 @@ describe('CodeCollector utils internals', () => {
     expect(shouldCollectUrlImpl(withPath(TEST_URLS.root, 'app.js'), ['*app.js'])).toBe(true);
     expect(shouldCollectUrlImpl(withPath(TEST_URLS.root, 'app.css'), ['*app.js'])).toBe(false);
     expect(shouldCollectUrlImpl(withPath(TEST_URLS.root, 'any'), [])).toBe(true);
+  });
+
+  it('treats dots in hostname rules as literal characters', () => {
+    expect(
+      shouldCollectUrlImpl(withPath(E2E_DEFAULT_TARGET_URL, 'app.js'), [E2E_DEFAULT_TARGET_URL]),
+    ).toBe(true);
+    expect(
+      shouldCollectUrlImpl(withPath(E2E_SPOOFED_TARGET_URL, 'app.js'), [E2E_DEFAULT_TARGET_URL]),
+    ).toBe(false);
   });
 
   it('retries navigation until it succeeds', async () => {

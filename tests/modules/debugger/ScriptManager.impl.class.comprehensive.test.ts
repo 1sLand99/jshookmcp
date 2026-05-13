@@ -21,7 +21,12 @@ vi.mock('@modules/debugger/ScriptManager.impl.extract-function-tree', () => ({
 }));
 
 import { ScriptManager } from '@modules/debugger/ScriptManager.impl.class';
-import { TEST_URLS, withPath } from '@tests/shared/test-urls';
+import {
+  E2E_DEFAULT_TARGET_URL,
+  E2E_SPOOFED_TARGET_URL,
+  TEST_URLS,
+  withPath,
+} from '@tests/shared/test-urls';
 
 function createSession() {
   const listeners = new Map<string, Set<(payload: any) => void>>();
@@ -190,6 +195,17 @@ describe('ScriptManager.impl.class comprehensive tests', () => {
       emitScript(cdp, '1', `${testUrls.TEST_URLS.root}/vendor.bundle.js`);
 
       const result = await manager.getScriptSource(undefined, '*vendor*');
+
+      expect(result).not.toBeNull();
+      expect(result?.scriptId).toBe('1');
+    });
+
+    it('treats dots in url lookups as literal characters', async () => {
+      await manager.init();
+      emitScript(cdp, '1', withPath(E2E_DEFAULT_TARGET_URL, 'assets/app.js'));
+      emitScript(cdp, '2', withPath(E2E_SPOOFED_TARGET_URL, 'assets/app.js'));
+
+      const result = await manager.getScriptSource(undefined, E2E_DEFAULT_TARGET_URL);
 
       expect(result).not.toBeNull();
       expect(result?.scriptId).toBe('1');
