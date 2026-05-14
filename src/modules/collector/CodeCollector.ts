@@ -1,5 +1,4 @@
 import { existsSync } from 'fs';
-import { launch } from 'rebrowser-puppeteer-core';
 import type { Browser, Page, CDPSession, Target } from 'rebrowser-puppeteer-core';
 import type {
   CollectCodeOptions,
@@ -16,7 +15,7 @@ import { CodeCompressor } from '@modules/collector/CodeCompressor';
 import { BrowserTargetSessionManager } from '@modules/browser/BrowserTargetSessionManager';
 import type { BrowserTargetInfo } from '@modules/browser/BrowserTargetSessionManager';
 import type { CDPSessionLike } from '@modules/browser/CDPSessionLike';
-import { findBrowserExecutable } from '@utils/browserExecutable';
+import { findBrowserExecutableAsync } from '@utils/browserExecutable';
 import { collectInnerImpl } from '@modules/collector/CodeCollectorCollectInternal';
 import {
   shouldCollectUrlImpl,
@@ -177,7 +176,18 @@ export class CodeCollector {
         .forEach((url) => this.collectedUrls.add(url));
     }
   }
+  private initGuard: Promise<void> | null = null;
   async init(headless?: boolean): Promise<void> {
+    if (this.initGuard) return this.initGuard;
+    this.initGuard = this.initInner(headless);
+    try {
+      await this.initGuard;
+    } finally {
+      this.initGuard = null;
+    }
+  }
+
+  private async initInner(headless?: boolean): Promise<void> {
     await this.launch(headless === undefined ? undefined : { headless });
   }
 
@@ -186,7 +196,7 @@ export class CodeCollector {
       await this.initPromise;
     }
 
-    const executablePath = this.resolveExecutablePath();
+    const executablePath = await this.resolveExecutablePath();
     const launchOptions = resolveChromeLaunchOptions(
       this.config,
       overrides,
@@ -243,7 +253,7 @@ export class CodeCollector {
       await this.disposeCurrentBrowser(false);
     }
 
-    const browserLaunchOptions: Parameters<typeof launch>[0] = {
+    const browserLaunchOptions: Parameters<typeof import('rebrowser-puppeteer-core').launch>[0] = {
       headless: launchOptions.headless,
       args: launchOptions.args,
       defaultViewport: this.viewport,
@@ -253,7 +263,9 @@ export class CodeCollector {
       browserLaunchOptions.executablePath = launchOptions.executablePath;
     }
     logger.info('Initializing browser with anti-detection...');
-    this.browser = await launch(browserLaunchOptions);
+    const puppeteer = await import('rebrowser-puppeteer-core');
+    const launchFn = puppeteer.default?.launch ?? puppeteer.launch;
+    this.browser = await launchFn(browserLaunchOptions);
     this.connectedToExistingBrowser = false;
     this.chromePid = this.browser.process()?.pid ?? null;
     if (this.chromePid) {
@@ -266,7 +278,7 @@ export class CodeCollector {
     });
     logger.success('Browser initialized with enhanced anti-detection');
   }
-  private resolveExecutablePath(): string | undefined {
+  private async resolveExecutablePath(): Promise<string | undefined> {
     const configuredPath = this.config.executablePath?.trim();
     if (configuredPath) {
       if (existsSync(configuredPath)) {
@@ -277,7 +289,7 @@ export class CodeCollector {
           'Set a valid executablePath or configure CHROME_PATH / PUPPETEER_EXECUTABLE_PATH / BROWSER_EXECUTABLE_PATH.',
       );
     }
-    const detectedPath = findBrowserExecutable();
+    const detectedPath = await findBrowserExecutableAsync();
     if (detectedPath) {
       return detectedPath;
     }

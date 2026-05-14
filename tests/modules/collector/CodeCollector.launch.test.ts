@@ -22,7 +22,7 @@ vi.mock('@modules/collector/playwright-cdp-fallback', () => ({
 }));
 
 vi.mock('@utils/browserExecutable', () => ({
-  findBrowserExecutable: mocks.findBrowserExecutable,
+  findBrowserExecutableAsync: mocks.findBrowserExecutable,
 }));
 
 vi.mock('@utils/logger', () => ({
@@ -56,7 +56,7 @@ const baseConfig: PuppeteerConfig = {
 describe('CodeCollector launch options', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.findBrowserExecutable.mockReturnValue(undefined);
+    mocks.findBrowserExecutable.mockResolvedValue(undefined);
     mocks.connectPlaywrightCdpFallback.mockRejectedValue(new Error('fallback unavailable'));
   });
 

@@ -16,7 +16,7 @@ vi.mock('@src/utils/logger', () => ({
 }));
 
 vi.mock('@src/utils/browserExecutable', () => ({
-  findBrowserExecutable: findBrowserExecutableMock,
+  findBrowserExecutableAsync: findBrowserExecutableMock,
 }));
 
 const puppeteerState = vi.hoisted(() => ({
@@ -39,7 +39,7 @@ import { EnvironmentEmulator } from '@modules/emulator/EnvironmentEmulator';
 describe('EnvironmentEmulator – coverage gaps', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    findBrowserExecutableMock.mockReturnValue(undefined);
+    findBrowserExecutableMock.mockResolvedValue(undefined);
   });
 
   // ─── detectEnvironmentVariables: AST paths ─────────────────────
@@ -422,7 +422,7 @@ describe('EnvironmentEmulator – coverage gaps', () => {
 
   // ─── resolveExecutablePath ──────────────────────────────────────
   describe('resolveExecutablePath edge cases', () => {
-    it('tries PUPPETEER_EXECUTABLE_PATH env var first', () => {
+    it('tries PUPPETEER_EXECUTABLE_PATH env var first', async () => {
       const emulator = new EnvironmentEmulator() as any;
       const oldPuppeteer = process.env.PUPPETEER_EXECUTABLE_PATH;
       const oldChrome = process.env.CHROME_PATH;
@@ -431,7 +431,7 @@ describe('EnvironmentEmulator – coverage gaps', () => {
       delete process.env.CHROME_PATH;
       delete process.env.BROWSER_EXECUTABLE_PATH;
 
-      expect(() => emulator.resolveExecutablePath()).toThrow(
+      await expect(emulator.resolveExecutablePath()).rejects.toThrow(
         'Configured browser executable was not found',
       );
 
@@ -440,7 +440,7 @@ describe('EnvironmentEmulator – coverage gaps', () => {
       process.env.BROWSER_EXECUTABLE_PATH = oldBrowser;
     });
 
-    it('tries BROWSER_EXECUTABLE_PATH env var', () => {
+    it('tries BROWSER_EXECUTABLE_PATH env var', async () => {
       const emulator = new EnvironmentEmulator() as any;
       const oldPuppeteer = process.env.PUPPETEER_EXECUTABLE_PATH;
       const oldChrome = process.env.CHROME_PATH;
@@ -449,7 +449,7 @@ describe('EnvironmentEmulator – coverage gaps', () => {
       delete process.env.CHROME_PATH;
       process.env.BROWSER_EXECUTABLE_PATH = '/nonexistent/browser';
 
-      expect(() => emulator.resolveExecutablePath()).toThrow(
+      await expect(emulator.resolveExecutablePath()).rejects.toThrow(
         'Configured browser executable was not found',
       );
 
@@ -458,7 +458,7 @@ describe('EnvironmentEmulator – coverage gaps', () => {
       process.env.BROWSER_EXECUTABLE_PATH = oldBrowser;
     });
 
-    it('returns undefined when no env vars set and findBrowserExecutable returns undefined', () => {
+    it('returns undefined when no env vars set and findBrowserExecutable returns undefined', async () => {
       const emulator = new EnvironmentEmulator() as any;
       const oldPuppeteer = process.env.PUPPETEER_EXECUTABLE_PATH;
       const oldChrome = process.env.CHROME_PATH;
@@ -466,9 +466,9 @@ describe('EnvironmentEmulator – coverage gaps', () => {
       delete process.env.PUPPETEER_EXECUTABLE_PATH;
       delete process.env.CHROME_PATH;
       delete process.env.BROWSER_EXECUTABLE_PATH;
-      findBrowserExecutableMock.mockReturnValue(undefined);
+      findBrowserExecutableMock.mockResolvedValue(undefined);
 
-      const result = emulator.resolveExecutablePath();
+      const result = await emulator.resolveExecutablePath();
       expect(result).toBeUndefined();
 
       process.env.PUPPETEER_EXECUTABLE_PATH = oldPuppeteer;
@@ -476,7 +476,7 @@ describe('EnvironmentEmulator – coverage gaps', () => {
       process.env.BROWSER_EXECUTABLE_PATH = oldBrowser;
     });
 
-    it('returns path from findBrowserExecutable when no env vars set', () => {
+    it('returns path from findBrowserExecutable when no env vars set', async () => {
       const emulator = new EnvironmentEmulator() as any;
       const oldPuppeteer = process.env.PUPPETEER_EXECUTABLE_PATH;
       const oldChrome = process.env.CHROME_PATH;
@@ -485,9 +485,9 @@ describe('EnvironmentEmulator – coverage gaps', () => {
       delete process.env.CHROME_PATH;
       delete process.env.BROWSER_EXECUTABLE_PATH;
       // @ts-expect-error
-      findBrowserExecutableMock.mockReturnValue('/usr/bin/chromium-browser');
+      findBrowserExecutableMock.mockResolvedValue('/usr/bin/chromium-browser');
 
-      const result = emulator.resolveExecutablePath();
+      const result = await emulator.resolveExecutablePath();
       expect(result).toBe('/usr/bin/chromium-browser');
 
       process.env.PUPPETEER_EXECUTABLE_PATH = oldPuppeteer;

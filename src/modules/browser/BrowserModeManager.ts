@@ -1,7 +1,7 @@
 import { existsSync } from 'fs';
-import { launch, type Browser, type Page, type LaunchOptions } from 'rebrowser-puppeteer-core';
+import type { Browser, Page, LaunchOptions } from 'rebrowser-puppeteer-core';
 import { logger } from '@utils/logger';
-import { findBrowserExecutable } from '@utils/browserExecutable';
+import { findBrowserExecutableAsync } from '@utils/browserExecutable';
 import { CaptchaDetector, type CaptchaDetectionResult } from '@modules/captcha/CaptchaDetector';
 import { determineCaptchaResolution } from '@modules/captcha/CaptchaPolicy';
 import { SessionProfileManager } from '@modules/stealth/SessionProfileManager';
@@ -125,7 +125,7 @@ export class BrowserModeManager {
 
   private async doLaunch(): Promise<Browser> {
     const headlessMode = this.isHeadless;
-    const executablePath = this.resolveExecutablePath();
+    const executablePath = await this.resolveExecutablePath();
     logger.info(`Launching browser (${headlessMode ? 'headless' : 'headed'} mode)...`);
 
     const options: LaunchOptions = {
@@ -145,7 +145,8 @@ export class BrowserModeManager {
       options.executablePath = executablePath;
     }
 
-    const browser = await launch(options);
+    const puppeteer = await import('rebrowser-puppeteer-core');
+    const browser = await (puppeteer.launch ?? puppeteer.default.launch)(options);
     const pid = browser.process()?.pid ?? null;
 
     if (this.isClosing) {
@@ -167,7 +168,7 @@ export class BrowserModeManager {
     return this.browser;
   }
 
-  private resolveExecutablePath(): string | undefined {
+  private async resolveExecutablePath(): Promise<string | undefined> {
     const configuredPath = this.launchOptions.executablePath?.trim();
     if (configuredPath) {
       if (existsSync(configuredPath)) {
@@ -179,7 +180,7 @@ export class BrowserModeManager {
       );
     }
 
-    const detectedPath = findBrowserExecutable();
+    const detectedPath = await findBrowserExecutableAsync();
     if (detectedPath) {
       return detectedPath;
     }

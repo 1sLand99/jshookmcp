@@ -1,4 +1,3 @@
-import puppeteer from 'rebrowser-puppeteer-core';
 import type { Browser, Page } from 'rebrowser-puppeteer-core';
 import type { DetectedEnvironmentVariables } from '@internal-types/index';
 import { logger } from '@utils/logger';
@@ -6,17 +5,13 @@ import { toChromeCompatibleWaitUntil } from '@modules/browser/navigation-wait-un
 import { EMULATOR_FETCH_GOTO_TIMEOUT_MS } from '@src/constants';
 
 type ManifestRecord = Record<string, unknown>;
-const launchBrowser = Reflect.get(
-  puppeteer,
-  'launch',
-) as typeof import('rebrowser-puppeteer-core').launch;
 
 interface FetchRealEnvironmentParams {
   browser?: Browser;
   url: string;
   detected: DetectedEnvironmentVariables;
   depth: number;
-  resolveExecutablePath: () => string | undefined;
+  resolveExecutablePath: () => string | undefined | Promise<string | undefined>;
   buildManifestFromTemplate: (
     detected: DetectedEnvironmentVariables,
     browserType: string,
@@ -34,8 +29,8 @@ export async function fetchRealEnvironmentData(
 
   try {
     if (!browser) {
-      const executablePath = resolveExecutablePath();
-      const launchOptions: Parameters<typeof launchBrowser>[0] = {
+      const executablePath = await resolveExecutablePath();
+      const launchOptions: Parameters<typeof import('rebrowser-puppeteer-core').launch>[0] = {
         headless: true,
         args: [
           '--no-sandbox',
@@ -53,6 +48,8 @@ export async function fetchRealEnvironmentData(
       if (executablePath) {
         launchOptions.executablePath = executablePath;
       }
+      const puppeteer = await import('rebrowser-puppeteer-core');
+      const launchBrowser = Reflect.get(puppeteer, 'launch') as typeof puppeteer.launch;
       browser = await launchBrowser(launchOptions);
     }
 

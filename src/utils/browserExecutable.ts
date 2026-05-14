@@ -1,5 +1,4 @@
 import { existsSync } from 'fs';
-import { executablePath } from 'rebrowser-puppeteer-core';
 
 /**
  * Browser executable resolution policy:
@@ -23,23 +22,31 @@ function resolveFromEnvironment(): string | undefined {
   return undefined;
 }
 
-function resolveFromPuppeteer(): string | undefined {
+let cachedExecutablePath: ((name: string) => string) | null = null;
+async function resolveFromPuppeteer(): Promise<string | undefined> {
   try {
-    const candidate = executablePath('chrome');
+    if (!cachedExecutablePath) {
+      const puppeteer = await import('rebrowser-puppeteer-core');
+      cachedExecutablePath = puppeteer.executablePath;
+    }
+    const candidate = cachedExecutablePath('chrome');
     if (candidate && existsSync(candidate)) {
       return candidate;
     }
   } catch {
-    // no managed/browser channel available in current environment
+    // puppeteer not installed or no managed browser
   }
   return undefined;
 }
 
 /**
- * Resolve explicit browser executable path.
+ * Resolve explicit browser executable path (sync).
  *
  * Returns undefined when no explicit path is configured so callers can
  * fall back to Puppeteer's managed browser behavior.
+ *
+ * Puppeteer-based resolution is only attempted on the first async call
+ * via {@link findBrowserExecutableAsync}.
  */
 export function findBrowserExecutable(): string | undefined {
   if (cachedBrowserPath !== null) {
@@ -49,7 +56,20 @@ export function findBrowserExecutable(): string | undefined {
     cachedBrowserPath = null;
   }
 
-  cachedBrowserPath = resolveFromEnvironment() ?? resolveFromPuppeteer();
+  cachedBrowserPath = resolveFromEnvironment();
+  return cachedBrowserPath ?? undefined;
+}
+
+/**
+ * Async variant that also probes Puppeteer's managed browser path.
+ */
+export async function findBrowserExecutableAsync(): Promise<string | undefined> {
+  const sync = findBrowserExecutable();
+  if (sync) return sync;
+
+  cachedBrowserPath = (await resolveFromPuppeteer()) ?? undefined;
+  // Mark as resolved so subsequent sync calls return the cached value
+  if (!cachedBrowserPath) cachedBrowserPath = undefined;
   return cachedBrowserPath;
 }
 

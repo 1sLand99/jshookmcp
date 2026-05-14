@@ -38,7 +38,7 @@ vi.mock('rebrowser-puppeteer-core', () => ({
 }));
 
 vi.mock('@utils/browserExecutable', () => ({
-  findBrowserExecutable: mocks.findBrowserExecutable,
+  findBrowserExecutableAsync: mocks.findBrowserExecutable,
 }));
 
 vi.mock('@utils/logger', () => ({
@@ -140,7 +140,7 @@ function seedFiles() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.findBrowserExecutable.mockReturnValue(undefined);
+  mocks.findBrowserExecutable.mockResolvedValue(undefined);
   mocks.existsSync.mockReturnValue(false);
   delete process.env.LOCALAPPDATA;
   delete process.env.XDG_CONFIG_HOME;

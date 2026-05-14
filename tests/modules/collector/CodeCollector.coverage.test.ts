@@ -26,7 +26,7 @@ vi.mock('rebrowser-puppeteer-core', () => ({
 }));
 
 vi.mock('@utils/browserExecutable', () => ({
-  findBrowserExecutable: mocks.findBrowserExecutable,
+  findBrowserExecutableAsync: mocks.findBrowserExecutable,
 }));
 
 vi.mock('@utils/logger', () => ({
@@ -78,7 +78,7 @@ const defaultConfig: PuppeteerConfig = { headless: true, timeout: 1000 };
 describe('CodeCollector – coverage gap', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.findBrowserExecutable.mockReturnValue(undefined);
+    mocks.findBrowserExecutable.mockResolvedValue(undefined);
   });
 
   // ─── forceKillPid ────────────────────────────────────────────────
@@ -531,7 +531,7 @@ describe('CodeCollector – coverage gap', () => {
   // ─── resolveExecutablePath via findBrowserExecutable ────────────
   describe('resolveExecutablePath', () => {
     it('uses detected browser executable from findBrowserExecutable', async () => {
-      mocks.findBrowserExecutable.mockReturnValue('/usr/bin/chromium');
+      mocks.findBrowserExecutable.mockResolvedValue('/usr/bin/chromium');
       const browser = createBrowserMock();
       mocks.launch.mockResolvedValue(browser);
 

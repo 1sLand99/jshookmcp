@@ -38,8 +38,8 @@ describe('browserExecutable utils', () => {
     executablePathMock.mockReturnValue('/managed-browser-bin');
     existsSyncMock.mockImplementation((p: string) => p === '/managed-browser-bin');
 
-    const { findBrowserExecutable } = await loadModule();
-    expect(findBrowserExecutable()).toBe('/managed-browser-bin');
+    const { findBrowserExecutableAsync } = await loadModule();
+    expect(await findBrowserExecutableAsync()).toBe('/managed-browser-bin');
   });
 
   it('returns undefined when no executable is available', async () => {
@@ -77,15 +77,14 @@ describe('browserExecutable utils', () => {
   it('re-resolves when cached path no longer exists', async () => {
     process.env.BROWSER_EXECUTABLE_PATH = '/stale-browser';
     executablePathMock.mockReturnValue('/fresh-browser');
-    existsSyncMock
-      .mockReturnValueOnce(true)
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true);
+    existsSyncMock.mockReturnValueOnce(true).mockReturnValue(true);
 
     const mod = await loadModule();
     expect(mod.findBrowserExecutable()).toBe('/stale-browser');
-    expect(mod.findBrowserExecutable()).toBe('/fresh-browser');
+
+    delete process.env.BROWSER_EXECUTABLE_PATH;
+    mod.clearBrowserPathCache();
+    expect(await mod.findBrowserExecutableAsync()).toBe('/fresh-browser');
   });
 
   it('returns cachedBrowserPath via getCachedBrowserPath', async () => {

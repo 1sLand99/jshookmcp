@@ -42,7 +42,7 @@ vi.mock('rebrowser-puppeteer-core', () => ({
 }));
 
 vi.mock('@src/utils/browserExecutable', () => ({
-  findBrowserExecutable: findBrowserExecutableMock,
+  findBrowserExecutableAsync: findBrowserExecutableMock,
 }));
 
 vi.mock('@src/modules/captcha/CaptchaDetector', () => ({
@@ -60,7 +60,7 @@ vi.mock('@modules/captcha/CaptchaPolicy', () => ({
 import { BrowserModeManager } from '@modules/browser/BrowserModeManager';
 
 interface BrowserModeManagerMirror {
-  resolveExecutablePath(): string;
+  resolveExecutablePath(): Promise<string>;
 }
 
 async function withPatchedGlobals<T>(
@@ -111,31 +111,31 @@ describe('BrowserModeManager', () => {
     });
   });
 
-  it('resolves configured executable path when file exists', () => {
+  it('resolves configured executable path when file exists', async () => {
     existsSyncMock.mockReturnValue(true);
     const manager = new BrowserModeManager({}, { executablePath: '/my/browser-bin' });
     const mirror = manager as unknown as BrowserModeManagerMirror;
-    const path = mirror.resolveExecutablePath();
+    const path = await mirror.resolveExecutablePath();
     expect(path).toBe('/my/browser-bin');
   });
 
-  it('throws when configured executable path does not exist', () => {
+  it('throws when configured executable path does not exist', async () => {
     existsSyncMock.mockReturnValue(false);
     const manager = new BrowserModeManager({}, { executablePath: '/missing/browser-bin' });
     const mirror = manager as unknown as BrowserModeManagerMirror;
-    expect(() => mirror.resolveExecutablePath()).toThrow(/not found/i);
+    await expect(mirror.resolveExecutablePath()).rejects.toThrow(/not found/i);
   });
 
-  it('uses detected executable path when not explicitly configured', () => {
-    findBrowserExecutableMock.mockReturnValue('/detected/browser-bin');
+  it('uses detected executable path when not explicitly configured', async () => {
+    findBrowserExecutableMock.mockResolvedValue('/detected/browser-bin');
     const manager = new BrowserModeManager();
     const mirror = manager as unknown as BrowserModeManagerMirror;
-    const path = mirror.resolveExecutablePath();
+    const path = await mirror.resolveExecutablePath();
     expect(path).toBe('/detected/browser-bin');
   });
 
   it('launches browser with hardened args', async () => {
-    findBrowserExecutableMock.mockReturnValue('/detected/browser-bin');
+    findBrowserExecutableMock.mockResolvedValue('/detected/browser-bin');
     const fakeBrowser = {
       newPage: vi.fn(),
       close: vi.fn(),
@@ -253,7 +253,7 @@ describe('BrowserModeManager', () => {
   });
 
   it('reuses the same launch promise for concurrent newPage calls', async () => {
-    findBrowserExecutableMock.mockReturnValue('/detected/browser-bin');
+    findBrowserExecutableMock.mockResolvedValue('/detected/browser-bin');
 
     const firstPage = {
       evaluateOnNewDocument: vi.fn(async () => {}),
@@ -276,6 +276,8 @@ describe('BrowserModeManager', () => {
     const firstNewPage = manager.newPage();
     const secondNewPage = manager.newPage();
 
+    // Allow microtasks (resolveExecutablePath + dynamic import) to flush
+    await new Promise((r) => setTimeout(r, 0));
     expect(launchMock).toHaveBeenCalledTimes(1);
 
     deferred.resolve(fakeBrowser);
@@ -288,7 +290,7 @@ describe('BrowserModeManager', () => {
   });
 
   it('returns from close while launch is still pending and closes once launch settles', async () => {
-    findBrowserExecutableMock.mockReturnValue('/detected/browser-bin');
+    findBrowserExecutableMock.mockResolvedValue('/detected/browser-bin');
 
     const deferred = createDeferred<Browser>();
     const fakeBrowser = {
@@ -318,7 +320,7 @@ describe('BrowserModeManager', () => {
   });
 
   it('injects anti-detection scripts into a new page and rewrites browser signals', async () => {
-    findBrowserExecutableMock.mockReturnValue('/detected/browser-bin');
+    findBrowserExecutableMock.mockResolvedValue('/detected/browser-bin');
 
     const page = {
       evaluateOnNewDocument: vi.fn(async () => {}),
@@ -364,7 +366,7 @@ describe('BrowserModeManager', () => {
   });
 
   it('switches to headed mode when CAPTCHA policy requests it and restores session data', async () => {
-    findBrowserExecutableMock.mockReturnValue('/detected/browser-bin');
+    findBrowserExecutableMock.mockResolvedValue('/detected/browser-bin');
     determineCaptchaResolutionMock.mockReturnValue({
       action: 'switch_to_headed',
       reason: 'manual solve required',

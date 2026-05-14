@@ -31,7 +31,7 @@ vi.mock('rebrowser-puppeteer-core', () => ({
 }));
 
 vi.mock('@utils/browserExecutable', () => ({
-  findBrowserExecutable: findBrowserExecutableMock,
+  findBrowserExecutableAsync: findBrowserExecutableMock,
 }));
 
 vi.mock('@modules/captcha/CaptchaDetector', () => ({
@@ -87,7 +87,7 @@ describe('BrowserModeManager private callback coverage', () => {
     assessMock.mockReset();
     waitForCompletionMock.mockReset();
     determineCaptchaResolutionMock.mockReset();
-    findBrowserExecutableMock.mockReturnValue('/detected/browser-bin');
+    findBrowserExecutableMock.mockResolvedValue('/detected/browser-bin');
     determineCaptchaResolutionMock.mockReturnValue({ action: 'ignore', reason: 'default ignore' });
     assessMock.mockResolvedValue({
       signals: [],

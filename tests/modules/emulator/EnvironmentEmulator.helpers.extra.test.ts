@@ -13,7 +13,7 @@ vi.mock('@src/utils/logger', () => ({
 }));
 
 vi.mock('@src/utils/browserExecutable', () => ({
-  findBrowserExecutable: findBrowserExecutableMock,
+  findBrowserExecutableAsync: findBrowserExecutableMock,
 }));
 
 vi.mock('@modules/emulator/EnvironmentEmulatorFetch', () => ({
@@ -26,7 +26,7 @@ import { buildTestUrl } from '@tests/shared/test-urls';
 describe('EnvironmentEmulator helper coverage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    findBrowserExecutableMock.mockReturnValue(undefined);
+    findBrowserExecutableMock.mockResolvedValue(undefined);
   });
 
   it('covers helper guards and template lookup fallbacks', () => {

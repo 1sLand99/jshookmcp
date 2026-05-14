@@ -41,7 +41,7 @@ vi.mock('rebrowser-puppeteer-core', () => ({
 }));
 
 vi.mock('@utils/browserExecutable', () => ({
-  findBrowserExecutable: findBrowserExecutableMock,
+  findBrowserExecutableAsync: findBrowserExecutableMock,
 }));
 
 vi.mock('@modules/captcha/CaptchaDetector', () => ({
@@ -114,7 +114,7 @@ describe('BrowserModeManager coverage', () => {
 
   it('falls back to Puppeteer-managed executable resolution when no browser is found', async () => {
     existsSyncMock.mockReturnValue(false);
-    findBrowserExecutableMock.mockReturnValue(undefined);
+    findBrowserExecutableMock.mockResolvedValue(undefined);
 
     const browser = {
       newPage: vi.fn(),
@@ -133,7 +133,7 @@ describe('BrowserModeManager coverage', () => {
   });
 
   it('reuses a connected browser on repeated launch calls', async () => {
-    findBrowserExecutableMock.mockReturnValue('/detected/browser-bin');
+    findBrowserExecutableMock.mockResolvedValue('/detected/browser-bin');
 
     const browser = {
       newPage: vi.fn(),
@@ -152,7 +152,7 @@ describe('BrowserModeManager coverage', () => {
   });
 
   it('deduplicates concurrent launch calls with a shared promise', async () => {
-    findBrowserExecutableMock.mockReturnValue('/detected/browser-bin');
+    findBrowserExecutableMock.mockResolvedValue('/detected/browser-bin');
 
     const deferred = createDeferred<Browser>();
     launchMock.mockReturnValue(deferred.promise);
@@ -167,6 +167,8 @@ describe('BrowserModeManager coverage', () => {
     const first = manager.launch();
     const second = manager.launch();
 
+    // Allow microtasks (resolveExecutablePath + dynamic import) to flush
+    await new Promise((r) => setTimeout(r, 0));
     expect(launchMock).toHaveBeenCalledTimes(1);
     deferred.resolve(browser);
 
@@ -174,7 +176,7 @@ describe('BrowserModeManager coverage', () => {
   });
 
   it('aborts launch when close is requested during startup', async () => {
-    findBrowserExecutableMock.mockReturnValue('/detected/browser-bin');
+    findBrowserExecutableMock.mockResolvedValue('/detected/browser-bin');
 
     const deferred = createDeferred<Browser>();
     launchMock.mockReturnValue(deferred.promise);
@@ -449,7 +451,7 @@ describe('BrowserModeManager coverage', () => {
   it('forces a kill when browser.close times out', async () => {
     vi.useFakeTimers();
     const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => true);
-    findBrowserExecutableMock.mockReturnValue('/detected/browser-bin');
+    findBrowserExecutableMock.mockResolvedValue('/detected/browser-bin');
 
     const browser = {
       newPage: vi.fn(),
@@ -481,7 +483,7 @@ describe('BrowserModeManager coverage', () => {
   });
 
   it('honors explicit headless false configuration', async () => {
-    findBrowserExecutableMock.mockReturnValue('/detected/browser-bin');
+    findBrowserExecutableMock.mockResolvedValue('/detected/browser-bin');
 
     const browser = {
       newPage: vi.fn(),
@@ -527,7 +529,7 @@ describe('BrowserModeManager coverage', () => {
 
   it('switches to headed mode, restores session data, and reloads after captcha handling', async () => {
     existsSyncMock.mockReturnValue(false);
-    findBrowserExecutableMock.mockReturnValue('/detected/browser-bin');
+    findBrowserExecutableMock.mockResolvedValue('/detected/browser-bin');
 
     const currentPage = {
       url: vi.fn(() => buildTestUrl('', { path: 'path' })),
@@ -641,7 +643,7 @@ describe('BrowserModeManager coverage', () => {
 
   it('throws when headed CAPTCHA solving times out', async () => {
     existsSyncMock.mockReturnValue(false);
-    findBrowserExecutableMock.mockReturnValue('/detected/browser-bin');
+    findBrowserExecutableMock.mockResolvedValue('/detected/browser-bin');
 
     const currentPage = {
       url: vi.fn(() => buildTestUrl('', { path: 'path' })),

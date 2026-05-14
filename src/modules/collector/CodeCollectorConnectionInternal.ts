@@ -1,7 +1,6 @@
 import { readFile } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
-import { connect } from 'rebrowser-puppeteer-core';
 import type { Browser } from 'rebrowser-puppeteer-core';
 import { logger } from '@utils/logger';
 import { connectPlaywrightCdpFallback } from '@modules/collector/playwright-cdp-fallback';
@@ -258,6 +257,7 @@ export async function connectWithTimeoutImpl(
   connectAttemptRef: { current: number },
 ): Promise<Browser> {
   const attemptId = ++connectAttemptRef.current;
+  const { connect } = await import('rebrowser-puppeteer-core');
   try {
     return await new Promise<Browser>((resolve, reject) => {
       let settled = false;

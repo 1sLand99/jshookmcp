@@ -18,7 +18,7 @@ vi.mock('rebrowser-puppeteer-core', () => ({
 }));
 
 vi.mock('@src/utils/browserExecutable', () => ({
-  findBrowserExecutable: findBrowserExecutableMock,
+  findBrowserExecutableAsync: findBrowserExecutableMock,
 }));
 
 vi.mock('@modules/collector/playwright-cdp-fallback', () => ({
@@ -78,7 +78,7 @@ const defaultConfig: PuppeteerConfig = { headless: true, timeout: 1000 };
 describe('CodeCollector', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    findBrowserExecutableMock.mockReturnValue(undefined);
+    findBrowserExecutableMock.mockResolvedValue(undefined);
   });
 
   it('initializes browser and reports running status', async () => {

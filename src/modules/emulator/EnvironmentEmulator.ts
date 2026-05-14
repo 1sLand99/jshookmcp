@@ -11,7 +11,7 @@ import { logger } from '@utils/logger';
 import { chromeEnvironmentTemplate } from '@modules/emulator/templates/chrome-env';
 import type { Browser } from 'rebrowser-puppeteer-core';
 import { generateEmulationCode, generateRecommendations } from '@modules/emulator/EmulatorCodeGen';
-import { findBrowserExecutable } from '@utils/browserExecutable';
+import { findBrowserExecutableAsync } from '@utils/browserExecutable';
 import { fetchRealEnvironmentData } from '@modules/emulator/EnvironmentEmulatorFetch';
 
 type UnknownRecord = Record<string, unknown>;
@@ -297,7 +297,7 @@ export class EnvironmentEmulator {
       url,
       detected,
       depth,
-      resolveExecutablePath: () => this.resolveExecutablePath(),
+      resolveExecutablePath: async () => this.resolveExecutablePath(),
       buildManifestFromTemplate: (vars, browserType) =>
         this.buildManifestFromTemplate(vars, browserType),
     });
@@ -309,7 +309,7 @@ export class EnvironmentEmulator {
     return manifest;
   }
 
-  private resolveExecutablePath(): string | undefined {
+  private async resolveExecutablePath(): Promise<string | undefined> {
     const configuredPath =
       process.env.PUPPETEER_EXECUTABLE_PATH?.trim() ||
       process.env.CHROME_PATH?.trim() ||
@@ -325,7 +325,7 @@ export class EnvironmentEmulator {
       );
     }
 
-    const detectedPath = findBrowserExecutable();
+    const detectedPath = await findBrowserExecutableAsync();
     if (detectedPath) {
       return detectedPath;
     }

@@ -57,7 +57,7 @@ vi.mock('rebrowser-puppeteer-core', () => ({
 }));
 
 vi.mock('@utils/browserExecutable', () => ({
-  findBrowserExecutable: mocks.findBrowserExecutable,
+  findBrowserExecutableAsync: mocks.findBrowserExecutable,
 }));
 
 vi.mock('@modules/collector/playwright-cdp-fallback', () => ({
@@ -128,7 +128,7 @@ function createPageMock(url = testUrls.TEST_URLS.root) {
 describe('CodeCollector – additional coverage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.findBrowserExecutable.mockReturnValue(undefined);
+    mocks.findBrowserExecutable.mockResolvedValue(undefined);
     mocks.connectPlaywrightCdpFallback.mockRejectedValue(new Error('fallback unavailable'));
   });
 
