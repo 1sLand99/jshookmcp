@@ -11,7 +11,8 @@
  * if it escapes the QuickJS VM.
  */
 
-import { getQuickJS, type QuickJSHandle, type QuickJSContext } from 'quickjs-emscripten';
+import type { QuickJSHandle, QuickJSContext } from 'quickjs-emscripten';
+
 import type {
   SandboxOptions,
   SandboxResult,
@@ -26,6 +27,17 @@ import { SANDBOX_EXEC_TIMEOUT_MS, SANDBOX_MEMORY_LIMIT_MB } from '@src/constants
 const DEFAULT_TIMEOUT_MS = SANDBOX_EXEC_TIMEOUT_MS;
 const DEFAULT_MEMORY_LIMIT_BYTES = SANDBOX_MEMORY_LIMIT_MB * 1024 * 1024;
 const DEFAULT_MAX_BRIDGE_CALLS = 10;
+
+type QuickJSModule = Awaited<ReturnType<typeof import('quickjs-emscripten').getQuickJS>>;
+
+let quickjsPromise: Promise<QuickJSModule> | null = null;
+
+function getQuickJS(): Promise<QuickJSModule> {
+  if (!quickjsPromise) {
+    quickjsPromise = import('quickjs-emscripten').then((m) => m.getQuickJS());
+  }
+  return quickjsPromise;
+}
 
 /**
  * Marshal a host value into a QuickJS handle.
