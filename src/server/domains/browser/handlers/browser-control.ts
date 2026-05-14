@@ -1,6 +1,6 @@
-import type { CodeCollector } from '@server/domains/shared/modules';
-import type { PageController } from '@server/domains/shared/modules';
-import type { ConsoleMonitor } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
+import type { PageController } from '@server/domains/shared/modules/collector';
+import type { ConsoleMonitor } from '@server/domains/shared/modules/collector';
 import type { CamoufoxBrowserManager } from '@server/domains/shared/modules';
 import type { TabRegistry } from '@modules/browser/TabRegistry';
 import { argBool, argNumber, argString, argStringArray } from '@server/domains/shared/parse-args';

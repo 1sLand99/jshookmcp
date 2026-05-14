@@ -4,7 +4,7 @@
  * Covers: process find/get/windows/findChromium/checkDebugPort/launchDebug/kill.
  */
 
-import { UnifiedProcessManager, MemoryManager } from '@server/domains/shared/modules';
+import { UnifiedProcessManager, MemoryManager } from '@server/domains/shared/modules/native';
 import { MemoryAuditTrail } from '@modules/process/memory/AuditTrail';
 import { logger } from '@utils/logger';
 import { argNumber, argStringArray } from '@server/domains/shared/parse-args';

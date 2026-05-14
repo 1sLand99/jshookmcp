@@ -4,7 +4,7 @@
  * Extracted from AdvancedToolHandlersIntercept (handlers.impl.core.runtime.intercept.ts).
  */
 
-import type { ConsoleMonitor } from '@server/domains/shared/modules';
+import type { ConsoleMonitor } from '@server/domains/shared/modules/collector';
 import type { EventBus, ServerEventMap } from '@server/EventBus';
 import { R } from '@server/domains/shared/ResponseBuilder';
 import { emitEvent } from './shared';

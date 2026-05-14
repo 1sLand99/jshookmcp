@@ -9,7 +9,7 @@ import { argBool } from '@server/domains/shared/parse-args';
 import { R } from '@server/domains/shared/ResponseBuilder';
 import type { ToolResponse } from '@server/types';
 import { parseNumberArg } from './shared';
-import type { ConsoleMonitor } from '@server/domains/shared/modules';
+import type { ConsoleMonitor } from '@server/domains/shared/modules/collector';
 
 export interface ConsoleHandlerDeps {
   consoleMonitor: ConsoleMonitor;

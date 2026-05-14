@@ -1,4 +1,4 @@
-import type { PageController } from '@server/domains/shared/modules';
+import type { PageController } from '@server/domains/shared/modules/collector';
 import { argString, argNumber } from '@server/domains/shared/parse-args';
 import { R } from '@server/domains/shared/ResponseBuilder';
 import type { ToolResponse } from '@server/domains/shared/ResponseBuilder';

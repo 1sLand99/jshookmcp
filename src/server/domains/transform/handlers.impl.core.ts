@@ -6,7 +6,7 @@
  * Handler methods delegated to AstHandlers and CryptoHandlers sub-handlers.
  */
 
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import type { TransformSharedState } from './handlers/shared';
 import { createTransformSharedState } from './handlers/shared';
 import { AstHandlers } from './handlers/ast-handlers';

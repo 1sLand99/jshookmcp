@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import type { AntiDebugToolHandlers } from '@server/domains/antidebug/handlers';
 import type { MCPServerContext } from '@server/domains/shared/registry';
 

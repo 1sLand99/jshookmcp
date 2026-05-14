@@ -6,7 +6,7 @@
 import { readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 
 export type DetectSource = 'base64' | 'hex' | 'file' | 'raw';
 export type EntropySource = 'base64' | 'hex' | 'raw' | 'file';

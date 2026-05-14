@@ -1,4 +1,4 @@
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import { ExternalToolRunner } from '@server/domains/shared/modules';
 import { ToolRegistry } from '@server/domains/shared/modules';
 import { MiniappHandlers } from '@server/domains/platform/handlers/miniapp-handlers';

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { ConsoleMonitor } from '@server/domains/shared/modules';
+import type { ConsoleMonitor } from '@server/domains/shared/modules/collector';
 import { R } from '@server/domains/shared/ResponseBuilder';
 import { BOT_DETECT_LIMIT_DEFAULT } from '@src/constants';
 

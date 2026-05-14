@@ -28,7 +28,7 @@ const registrations = defineMethodRegistrations<H, (typeof wasmTools)[number]['n
 });
 
 async function ensure(ctx: MCPServerContext): Promise<H> {
-  const { CodeCollector } = await import('@server/domains/shared/modules');
+  const { CodeCollector } = await import('@server/domains/shared/modules/collector');
   const { WasmToolHandlers } = await import('@server/domains/wasm/index');
   if (!ctx.collector) {
     ctx.collector = new CodeCollector(ctx.config.puppeteer);

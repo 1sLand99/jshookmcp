@@ -43,6 +43,20 @@ vi.mock('@modules/collector/PageController', async (importOriginal) => {
   };
 });
 
+// Global stubs for barrel sub-modules — prevents loading puppeteer/koffi in tests
+// that don't individually mock these paths.
+vi.mock('@server/domains/shared/modules/collector', () => ({
+  CodeCollector: vi.fn(),
+  DOMInspector: vi.fn(),
+  PageController: vi.fn(),
+  ConsoleMonitor: vi.fn(),
+}));
+
+vi.mock('@server/domains/shared/modules/native', () => ({
+  MemoryManager: vi.fn(),
+  UnifiedProcessManager: vi.fn(),
+}));
+
 beforeAll(async () => {
   await initRegistry();
 });

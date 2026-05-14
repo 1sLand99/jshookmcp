@@ -1,4 +1,4 @@
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import { ScriptManager } from '@server/domains/shared/modules';
 import { WorkerPool } from '@utils/WorkerPool';
 import {

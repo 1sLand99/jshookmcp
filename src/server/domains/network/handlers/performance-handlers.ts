@@ -5,7 +5,7 @@
  */
 
 import { PerformanceMonitor } from '@server/domains/shared/modules';
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import type { TraceRecorder } from '@modules/trace/TraceRecorder';
 import { argEnum } from '@server/domains/shared/parse-args';
 import {

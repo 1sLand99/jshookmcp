@@ -5,7 +5,7 @@
  * Handler methods delegated to ExtensionHandlers and SourcemapHandlers sub-handlers.
  */
 
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import type { SourcemapSharedState } from './handlers/shared';
 import { ExtensionHandlers } from './handlers/extension-handlers';
 import { SourcemapHandlers } from './handlers/sourcemap-handlers';

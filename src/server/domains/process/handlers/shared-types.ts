@@ -6,7 +6,7 @@
  */
 
 import type { AuditEntry } from '@modules/process/memory/AuditTrail';
-import type { UnifiedProcessManager, MemoryManager } from '@server/domains/shared/modules';
+import type { UnifiedProcessManager, MemoryManager } from '@server/domains/shared/modules/native';
 import type { MemoryAuditTrail } from '@modules/process/memory/AuditTrail';
 
 export interface ProcessHandlerDeps {

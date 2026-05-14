@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { PageController } from '@server/domains/shared/modules';
+import type { PageController } from '@server/domains/shared/modules/collector';
 import type { HookPresetToolHandlers } from '@server/domains/hooks/preset-handlers';
 import type { AIHookToolHandlers } from '@server/domains/hooks/ai-handlers';
 import type { MCPServerContext } from '@server/domains/shared/registry';

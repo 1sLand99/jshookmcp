@@ -1,4 +1,4 @@
-import type { ConsoleMonitor } from '@server/domains/shared/modules';
+import type { ConsoleMonitor } from '@server/domains/shared/modules/collector';
 import type { DetailedDataManager } from '@utils/DetailedDataManager';
 import { argString, argNumber, argBool } from '@server/domains/shared/parse-args';
 import { R } from '@server/domains/shared/ResponseBuilder';

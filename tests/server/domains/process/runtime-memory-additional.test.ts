@@ -18,7 +18,7 @@ const state = vi.hoisted(() => ({
   auditEntries: [] as Array<Record<string, unknown>>,
 }));
 
-vi.mock(import('@server/domains/shared/modules'), async (importOriginal) => {
+vi.mock(import('@server/domains/shared/modules/native'), async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,

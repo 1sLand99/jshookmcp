@@ -11,13 +11,13 @@ import { asJsonResponse, asTextResponse, serializeError } from '@server/domains/
 import type {
   AdvancedDeobfuscator,
   CodeAnalyzer,
-  CodeCollector,
   CryptoDetector,
   Deobfuscator,
   HookManager,
   ObfuscationDetector,
   ScriptManager,
 } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import type { ToolArgs, ToolResponse } from '@server/types';
 import {
   ANALYSIS_MAX_SUMMARY_FILES,

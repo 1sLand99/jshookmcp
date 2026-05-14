@@ -1,5 +1,5 @@
 import type { Page } from 'rebrowser-puppeteer-core';
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import { argBool, argNumber, argStringArray } from '@server/domains/shared/parse-args';
 import {
   evaluateWithTimeout,

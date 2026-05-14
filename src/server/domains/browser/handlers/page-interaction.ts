@@ -1,4 +1,4 @@
-import type { PageController } from '@server/domains/shared/modules';
+import type { PageController } from '@server/domains/shared/modules/collector';
 import type { FrameResolveOptions } from '@modules/collector/PageController';
 import { argString, argNumber, argStringArray } from '@server/domains/shared/parse-args';
 import { R } from '@server/domains/shared/ResponseBuilder';

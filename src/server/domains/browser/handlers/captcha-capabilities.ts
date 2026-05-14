@@ -1,6 +1,6 @@
 import { capabilityReport, type CapabilityEntryOptions } from '@server/domains/shared/capabilities';
 import { R, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 
 type WidgetHookProbe = {
   url: string;

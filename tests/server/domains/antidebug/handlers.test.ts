@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AntiDebugToolHandlers } from '../../../../src/server/domains/antidebug/handlers';
-import type { CodeCollector } from '../../../../src/server/domains/shared/modules';
+import type { CodeCollector } from '../../../../src/server/domains/shared/modules/collector';
 import {
   evaluateWithTimeout,
   evaluateOnNewDocumentWithTimeout,

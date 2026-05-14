@@ -5,7 +5,7 @@
  * Handler methods call those functions directly instead of inheriting from a base class.
  */
 
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import { parseProtobufMessage } from '@server/domains/encoding/encoding-protobuf';
 import { decodeMsgPack } from '@server/domains/encoding/encoding-msgpack';
 import { argString, argNumber, argEnum } from '@server/domains/shared/parse-args';

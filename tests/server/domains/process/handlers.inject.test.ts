@@ -11,7 +11,7 @@ const state = vi.hoisted(() => ({
   pageEvaluate: vi.fn(),
 }));
 
-vi.mock(import('@server/domains/shared/modules'), async (importOriginal) => {
+vi.mock(import('@server/domains/shared/modules/native'), async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,

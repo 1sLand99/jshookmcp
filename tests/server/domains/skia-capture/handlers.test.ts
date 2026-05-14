@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { PageController } from '@server/domains/shared/modules';
+import type { PageController } from '@server/domains/shared/modules/collector';
 
 vi.mock('@modules/skia-capture/SkiaSceneExtractor', () => {
   const detectSkiaRenderer = vi.fn().mockResolvedValue({

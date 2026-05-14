@@ -1,4 +1,4 @@
-import type { PageController } from '@server/domains/shared/modules';
+import type { PageController } from '@server/domains/shared/modules/collector';
 import { StealthScripts } from '@server/domains/shared/modules';
 import { argString } from '@server/domains/shared/parse-args';
 import { CDPTimingProxy } from '@modules/stealth/CDPTimingProxy';

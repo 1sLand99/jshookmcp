@@ -1,8 +1,8 @@
-import type { CodeCollector } from '@server/domains/shared/modules';
-import type { PageController } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
+import type { PageController } from '@server/domains/shared/modules/collector';
 
 import type { ScriptManager } from '@server/domains/shared/modules';
-import type { ConsoleMonitor } from '@server/domains/shared/modules';
+import type { ConsoleMonitor } from '@server/domains/shared/modules/collector';
 import type { EventBus, ServerEventMap } from '@server/EventBus';
 import { type AICaptchaDetector } from '@server/domains/shared/modules';
 import { type DetailedDataManager } from '@utils/DetailedDataManager';

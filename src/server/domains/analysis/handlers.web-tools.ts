@@ -1,6 +1,6 @@
 import { logger } from '@utils/logger';
 import { evaluateWithTimeout } from '@modules/collector/PageController';
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import type { ToolArgs, ToolResponse } from '@server/types';
 import { asJsonResponse, asErrorResponse } from '@server/domains/shared/response';
 import { argString, argBool, argNumber } from '@server/domains/shared/parse-args';

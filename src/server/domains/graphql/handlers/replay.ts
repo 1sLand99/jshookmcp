@@ -6,7 +6,7 @@
  * Node-side fetch with `useBrowser=false`.
  */
 
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import {
   toResponse,
   toError,

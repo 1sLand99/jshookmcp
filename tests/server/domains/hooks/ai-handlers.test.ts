@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AIHookToolHandlers } from '../../../../src/server/domains/hooks/ai-handlers';
-import type { PageController } from '../../../../src/server/domains/shared/modules';
+import type { PageController } from '../../../../src/server/domains/shared/modules/collector';
 import {
   evaluateWithTimeout,
   evaluateOnNewDocumentWithTimeout,

@@ -10,7 +10,7 @@
  * - replay: GraphQL operation replay via in-page fetch
  */
 
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 
 import { CallGraphHandlers } from '@server/domains/graphql/handlers/callgraph';
 import { ScriptReplaceHandlers } from '@server/domains/graphql/handlers/script-replace';

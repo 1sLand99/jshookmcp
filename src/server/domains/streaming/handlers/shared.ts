@@ -2,7 +2,7 @@
  * Shared types and state for streaming sub-handlers.
  */
 
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import { RingBuffer } from '@utils/RingBuffer';
 
 export type TextToolResponse = {

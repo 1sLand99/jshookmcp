@@ -4,7 +4,7 @@
  * Provider-agnostic interface for external solving services and
  * embedded widget challenge helpers.
  */
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import { argString, argNumber, argBool } from '@server/domains/shared/parse-args';
 import { logger } from '@utils/logger';
 import { R, type ToolResponse } from '@server/domains/shared/ResponseBuilder';

@@ -1,4 +1,4 @@
-import type { PageController } from '@server/domains/shared/modules';
+import type { PageController } from '@server/domains/shared/modules/collector';
 import type { DetailedDataManager } from '@utils/DetailedDataManager';
 import { argString, argNumber, argBool, argStringArray } from '@server/domains/shared/parse-args';
 import { applyEvaluationPostFilters } from '@server/domains/browser/handlers/evaluation-utils';

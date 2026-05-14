@@ -57,7 +57,7 @@ vi.mock('@utils/artifacts', () => ({
 // ---------------------------------------------------------------------------
 
 import { ElectronHandlers } from '@server/domains/platform/handlers/electron-handlers';
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -1,4 +1,4 @@
-import type { PageController } from '@server/domains/shared/modules';
+import type { PageController } from '@server/domains/shared/modules/collector';
 import type { AICaptchaDetector } from '@server/domains/shared/modules';
 import { argNumber, argBool } from '@server/domains/shared/parse-args';
 import { logger } from '@utils/logger';

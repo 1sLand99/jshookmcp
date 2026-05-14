@@ -4,7 +4,7 @@
  * Implements Bezier-curve mouse movement, natural scrolling, and
  * realistic typing with typo simulation.
  */
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import { argString, argNumber, argBool } from '@server/domains/shared/parse-args';
 import { R, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
 

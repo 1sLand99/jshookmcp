@@ -12,7 +12,7 @@ import { replayRequest } from '@server/domains/network/replay';
 import type { NetworkAuthorizationInput } from '@utils/network/ssrf-policy';
 import type { SessionProfile } from '@internal-types/SessionProfile';
 import { R } from '@server/domains/shared/ResponseBuilder';
-import type { ConsoleMonitor } from '@server/domains/shared/modules';
+import type { ConsoleMonitor } from '@server/domains/shared/modules/collector';
 import { getDetailedDataManager, parseBooleanArg, parseNumberArg } from './shared';
 
 interface ReplayableRequest {

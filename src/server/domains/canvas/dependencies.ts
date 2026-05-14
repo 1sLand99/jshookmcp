@@ -1,4 +1,5 @@
-import type { DebuggerManager, PageController } from '@server/domains/shared/modules';
+import type { DebuggerManager } from '@server/domains/shared/modules';
+import type { PageController } from '@server/domains/shared/modules/collector';
 import type { CDPSessionLike, TraceRecorder } from '@modules/trace/TraceRecorder';
 import type {
   EvidenceEdge,

@@ -4,7 +4,7 @@
  * Analyzes runtime function call graph from in-page traces (`__aiHooks`, `__functionTracer`, etc.).
  */
 
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import { toResponse, toError, parseClampedNumber } from '@server/domains/graphql/handlers/shared';
 import {
   GRAPHQL_MAX_GRAPH_NODES,

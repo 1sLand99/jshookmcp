@@ -1,10 +1,10 @@
 // Browser tool facade: composes handler modules and routes calls.
 
-import type { CodeCollector } from '@server/domains/shared/modules';
-import type { PageController } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
+import type { PageController } from '@server/domains/shared/modules/collector';
 
 import type { ScriptManager } from '@server/domains/shared/modules';
-import type { ConsoleMonitor } from '@server/domains/shared/modules';
+import type { ConsoleMonitor } from '@server/domains/shared/modules/collector';
 import { AICaptchaDetector } from '@server/domains/shared/modules';
 import { argString } from '@server/domains/shared/parse-args';
 import { asErrorResponse } from '@server/domains/shared/response';

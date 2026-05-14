@@ -10,8 +10,8 @@
  *   - RawHandlers:         HTTP, HTTP/2, RTT, ICMP
  */
 
-import type { CodeCollector } from '@server/domains/shared/modules';
-import type { ConsoleMonitor } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
+import type { ConsoleMonitor } from '@server/domains/shared/modules/collector';
 import { PerformanceMonitor } from '@server/domains/shared/modules';
 import type { EventBus, ServerEventMap } from '@server/EventBus';
 import type { TraceRecorder } from '@modules/trace/TraceRecorder';

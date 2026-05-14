@@ -6,7 +6,7 @@
  */
 
 import { ExternalToolRunner, ToolRegistry } from '@server/domains/shared/modules';
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import type { WasmSharedState } from './handlers/shared';
 import { ExternalToolHandlers } from './handlers/external-tool-handlers';
 import { BrowserHandlers } from './handlers/browser-handlers';

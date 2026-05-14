@@ -5,7 +5,7 @@
 import { resolve, normalize, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ExternalToolRunner } from '@server/domains/shared/modules';
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 
 export type UnknownRecord = Record<string, unknown>;
 

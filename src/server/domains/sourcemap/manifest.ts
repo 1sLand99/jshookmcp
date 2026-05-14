@@ -20,7 +20,7 @@ const registrations = defineMethodRegistrations<H, (typeof sourcemapTools)[numbe
 });
 
 async function ensure(ctx: MCPServerContext): Promise<H> {
-  const { CodeCollector } = await import('@server/domains/shared/modules');
+  const { CodeCollector } = await import('@server/domains/shared/modules/collector');
   const { SourcemapToolHandlers } = await import('@server/domains/sourcemap/index');
   if (!ctx.collector) {
     ctx.collector = new CodeCollector(ctx.config.puppeteer);

@@ -2,7 +2,7 @@
  * Shared types, constants, and utility functions for sourcemap domain.
  */
 
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 
 export type JsonRecord = Record<string, unknown>;
 

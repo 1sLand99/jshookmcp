@@ -1,4 +1,4 @@
-import type { PageController } from '@server/domains/shared/modules';
+import type { PageController } from '@server/domains/shared/modules/collector';
 import {
   evaluateWithTimeout,
   evaluateOnNewDocumentWithTimeout,

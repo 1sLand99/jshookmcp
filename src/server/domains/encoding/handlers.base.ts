@@ -1,7 +1,7 @@
 import { readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import {
   MAGIC_SIGNATURES,
   type ByteFrequencyEntry,

@@ -4,7 +4,7 @@
  * Current runtime wiring goes through handlers.impl.core.ts plus handlers/shared.ts,
  * handlers/ws-handlers.ts, and handlers/sse-handlers.ts.
  */
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import { RingBuffer } from '@utils/RingBuffer';
 
 export type TextToolResponse = {

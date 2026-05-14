@@ -7,7 +7,7 @@
  * when they explicitly want to avoid routing through the browser session.
  */
 
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import {
   toResponse,
   toError,

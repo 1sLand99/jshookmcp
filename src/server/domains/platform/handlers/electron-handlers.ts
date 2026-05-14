@@ -6,7 +6,7 @@ import {
   readAsarEntryText,
 } from '@server/domains/platform/handlers/electron-asar-helpers';
 import { basename, dirname, extname, join, resolve } from 'node:path';
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import { logger } from '@utils/logger';
 import {
   toTextResponse,

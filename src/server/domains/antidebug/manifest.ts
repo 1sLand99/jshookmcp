@@ -18,7 +18,7 @@ const registrations = defineMethodRegistrations<H, (typeof antidebugTools)[numbe
 });
 
 async function ensure(ctx: MCPServerContext): Promise<H> {
-  const { CodeCollector } = await import('@server/domains/shared/modules');
+  const { CodeCollector } = await import('@server/domains/shared/modules/collector');
   const { AntiDebugToolHandlers } = await import('@server/domains/antidebug/index');
   if (!ctx.collector) {
     ctx.collector = new CodeCollector(ctx.config.puppeteer);

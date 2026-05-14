@@ -1,4 +1,4 @@
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import { evaluateWithTimeout } from '@modules/collector/PageController';
 
 export type JsonRecord = Record<string, unknown>;

@@ -1,7 +1,7 @@
 import { readFile, readdir, stat, mkdir } from 'node:fs/promises';
 import { basename, extname, join, normalize, relative, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import { resolveArtifactPath } from '@utils/artifacts';
 import { logger } from '@utils/logger';
 

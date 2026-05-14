@@ -7,7 +7,7 @@
  *   - InjectionHandlers:         DLL/shellcode injection, check_debug_port, enumerate_modules, electron_attach
  */
 
-import { UnifiedProcessManager, MemoryManager } from '@server/domains/shared/modules';
+import { UnifiedProcessManager, MemoryManager } from '@server/domains/shared/modules/native';
 import { MemoryAuditTrail } from '@modules/process/memory/AuditTrail';
 import { logger } from '@utils/logger';
 import type { ProcessHandlerDeps } from './handlers/shared-types';

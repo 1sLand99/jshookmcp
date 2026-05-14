@@ -9,9 +9,6 @@ export type {
   AICaptchaDetectionResult,
   CaptchaDetectionConfig,
 } from '@modules/captcha/types';
-export { CodeCollector } from '@modules/collector/CodeCollector';
-export { DOMInspector } from '@modules/collector/DOMInspector';
-export { PageController } from '@modules/collector/PageController';
 export { CryptoDetector } from '@modules/crypto/CryptoDetector';
 export { ASTOptimizer } from '@modules/deobfuscator/ASTOptimizer';
 export { AdvancedDeobfuscator } from '@modules/deobfuscator/AdvancedDeobfuscator';
@@ -24,7 +21,5 @@ export { BlackboxManager } from '@modules/debugger/BlackboxManager';
 export { ExternalToolRunner } from '@modules/external/ExternalToolRunner';
 export { ToolRegistry } from '@modules/external/ToolRegistry';
 export { HookManager } from '@modules/hook/HookManager';
-export { ConsoleMonitor } from '@modules/monitor/ConsoleMonitor';
 export { PerformanceMonitor } from '@modules/monitor/PerformanceMonitor';
-export { MemoryManager, UnifiedProcessManager } from '@modules/process/index';
 export { StealthScripts } from '@modules/stealth/StealthScripts';

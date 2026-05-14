@@ -18,7 +18,7 @@ const mm = {
   enumerateModules: vi.fn(),
 };
 
-vi.mock('@server/domains/shared/modules', () => ({
+vi.mock('@server/domains/shared/modules/native', () => ({
   UnifiedProcessManager: class {
     static readonly mock = true;
 

@@ -9,7 +9,7 @@ import {
   HookManager,
   ScriptManager,
 } from '@server/domains/shared/modules';
-import { CodeCollector } from '@server/domains/shared/modules';
+import { CodeCollector } from '@server/domains/shared/modules/collector';
 import { PersistentCache } from '@utils/cache/PersistentCache';
 import { join } from 'path';
 import { tmpdir } from 'os';

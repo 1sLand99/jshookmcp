@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { detectSkiaRenderer, extractSceneTree } from '@modules/skia-capture/SkiaSceneExtractor';
-import type { PageController } from '@server/domains/shared/modules';
+import type { PageController } from '@server/domains/shared/modules/collector';
 
 // Create a mock PageController
 function createMockPageController(evaluations: Record<string, unknown>): PageController {

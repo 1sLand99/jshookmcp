@@ -4,7 +4,7 @@
  * Extracts GraphQL queries/mutations from captured network traces in the page.
  */
 
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import {
   toResponse,
   toError,

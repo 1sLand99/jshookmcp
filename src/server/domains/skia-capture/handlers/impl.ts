@@ -4,7 +4,7 @@
  * Delegates to handlers/skia-detect.ts for actual implementation.
  */
 import { ToolError } from '@errors/ToolError';
-import type { PageController } from '@server/domains/shared/modules';
+import type { PageController } from '@server/domains/shared/modules/collector';
 import { detectRenderer, dumpScene, correlateObjects } from './skia-detect';
 import type { JSObjectInfo } from '@modules/skia-capture/SkiaObjectCorrelator';
 import type { EventBus, ServerEventMap } from '@server/EventBus';

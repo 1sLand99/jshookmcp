@@ -3,7 +3,7 @@
  */
 
 import { evaluateWithTimeout } from '@modules/collector/PageController';
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import type { SourceMapV3, ParsedSourceMapResult } from './shared';
 import { decodeMappings, countMappingsStats, hasProtocol, asRecord, asString } from './shared';
 

@@ -7,7 +7,7 @@
 
 import { logger } from '@utils/logger';
 import { argNumber, argStringArray } from '@server/domains/shared/parse-args';
-import type { MemoryManager } from '@server/domains/shared/modules';
+import type { MemoryManager } from '@server/domains/shared/modules/native';
 import type { AuditEntry, MemoryOperationHost, ProcessHandlerDeps } from './shared-types';
 import {
   validatePid,

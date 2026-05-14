@@ -6,7 +6,7 @@
  */
 import { ToolError } from '@errors/ToolError';
 import { argString, argBool, argStringArray } from '@server/domains/shared/parse-args';
-import type { PageController } from '@server/domains/shared/modules';
+import type { PageController } from '@server/domains/shared/modules/collector';
 import { detectSkiaRenderer, extractSceneTree } from '@modules/skia-capture/SkiaSceneExtractor';
 import { correlateToJS } from '@modules/skia-capture/SkiaObjectCorrelator';
 import type { JSObjectInfo } from '@modules/skia-capture/SkiaObjectCorrelator';

@@ -5,7 +5,7 @@
  * Shared state is held in StreamingSharedState and passed to both sub-handlers.
  */
 
-import type { CodeCollector } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import { createStreamingSharedState, type StreamingSharedState } from './handlers/shared';
 import { WsHandlers } from './handlers/ws-handlers';
 import { SseHandlers } from './handlers/sse-handlers';

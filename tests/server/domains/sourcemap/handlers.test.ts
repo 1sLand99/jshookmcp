@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SourcemapToolHandlers } from '../../../../src/server/domains/sourcemap/handlers';
-import type { CodeCollector } from '../../../../src/server/domains/shared/modules';
+import type { CodeCollector } from '../../../../src/server/domains/shared/modules/collector';
 import { evaluateWithTimeout } from '../../../../src/modules/collector/PageController';
 import * as fsPromises from 'node:fs/promises';
 

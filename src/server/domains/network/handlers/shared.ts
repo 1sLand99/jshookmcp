@@ -5,8 +5,8 @@
  * rather than inheritance from a base class.
  */
 
-import type { CodeCollector } from '@server/domains/shared/modules';
-import type { ConsoleMonitor } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
+import type { ConsoleMonitor } from '@server/domains/shared/modules/collector';
 import type { PerformanceMonitor } from '@server/domains/shared/modules';
 import type { EventBus, ServerEventMap } from '@server/EventBus';
 import { DetailedDataManager } from '@utils/DetailedDataManager';

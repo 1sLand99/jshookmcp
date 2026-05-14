@@ -46,7 +46,8 @@ vi.mock('@utils/artifacts', () => ({
 // ---------------------------------------------------------------------------
 
 import { MiniappHandlers } from '@server/domains/platform/handlers/miniapp-handlers';
-import type { CodeCollector, ExternalToolRunner } from '@server/domains/shared/modules';
+import type { CodeCollector } from '@server/domains/shared/modules/collector';
+import type { ExternalToolRunner } from '@server/domains/shared/modules';
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -1,4 +1,4 @@
-import type { CodeCollector, ConsoleMonitor } from '@server/domains/shared/modules';
+import type { CodeCollector, ConsoleMonitor } from '@server/domains/shared/modules/collector';
 import type { TabRegistry } from '@modules/browser/TabRegistry';
 import { argBool, argString, argStringArray } from '@server/domains/shared/parse-args';
 import { logger } from '@utils/logger';
