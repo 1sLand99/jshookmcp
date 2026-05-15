@@ -236,4 +236,39 @@ export const coreTools: Tool[] = [
       })
       .required('code'),
   ),
+  tool('analysis_ast_match', (t) =>
+    t
+      .desc('Match AST nodes by type and optional property filter.')
+      .string('code', 'JavaScript source code to search')
+      .string(
+        'nodeType',
+        'AST node type to match (e.g. CallExpression, MemberExpression, FunctionDeclaration)',
+      )
+      .string('filter', 'Optional property filter as JSON path=value, e.g. {"callee.name":"eval"}')
+      .number('maxResults', 'Maximum matches to return', { default: 50, minimum: 1, maximum: 500 })
+      .required('code', 'nodeType'),
+  ),
+  tool('analysis_deflat_control_flow', (t) =>
+    t
+      .desc('Flatten switch-dispatch control flow back to straight-line code.')
+      .string('code', 'Obfuscated JavaScript source with CFF pattern')
+      .boolean('removeDispatcher', 'Remove the dispatcher variable after flattening', {
+        default: true,
+      })
+      .required('code'),
+  ),
+  tool('analysis_decode_string_array', (t) =>
+    t
+      .desc('Decode literal string-array access back to strings.')
+      .string('code', 'JavaScript source')
+      .boolean('removeRotation', 'Apply simple rotation cleanup first', {
+        default: true,
+      })
+      .number('maxReplacements', 'Maximum replacements', {
+        default: 200,
+        minimum: 1,
+        maximum: 10000,
+      })
+      .required('code'),
+  ),
 ];

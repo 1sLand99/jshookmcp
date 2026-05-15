@@ -41,6 +41,8 @@ describe('server/domains/analysis/definitions', () => {
     expect(names).toContain('clear_collected_data');
     expect(names).toContain('get_collection_stats');
     expect(names).toContain('webpack_enumerate');
+    expect(names).toContain('analysis_decode_string_array');
+    expect(names).toContain('analysis_deflat_control_flow');
   });
 
   it('collect_code requires url parameter', async () => {
@@ -138,5 +140,12 @@ describe('server/domains/analysis/definitions', () => {
     };
     expect(mappings.items?.required).toContain('path');
     expect(mappings.items?.required).toContain('pattern');
+  });
+
+  it('analysis_decode_string_array requires code and exposes narrow options', async () => {
+    const tool = coreTools.find((t) => t.name === 'analysis_decode_string_array')!;
+    expect(tool.inputSchema.required).toContain('code');
+    expect(tool.inputSchema.properties).toHaveProperty('removeRotation');
+    expect(tool.inputSchema.properties).toHaveProperty('maxReplacements');
   });
 });

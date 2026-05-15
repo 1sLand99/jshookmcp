@@ -100,6 +100,8 @@ describe('server/domains/analysis/manifest', () => {
     expect(toolNames).toContain('clear_collected_data');
     expect(toolNames).toContain('get_collection_stats');
     expect(toolNames).toContain('webpack_enumerate');
+    expect(toolNames).toContain('analysis_deflat_control_flow');
+    expect(toolNames).toContain('analysis_decode_string_array');
   });
 
   it('has no duplicate tool names across registrations', async () => {
