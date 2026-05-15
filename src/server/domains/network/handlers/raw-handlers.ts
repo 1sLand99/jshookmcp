@@ -25,6 +25,18 @@ export class RawHandlers extends RawLatencyHandlers {
     return this.dnsHttp.handleDnsReverse(args);
   }
 
+  handleDnsProbe(args: Record<string, unknown>) {
+    return this.dnsHttp.handleDnsProbe(args);
+  }
+
+  handleDnsCnameChain(args: Record<string, unknown>) {
+    return this.dnsHttp.handleDnsCnameChain(args);
+  }
+
+  handleDnsBulkResolve(args: Record<string, unknown>) {
+    return this.dnsHttp.handleDnsBulkResolve(args);
+  }
+
   handleHttpRequestBuild(args: Record<string, unknown>) {
     return this.dnsHttp.handleHttpRequestBuild(args);
   }

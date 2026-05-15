@@ -146,6 +146,40 @@ export const transportTools: Tool[] = [
       .string('ip', 'IP address to reverse lookup (e.g. 8.8.8.8)')
       .requiredOpenWorld('ip'),
   ),
+  tool('dns_probe', (t) =>
+    t
+      .desc('Run a DNS query and return structured status instead of throwing.')
+      .string('hostname', 'Hostname to query')
+      .string('rrType', 'DNS record type: A, AAAA, MX, TXT, NS, CNAME, SOA, PTR, SRV, or ANY', {
+        default: 'A',
+      })
+      .requiredOpenWorld('hostname'),
+  ),
+  tool('dns_cname_chain', (t) =>
+    t
+      .desc('Trace the full CNAME chain for a hostname.')
+      .string('hostname', 'Hostname to trace CNAME chain for')
+      .number('maxDepth', 'Maximum chain depth to follow. Default: 10', {
+        default: 10,
+        minimum: 1,
+        maximum: 30,
+      })
+      .requiredOpenWorld('hostname'),
+  ),
+  tool('dns_bulk_resolve', (t) =>
+    t
+      .desc('Resolve many hostnames concurrently with per-host status.')
+      .array('hostnames', { type: 'string' }, 'List of hostnames to resolve (max 1000)')
+      .string('rrType', 'DNS record type: A, AAAA, MX, TXT, NS, CNAME, SOA, PTR, SRV, or ANY', {
+        default: 'A',
+      })
+      .number('concurrency', 'Maximum number of concurrent DNS queries. Default: 10', {
+        default: 10,
+        minimum: 1,
+        maximum: 50,
+      })
+      .requiredOpenWorld('hostnames'),
+  ),
   tool('network_rtt_measure', (t) =>
     t
       .desc('Measure round-trip time to a target URL.')
@@ -161,6 +195,21 @@ export const transportTools: Tool[] = [
         minimum: 100,
         maximum: 30000,
       })
+      .object(
+        'authorization',
+        { additionalProperties: { type: 'string' } },
+        'Authorization policy for network access',
+      )
+      .requiredOpenWorld('url'),
+  ),
+  tool('network_latency_stats', (t) =>
+    t
+      .desc('Measure repeated latency and compute percentile stats.')
+      .string('url', 'Target URL to measure')
+      .enum('probeType', ['tcp', 'tls', 'http'], 'Probe type', { default: 'http' })
+      .number('iterations', 'Number of probes', { default: 20, minimum: 5, maximum: 100 })
+      .number('concurrency', 'Max concurrent probes', { default: 5, minimum: 1, maximum: 20 })
+      .number('timeoutMs', 'Per-probe timeout ms', { default: 5000, minimum: 100, maximum: 30000 })
       .object(
         'authorization',
         { additionalProperties: { type: 'string' } },

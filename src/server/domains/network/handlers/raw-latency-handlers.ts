@@ -135,6 +135,89 @@ export class RawLatencyHandlers {
     }
   }
 
+  async handleNetworkLatencyStats(args: Record<string, unknown>) {
+    const urlRaw = parseOptionalString(args.url, 'url');
+    if (!urlRaw) {
+      return R.text('url is required', true);
+    }
+
+    const probeType = (parseOptionalString(args.probeType, 'probeType') ?? 'http') as
+      | 'tcp'
+      | 'tls'
+      | 'http';
+    if (!['tcp', 'tls', 'http'].includes(probeType)) {
+      return R.text(`Invalid probeType: "${probeType}". Expected one of: tcp, tls, http`, true);
+    }
+
+    const iterations = clamp(
+      args.iterations !== undefined
+        ? parseNumberArg(args.iterations, { defaultValue: 20, min: 5, integer: true })
+        : 20,
+      5,
+      100,
+    );
+    const concurrency = clamp(
+      args.concurrency !== undefined
+        ? parseNumberArg(args.concurrency, { defaultValue: 5, min: 1, integer: true })
+        : 5,
+      1,
+      20,
+    );
+    const timeoutMs = clamp(
+      args.timeoutMs !== undefined
+        ? parseNumberArg(args.timeoutMs, { defaultValue: 5000, min: 100, integer: true })
+        : 5000,
+      100,
+      30000,
+    );
+
+    const authorization = parseNetworkAuthorization(args.authorization);
+    const { url, target } = await resolveAuthorizedTransportTarget(
+      urlRaw,
+      authorization,
+      'Latency stats',
+    );
+
+    const hostname = target.hostname;
+    const port = Number(url.port) || (url.protocol === 'https:' ? 443 : 80);
+    const resolvedIp = target.resolvedAddress ?? hostname;
+    const useHttps = url.protocol === 'https:';
+    const samples: number[] = [];
+    const errors: string[] = [];
+
+    for (let i = 0; i < iterations; i += concurrency) {
+      const batch = Array.from(
+        { length: Math.min(concurrency, iterations - i) },
+        (_, idx) => idx + i,
+      );
+      const results = await Promise.allSettled(
+        batch.map(() =>
+          this.measureSingleRtt(hostname, resolvedIp, port, probeType, timeoutMs, useHttps),
+        ),
+      );
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          samples.push(result.value);
+        } else {
+          errors.push(
+            result.reason instanceof Error ? result.reason.message : String(result.reason),
+          );
+        }
+      }
+    }
+
+    const stats = computeRttStats(samples);
+
+    return R.ok().json({
+      url: urlRaw,
+      target: { hostname, port, resolvedIp, probeType },
+      iterations,
+      concurrency,
+      stats,
+      errors: errors.length > 0 ? errors : undefined,
+    });
+  }
+
   async handleNetworkIcmpProbe(args: Record<string, unknown>) {
     try {
       if (!isIcmpAvailable()) {

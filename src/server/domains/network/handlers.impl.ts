@@ -201,12 +201,17 @@ export class AdvancedToolHandlers {
   handleNetworkIcmpProbe = (args: Record<string, unknown>) => this.raw.handleNetworkIcmpProbe(args);
   handleDnsResolve = (args: Record<string, unknown>) => this.raw.handleDnsResolve(args);
   handleDnsReverse = (args: Record<string, unknown>) => this.raw.handleDnsReverse(args);
+  handleDnsProbe = (args: Record<string, unknown>) => this.raw.handleDnsProbe(args);
+  handleDnsCnameChain = (args: Record<string, unknown>) => this.raw.handleDnsCnameChain(args);
+  handleDnsBulkResolve = (args: Record<string, unknown>) => this.raw.handleDnsBulkResolve(args);
   handleHttpRequestBuild = (args: Record<string, unknown>) => this.raw.handleHttpRequestBuild(args);
   handleHttpPlainRequest = (args: Record<string, unknown>) => this.raw.handleHttpPlainRequest(args);
   handleHttp2Probe = (args: Record<string, unknown>) => this.raw.handleHttp2Probe(args);
   handleHttp2FrameBuild = (args: Record<string, unknown>) => this.raw.handleHttp2FrameBuild(args);
   handleNetworkRttMeasure = (args: Record<string, unknown>) =>
     this.raw.handleNetworkRttMeasure(args);
+  handleNetworkLatencyStats = (args: Record<string, unknown>) =>
+    this.raw.handleNetworkLatencyStats(args);
 
   // ── TLS Fingerprint & Bot Detection ──
 

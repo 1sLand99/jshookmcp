@@ -151,7 +151,9 @@ export function computeRttStats(samples: number[]) {
     maxMs: sorted[sorted.length - 1]!,
     avgMs: roundMs(sorted.reduce((s, v) => s + v, 0) / sorted.length),
     p50Ms: sorted[Math.floor(sorted.length * 0.5)]!,
+    p90Ms: sorted[Math.floor(sorted.length * 0.9)]!,
     p95Ms: sorted[Math.floor(sorted.length * 0.95)]!,
+    p99Ms: sorted[Math.floor(sorted.length * 0.99)]!,
   };
 }
 

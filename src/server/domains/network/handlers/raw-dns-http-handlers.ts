@@ -1,4 +1,5 @@
 import * as dns from 'node:dns/promises';
+import type { AnyRecord, MxRecord, SoaRecord, SrvRecord } from 'node:dns';
 import type { EventBus, ServerEventMap } from '@server/EventBus';
 import { R } from '@server/domains/shared/ResponseBuilder';
 import {
@@ -6,6 +7,7 @@ import {
   parseRawString,
   parseHeaderRecord,
   parseNetworkAuthorization,
+  parseStringArray,
   normalizeTargetHost,
   formatHostForUrl,
   getRequestMethod,
@@ -19,6 +21,24 @@ import {
 } from '@server/domains/network/http-raw';
 import { emitEvent, parseBooleanArg, parseNumberArg } from './shared';
 
+const DNS_RR_TYPES = ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'PTR', 'SRV', 'ANY'] as const;
+type DnsRecords = string[] | string[][] | MxRecord[] | SrvRecord[] | SoaRecord | AnyRecord[];
+
+function classifyDnsStatus(code: string | undefined): string {
+  if (!code) return 'ERROR';
+  if (code === 'ENOTFOUND') return 'NXDOMAIN';
+  if (code === 'ENODATA') return 'NODATA';
+  if (code === 'ESERVFAIL') return 'SERVFAIL';
+  if (code === 'ETIMEOUT') return 'TIMEOUT';
+  if (code === 'ECONNREFUSED') return 'CONNREFUSED';
+  if (code === 'EREFUSED') return 'REFUSED';
+  return 'ERROR';
+}
+
+function roundTiming(start: number): number {
+  return Math.round((performance.now() - start) * 100) / 100;
+}
+
 export class RawDnsHttpHandlers {
   constructor(private readonly eventBus?: EventBus<ServerEventMap>) {}
 
@@ -29,16 +49,15 @@ export class RawDnsHttpHandlers {
         return R.text('hostname is required', true);
       }
       const rrType = parseOptionalString(args.rrType, 'rrType') ?? 'A';
-      const validTypes = ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'PTR', 'SRV', 'ANY'];
-      if (!validTypes.includes(rrType)) {
+      if (!DNS_RR_TYPES.includes(rrType as (typeof DNS_RR_TYPES)[number])) {
         return R.text(
-          `Invalid rrType: "${rrType}". Expected one of: ${validTypes.join(', ')}`,
+          `Invalid rrType: "${rrType}". Expected one of: ${DNS_RR_TYPES.join(', ')}`,
           true,
         );
       }
       const start = performance.now();
       const records = await dns.resolve(hostname, rrType as never);
-      const timing = Math.round((performance.now() - start) * 100) / 100;
+      const timing = roundTiming(start);
       return R.ok().json({ hostname, rrType, records, timing });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -54,11 +73,170 @@ export class RawDnsHttpHandlers {
       }
       const start = performance.now();
       const hostnames = await dns.reverse(ip);
-      const timing = Math.round((performance.now() - start) * 100) / 100;
+      const timing = roundTiming(start);
       return R.ok().json({ ip, hostnames, timing });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return R.fail(`DNS reverse lookup failed: ${message}`).json();
+    }
+  }
+
+  async handleDnsProbe(args: Record<string, unknown>) {
+    try {
+      const hostname = parseOptionalString(args.hostname, 'hostname');
+      if (!hostname) {
+        return R.text('hostname is required', true);
+      }
+      const rrType = parseOptionalString(args.rrType, 'rrType') ?? 'A';
+      if (!DNS_RR_TYPES.includes(rrType as (typeof DNS_RR_TYPES)[number])) {
+        return R.text(
+          `Invalid rrType: "${rrType}". Expected one of: ${DNS_RR_TYPES.join(', ')}`,
+          true,
+        );
+      }
+      const start = performance.now();
+      try {
+        const records = await dns.resolve(hostname, rrType as never);
+        const timing = roundTiming(start);
+        return R.ok().json({ hostname, rrType, status: 'NOERROR', records, timing });
+      } catch (dnsErr: unknown) {
+        const timing = roundTiming(start);
+        const code =
+          dnsErr instanceof Error && 'code' in dnsErr
+            ? (dnsErr as NodeJS.ErrnoException).code
+            : undefined;
+        const status = classifyDnsStatus(code);
+        return R.ok().json({
+          hostname,
+          rrType,
+          status,
+          records: [],
+          timing,
+          errorCode: code ?? null,
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return R.fail(`DNS probe failed: ${message}`).json();
+    }
+  }
+
+  async handleDnsCnameChain(args: Record<string, unknown>) {
+    try {
+      const hostname = parseOptionalString(args.hostname, 'hostname');
+      if (!hostname) {
+        return R.text('hostname is required', true);
+      }
+      const maxDepth = parseNumberArg(args.maxDepth, {
+        defaultValue: 10,
+        min: 1,
+        max: 30,
+        integer: true,
+      });
+
+      const chain: Array<{
+        host: string;
+        target: string | null;
+        status: string;
+        depth: number;
+        timing: number;
+      }> = [];
+      let current = hostname;
+
+      for (let depth = 0; depth < maxDepth; depth++) {
+        const start = performance.now();
+        try {
+          const records = await dns.resolve(current, 'CNAME');
+          const timing = roundTiming(start);
+          const target = records[0] ?? null;
+          chain.push({ host: current, target, status: 'CNAME', depth, timing });
+          if (target) {
+            current = target;
+          } else {
+            break;
+          }
+        } catch (dnsErr: unknown) {
+          const timing = roundTiming(start);
+          const code =
+            dnsErr instanceof Error && 'code' in dnsErr
+              ? (dnsErr as NodeJS.ErrnoException).code
+              : undefined;
+          const status =
+            code === 'ENOTFOUND' || code === 'ENODATA' ? 'TERMINAL' : classifyDnsStatus(code);
+          chain.push({ host: current, target: null, status, depth, timing });
+          break;
+        }
+      }
+
+      return R.ok().json({ hostname, chain, depth: chain.length });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return R.fail(`CNAME chain trace failed: ${message}`).json();
+    }
+  }
+
+  async handleDnsBulkResolve(args: Record<string, unknown>) {
+    try {
+      const hostnamesArr = parseStringArray(args.hostnames, 'hostnames');
+      if (hostnamesArr.length === 0) {
+        return R.text('hostnames must be a non-empty array', true);
+      }
+      if (hostnamesArr.length > 1000) {
+        return R.text('hostnames array too large (max 1000)', true);
+      }
+      const rrType = parseOptionalString(args.rrType, 'rrType') ?? 'A';
+      if (!DNS_RR_TYPES.includes(rrType as (typeof DNS_RR_TYPES)[number])) {
+        return R.text(
+          `Invalid rrType: "${rrType}". Expected one of: ${DNS_RR_TYPES.join(', ')}`,
+          true,
+        );
+      }
+      const concurrency = parseNumberArg(args.concurrency, {
+        defaultValue: 10,
+        min: 1,
+        max: 50,
+        integer: true,
+      });
+
+      const results: Array<{
+        hostname: string;
+        status: string;
+        records: DnsRecords | [];
+        timing: number;
+      }> = [];
+
+      for (let i = 0; i < hostnamesArr.length; i += concurrency) {
+        const batch = hostnamesArr.slice(i, i + concurrency);
+        const batchResults = await Promise.all(
+          batch.map(async (host) => {
+            const start = performance.now();
+            try {
+              const records = await dns.resolve(host, rrType as never);
+              const timing = roundTiming(start);
+              return { hostname: host, status: 'NOERROR', records, timing };
+            } catch (dnsErr: unknown) {
+              const timing = roundTiming(start);
+              const code =
+                dnsErr instanceof Error && 'code' in dnsErr
+                  ? (dnsErr as NodeJS.ErrnoException).code
+                  : undefined;
+              return {
+                hostname: host,
+                status: classifyDnsStatus(code),
+                records: [],
+                timing,
+              };
+            }
+          }),
+        );
+        results.push(...batchResults);
+      }
+
+      const errorCount = results.filter((r) => r.status !== 'NOERROR').length;
+      return R.ok().json({ results, total: results.length, errors: errorCount, rrType });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return R.fail(`Bulk DNS resolve failed: ${message}`).json();
     }
   }
 
