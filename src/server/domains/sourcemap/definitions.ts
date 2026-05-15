@@ -14,6 +14,22 @@ export const sourcemapTools: Tool[] = [
       .string('scriptUrl', 'Script URL for relative map resolution.')
       .required('sourceMapUrl'),
   ),
+  tool('sourcemap_coverage', (t) =>
+    t
+      .desc('Summarize mapped and unmapped source coverage.')
+      .string('sourceMapUrl', 'Source map URL.')
+      .string('scriptUrl', 'Script URL for relative map resolution.')
+      .required('sourceMapUrl'),
+  ),
+  tool('sourcemap_lookup', (t) =>
+    t
+      .desc('Resolve generated code position to original source.')
+      .string('sourceMapUrl', 'Source map URL.')
+      .string('scriptUrl', 'Script URL for relative map resolution.')
+      .number('line', 'Generated line number.', { minimum: 1 })
+      .number('column', 'Generated column number.', { minimum: 0 })
+      .required('sourceMapUrl', 'line', 'column'),
+  ),
   tool('sourcemap_reconstruct_tree', (t) =>
     t
       .desc('Reconstruct source files from a source map.')

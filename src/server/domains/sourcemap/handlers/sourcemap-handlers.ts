@@ -148,6 +148,151 @@ export class SourcemapHandlers {
     }
   }
 
+  async handleSourcemapCoverage(args: Record<string, unknown>): Promise<TextToolResponse> {
+    try {
+      const sourceMapUrl = requiredStringArg(args.sourceMapUrl, 'sourceMapUrl');
+      const scriptUrl = optionalStringArg(args.scriptUrl);
+      const parsed = await parseSourceMap(sourceMapUrl, scriptUrl, this.state.collector);
+
+      const mappedBytesBySource = new Map<number, number>();
+      const segmentCountBySource = new Map<number, number>();
+      let uncoveredGeneratedBytes = 0;
+
+      for (let index = 0; index < parsed.mappings.length; index += 1) {
+        const current = parsed.mappings[index];
+        if (!current) continue;
+        const next = parsed.mappings[index + 1];
+        let span = 1;
+        if (next && next.generatedLine === current.generatedLine) {
+          span = Math.max(next.generatedColumn - current.generatedColumn, 1);
+        }
+        if (current?.sourceIndex === undefined) {
+          uncoveredGeneratedBytes += span;
+          continue;
+        }
+
+        mappedBytesBySource.set(
+          current.sourceIndex,
+          (mappedBytesBySource.get(current.sourceIndex) ?? 0) + span,
+        );
+        segmentCountBySource.set(
+          current.sourceIndex,
+          (segmentCountBySource.get(current.sourceIndex) ?? 0) + 1,
+        );
+      }
+
+      const sources = parsed.map.sources.map((source, index) => {
+        const coveredBytes = mappedBytesBySource.get(index) ?? 0;
+        const generatedSegments = segmentCountBySource.get(index) ?? 0;
+        const sourceContent = parsed.map.sourcesContent?.[index];
+        const sourceContentBytes =
+          typeof sourceContent === 'string' ? Buffer.byteLength(sourceContent, 'utf-8') : null;
+        const unmappedBytes =
+          sourceContentBytes === null ? null : Math.max(sourceContentBytes - coveredBytes, 0);
+        const coveredPercent =
+          sourceContentBytes && sourceContentBytes > 0
+            ? Number(((coveredBytes / sourceContentBytes) * 100).toFixed(2))
+            : null;
+
+        return {
+          source,
+          generatedSegments,
+          mappedBytes: coveredBytes,
+          coveredBytes,
+          unmappedBytes,
+          coveragePercent: coveredPercent,
+          coveredPercent,
+          sourceContentBytes,
+        };
+      });
+
+      const totalCoveredBytes = sources.reduce(
+        (sum, entry) => sum + (typeof entry.coveredBytes === 'number' ? entry.coveredBytes : 0),
+        0,
+      );
+
+      return json({
+        sourceMapUrl,
+        resolvedUrl: parsed.resolvedUrl,
+        totalMappings: parsed.segmentCount,
+        mappedSourceCount: sources.filter((entry) => entry.generatedSegments > 0).length,
+        coveredBytes: totalCoveredBytes,
+        uncoveredGeneratedBytes,
+        buckets: [
+          {
+            source: '[unmapped]',
+            generatedSegments: parsed.mappings.filter((entry) => entry.sourceIndex === undefined)
+              .length,
+            coveredBytes: uncoveredGeneratedBytes,
+          },
+        ],
+        sources,
+      });
+    } catch (error) {
+      return fail('sourcemap_coverage', error);
+    }
+  }
+
+  async handleSourcemapLookup(args: Record<string, unknown>): Promise<TextToolResponse> {
+    try {
+      const sourceMapUrl = requiredStringArg(args.sourceMapUrl, 'sourceMapUrl');
+      const scriptUrl = optionalStringArg(args.scriptUrl);
+      const line = Number(args.line);
+      const column = Number(args.column);
+      if (!Number.isInteger(line) || line < 1) {
+        throw new Error('line must be a positive integer');
+      }
+      if (!Number.isFinite(column) || column < 0) {
+        throw new Error('column must be a non-negative number');
+      }
+
+      const parsed = await parseSourceMap(sourceMapUrl, scriptUrl, this.state.collector);
+      let bestMatch = parsed.mappings.find(
+        (entry) => entry.generatedLine === line && entry.generatedColumn === column,
+      );
+      if (!bestMatch) {
+        const sameLine = parsed.mappings.filter(
+          (entry) => entry.generatedLine === line && entry.generatedColumn <= column,
+        );
+        bestMatch = sameLine.length > 0 ? sameLine[sameLine.length - 1] : undefined;
+      }
+
+      if (!bestMatch || bestMatch.sourceIndex === undefined) {
+        return json({
+          success: false,
+          sourceMapUrl,
+          resolvedUrl: parsed.resolvedUrl,
+          generated: { line, column },
+          error: 'No original source mapping found for generated position',
+        });
+      }
+
+      const sourceIndex = bestMatch.sourceIndex;
+      return json({
+        success: true,
+        sourceMapUrl,
+        resolvedUrl: parsed.resolvedUrl,
+        generated: { line, column },
+        original: {
+          source: parsed.map.sources[sourceIndex] ?? null,
+          line: bestMatch.originalLine ?? null,
+          column: bestMatch.originalColumn ?? null,
+          name:
+            typeof bestMatch.nameIndex === 'number'
+              ? (parsed.map.names[bestMatch.nameIndex] ?? null)
+              : null,
+          sourceIndex,
+        },
+        matchType:
+          bestMatch.generatedLine === line && bestMatch.generatedColumn === column
+            ? 'exact'
+            : 'closest-preceding',
+      });
+    } catch (error) {
+      return fail('sourcemap_lookup', error);
+    }
+  }
+
   async handleSourcemapReconstructTree(args: Record<string, unknown>): Promise<TextToolResponse> {
     try {
       const sourceMapUrl = requiredStringArg(args.sourceMapUrl, 'sourceMapUrl');

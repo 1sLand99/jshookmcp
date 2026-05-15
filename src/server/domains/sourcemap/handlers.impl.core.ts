@@ -34,6 +34,12 @@ export class SourcemapToolHandlers {
   handleSourcemapFetchAndParse(args: Record<string, unknown>) {
     return this.sourcemap.handleSourcemapFetchAndParse(args);
   }
+  handleSourcemapCoverage(args: Record<string, unknown>) {
+    return this.sourcemap.handleSourcemapCoverage(args);
+  }
+  handleSourcemapLookup(args: Record<string, unknown>) {
+    return this.sourcemap.handleSourcemapLookup(args);
+  }
   handleSourcemapReconstructTree(args: Record<string, unknown>) {
     return this.sourcemap.handleSourcemapReconstructTree(args);
   }

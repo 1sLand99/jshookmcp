@@ -14,6 +14,8 @@ const registrations = defineMethodRegistrations<H, (typeof sourcemapTools)[numbe
   entries: [
     { tool: 'sourcemap_discover', method: 'handleSourcemapDiscover' },
     { tool: 'sourcemap_fetch_and_parse', method: 'handleSourcemapFetchAndParse' },
+    { tool: 'sourcemap_coverage', method: 'handleSourcemapCoverage' },
+    { tool: 'sourcemap_lookup', method: 'handleSourcemapLookup' },
     { tool: 'sourcemap_reconstruct_tree', method: 'handleSourcemapReconstructTree' },
     { tool: 'sourcemap_parse_v4', method: 'handleSourcemapParseV4' },
   ],
