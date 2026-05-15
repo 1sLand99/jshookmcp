@@ -58,6 +58,17 @@ describe('AdvancedToolHandlers — dispatch methods (handlers.impl.ts coverage)'
     injectScriptMonitor: vi.fn().mockResolvedValue({ success: true }),
     clearInjectedBuffers: vi.fn().mockResolvedValue({ success: true }),
     resetInjectedInterceptors: vi.fn().mockResolvedValue({ success: true }),
+    enableFetchIntercept: vi.fn().mockResolvedValue([
+      {
+        id: 'rule-1',
+        urlPattern: '*api*',
+        interceptAction: 'fulfill',
+        stage: 'Response',
+        responseCode: 200,
+      },
+    ]),
+    disableFetchIntercept: vi.fn().mockResolvedValue({ removedRules: 1 }),
+    removeFetchInterceptRule: vi.fn().mockResolvedValue(true),
     addNetworkInterceptor: vi.fn().mockReturnValue({ id: 'i1' }),
     listInterceptors: vi.fn().mockReturnValue([]),
     removeInterceptor: vi.fn().mockReturnValue(true),
@@ -237,9 +248,27 @@ describe('AdvancedToolHandlers — dispatch methods (handlers.impl.ts coverage)'
 
     it('routes action=disable to handleNetworkInterceptDisable', async () => {
       const res = parseJson<NetworkRequestsResponse>(
-        await handlers.handleNetworkInterceptDispatch({ action: 'disable', interceptorId: 'i1' }),
+        await handlers.handleNetworkInterceptDispatch({ action: 'disable', ruleId: 'rule-1' }),
       );
       expect(res).toBeDefined();
+      expect(consoleMonitor.removeFetchInterceptRule).toHaveBeenCalledWith('rule-1');
+    });
+
+    it('routes add with interceptAction to handleNetworkInterceptResponse', async () => {
+      const res = parseJson<NetworkRequestsResponse>(
+        await handlers.handleNetworkInterceptDispatch({
+          action: 'add',
+          urlPattern: '*api*',
+          interceptAction: 'abort',
+        }),
+      );
+      expect(res).toBeDefined();
+      expect(consoleMonitor.enableFetchIntercept).toHaveBeenCalledWith([
+        expect.objectContaining({
+          urlPattern: '*api*',
+          interceptAction: 'abort',
+        }),
+      ]);
     });
 
     it('routes invalid action to error response (isError=true in content)', async () => {

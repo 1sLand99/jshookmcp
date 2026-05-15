@@ -44,7 +44,13 @@ describe('AdvancedToolHandlersIntercept', () => {
 
     it('handles single rule mode correctly', async () => {
       consoleMonitor.enableFetchIntercept.mockResolvedValue([
-        { id: 'rule1', urlPattern: '*api*', stage: 'Response', responseCode: 200 },
+        {
+          id: 'rule1',
+          urlPattern: '*api*',
+          interceptAction: 'fulfill',
+          stage: 'Response',
+          responseCode: 200,
+        },
       ]);
       consoleMonitor.getFetchInterceptStatus.mockReturnValue({ rules: ['rule1'] });
 
@@ -61,6 +67,7 @@ describe('AdvancedToolHandlersIntercept', () => {
           urlPattern: '*api*',
           urlPatternType: 'glob',
           stage: 'Response',
+          interceptAction: 'fulfill',
           responseCode: 200,
           responseHeaders: undefined,
           responseBody: '{"key":"value"}',
@@ -72,7 +79,13 @@ describe('AdvancedToolHandlersIntercept', () => {
 
     it('handles single rule with string body and regex pattern', async () => {
       consoleMonitor.enableFetchIntercept.mockResolvedValue([
-        { id: 'rule2', urlPattern: '.*', stage: 'Request', responseCode: 404 },
+        {
+          id: 'rule2',
+          urlPattern: '.*',
+          interceptAction: 'fulfill',
+          stage: 'Request',
+          responseCode: 404,
+        },
       ]);
       consoleMonitor.getFetchInterceptStatus.mockReturnValue({ rules: ['rule2'] });
 
@@ -92,6 +105,7 @@ describe('AdvancedToolHandlersIntercept', () => {
           urlPattern: '.*',
           urlPatternType: 'regex',
           stage: 'Request',
+          interceptAction: 'fulfill',
           responseCode: 404,
           responseHeaders: { 'X-Test': 'test' },
           responseBody: 'string body',
@@ -119,6 +133,7 @@ describe('AdvancedToolHandlersIntercept', () => {
           urlPattern: '*a*',
           urlPatternType: 'glob',
           stage: 'Response',
+          interceptAction: 'fulfill',
           responseCode: 200,
           responseHeaders: undefined,
           responseBody: undefined,
@@ -127,6 +142,7 @@ describe('AdvancedToolHandlersIntercept', () => {
           urlPattern: '*b*',
           urlPatternType: 'glob',
           stage: 'Response',
+          interceptAction: 'fulfill',
           responseCode: 200,
           responseHeaders: undefined,
           responseBody: 'body',
@@ -134,6 +150,93 @@ describe('AdvancedToolHandlersIntercept', () => {
       ]);
       expect(body.success).toBe(true);
       expect(body.createdRules).toHaveLength(2);
+    });
+
+    it('passes through continue action', async () => {
+      consoleMonitor.enableFetchIntercept.mockResolvedValue([
+        {
+          id: 'rule3',
+          urlPattern: '*api*',
+          interceptAction: 'continue',
+          stage: 'Request',
+          responseCode: 200,
+        },
+      ]);
+      consoleMonitor.getFetchInterceptStatus.mockReturnValue({ rules: ['rule3'] });
+
+      const body = parseJson<any>(
+        await handler.handleNetworkInterceptResponse({
+          urlPattern: '*api*',
+          stage: 'Request',
+          interceptAction: 'continue',
+        }),
+      );
+
+      expect(consoleMonitor.enableFetchIntercept).toHaveBeenCalledWith([
+        {
+          urlPattern: '*api*',
+          urlPatternType: 'glob',
+          stage: 'Request',
+          interceptAction: 'continue',
+          responseCode: 200,
+          responseHeaders: undefined,
+          responseBody: undefined,
+        },
+      ]);
+      expect(body.createdRules[0].interceptAction).toBe('continue');
+    });
+
+    it('passes through abort action', async () => {
+      consoleMonitor.enableFetchIntercept.mockResolvedValue([
+        {
+          id: 'rule4',
+          urlPattern: '*api*',
+          interceptAction: 'abort',
+          stage: 'Request',
+          responseCode: 200,
+        },
+      ]);
+      consoleMonitor.getFetchInterceptStatus.mockReturnValue({ rules: ['rule4'] });
+
+      const body = parseJson<any>(
+        await handler.handleNetworkInterceptResponse({
+          urlPattern: '*api*',
+          interceptAction: 'abort',
+        }),
+      );
+
+      expect(consoleMonitor.enableFetchIntercept).toHaveBeenCalledWith([
+        {
+          urlPattern: '*api*',
+          urlPatternType: 'glob',
+          stage: 'Response',
+          interceptAction: 'abort',
+          responseCode: 200,
+          responseHeaders: undefined,
+          responseBody: undefined,
+        },
+      ]);
+      expect(body.createdRules[0].interceptAction).toBe('abort');
+    });
+
+    it('defaults interceptAction to fulfill when omitted', async () => {
+      consoleMonitor.enableFetchIntercept.mockImplementation(async (rules: any[]) => [
+        { id: 'rule5', ...rules[0] },
+      ]);
+      consoleMonitor.getFetchInterceptStatus.mockReturnValue({ rules: ['rule5'] });
+
+      const body = parseJson<any>(
+        await handler.handleNetworkInterceptResponse({
+          urlPattern: '*api*',
+        }),
+      );
+
+      expect(body.createdRules[0].interceptAction).toBe('fulfill');
+      expect(consoleMonitor.enableFetchIntercept).toHaveBeenCalledWith([
+        expect.objectContaining({
+          interceptAction: 'fulfill',
+        }),
+      ]);
     });
 
     it('returns error when batch mode passes empty valid rules', async () => {

@@ -111,6 +111,21 @@ describe('network tool definitions', () => {
     expect(names.has('network_intercept')).toBe(true);
   });
 
+  it('network_intercept exposes action schema', async () => {
+    const tool = findTool('network_intercept');
+    const props = getProperties(tool) as Record<string, ToolProperty & { enum?: string[] }>;
+    expect(props.action?.enum).toEqual(['add', 'list', 'disable']);
+  });
+
+  it('network_intercept exposes explicit intercept actions', async () => {
+    const tool = findTool('network_intercept');
+    const props = getProperties(tool) as Record<string, ToolProperty & { enum?: string[] }>;
+
+    expect(props.interceptAction).toBeDefined();
+    expect(props.interceptAction?.type).toBe('string');
+    expect(props.interceptAction?.enum).toEqual(['continue', 'abort', 'fulfill']);
+  });
+
   // ---------- required field checks ----------
 
   it('network_get_response_body requires requestId', async () => {

@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto';
 
 // ── Types ──
 
+export type FetchInterceptAction = 'continue' | 'abort' | 'fulfill';
+
 export interface FetchInterceptRule {
   /** Auto-generated rule ID */
   id: string;
@@ -13,6 +15,8 @@ export interface FetchInterceptRule {
   urlPatternType: 'glob' | 'regex';
   /** Intercept stage: Request (before sending) or Response (after receiving) */
   stage: 'Request' | 'Response';
+  /** Action to take when the rule matches */
+  interceptAction: FetchInterceptAction;
   /** HTTP status code to return (default: 200) */
   responseCode: number;
   /** Custom response headers */
@@ -29,6 +33,7 @@ export interface FetchInterceptRuleInput {
   urlPattern: string;
   urlPatternType?: 'glob' | 'regex';
   stage?: 'Request' | 'Response';
+  interceptAction?: FetchInterceptAction;
   responseCode?: number;
   responseHeaders?: Record<string, string>;
   responseBody?: string;
@@ -166,6 +171,7 @@ export class FetchInterceptor {
       urlPattern: input.urlPattern,
       urlPatternType: input.urlPatternType ?? 'glob',
       stage: input.stage ?? 'Response',
+      interceptAction: input.interceptAction ?? 'fulfill',
       responseCode: input.responseCode ?? 200,
       responseHeaders: headers,
       responseBody: input.responseBody ?? '',
@@ -239,53 +245,85 @@ export class FetchInterceptor {
         rule.hitCount++;
         logger.info(`[FetchInterceptor] Rule "${rule.urlPattern}" matched: ${requestUrl}`);
 
-        try {
-          // Build response headers
-          const headers = [...rule.responseHeaders];
-
-          // Ensure Content-Type is set
-          if (!headers.some((h) => h.name.toLowerCase() === 'content-type')) {
-            // Auto-detect content type from body
-            const body = rule.responseBody;
-            if (body.startsWith('{') || body.startsWith('[')) {
-              headers.push({ name: 'Content-Type', value: 'application/json' });
-            } else {
-              headers.push({ name: 'Content-Type', value: 'text/plain' });
-            }
-          }
-
-          // Ensure Access-Control-Allow-Origin for CORS
-          if (!headers.some((h) => h.name.toLowerCase() === 'access-control-allow-origin')) {
-            headers.push({ name: 'Access-Control-Allow-Origin', value: '*' });
-          }
-
-          await this.cdpSession.send('Fetch.fulfillRequest', {
-            requestId: params.requestId,
-            responseCode: rule.responseCode,
-            responseHeaders: headers,
-            body: Buffer.from(rule.responseBody, 'utf-8').toString('base64'),
-          });
+        const handled = await this.applyMatchedRule(rule, params, requestUrl);
+        if (handled) {
           return;
-        } catch (error) {
-          logger.error(`[FetchInterceptor] fulfillRequest failed for ${requestUrl}:`, error);
-          // Fall through to continueRequest
         }
       }
     }
 
     // No rule matched — pass through
+    await this.continueOriginalRequest(params, requestUrl);
+  }
+
+  private async applyMatchedRule(
+    rule: FetchInterceptRule,
+    params: FetchRequestPausedEvent,
+    requestUrl: string,
+  ): Promise<boolean> {
     try {
-      if (params.responseStatusCode !== undefined) {
-        // Response stage — continue with original response
-        await this.cdpSession.send('Fetch.continueResponse', {
-          requestId: params.requestId,
-        });
-      } else {
-        // Request stage — continue with original request
-        await this.cdpSession.send('Fetch.continueRequest', {
-          requestId: params.requestId,
-        });
+      switch (rule.interceptAction) {
+        case 'continue':
+          await this.continuePausedRequest(params);
+          return true;
+        case 'abort':
+          await this.cdpSession.send('Fetch.failRequest', {
+            requestId: params.requestId,
+            errorReason: 'Failed',
+          });
+          return true;
+        case 'fulfill':
+          await this.cdpSession.send('Fetch.fulfillRequest', {
+            requestId: params.requestId,
+            responseCode: rule.responseCode,
+            responseHeaders: this.buildFulfillHeaders(rule),
+            body: Buffer.from(rule.responseBody, 'utf-8').toString('base64'),
+          });
+          return true;
       }
+    } catch (error) {
+      logger.error(`[FetchInterceptor] ${rule.interceptAction} failed for ${requestUrl}:`, error);
+      return false;
+    }
+  }
+
+  private buildFulfillHeaders(rule: FetchInterceptRule): Array<{ name: string; value: string }> {
+    const headers = [...rule.responseHeaders];
+
+    if (!headers.some((h) => h.name.toLowerCase() === 'content-type')) {
+      if (rule.responseBody.startsWith('{') || rule.responseBody.startsWith('[')) {
+        headers.push({ name: 'Content-Type', value: 'application/json' });
+      } else {
+        headers.push({ name: 'Content-Type', value: 'text/plain' });
+      }
+    }
+
+    if (!headers.some((h) => h.name.toLowerCase() === 'access-control-allow-origin')) {
+      headers.push({ name: 'Access-Control-Allow-Origin', value: '*' });
+    }
+
+    return headers;
+  }
+
+  private async continuePausedRequest(params: FetchRequestPausedEvent): Promise<void> {
+    if (params.responseStatusCode !== undefined) {
+      await this.cdpSession.send('Fetch.continueResponse', {
+        requestId: params.requestId,
+      });
+      return;
+    }
+
+    await this.cdpSession.send('Fetch.continueRequest', {
+      requestId: params.requestId,
+    });
+  }
+
+  private async continueOriginalRequest(
+    params: FetchRequestPausedEvent,
+    requestUrl: string,
+  ): Promise<void> {
+    try {
+      await this.continuePausedRequest(params);
     } catch (error) {
       logger.warn(`[FetchInterceptor] continue failed for ${requestUrl}:`, error);
     }

@@ -7,7 +7,13 @@ function parseBody(r: unknown) {
 
 function createDeps() {
   const createdRules = [
-    { id: 'rule-1', urlPattern: '*api*', stage: 'Response', responseCode: 200 },
+    {
+      id: 'rule-1',
+      urlPattern: '*api*',
+      interceptAction: 'fulfill',
+      stage: 'Response',
+      responseCode: 200,
+    },
   ];
   return {
     consoleMonitor: {
@@ -91,6 +97,7 @@ describe('InterceptHandlers', () => {
       const rule = call[0] as Record<string, unknown>;
       expect(rule.urlPatternType).toBe('regex');
       expect(rule.stage).toBe('Request');
+      expect(rule.interceptAction).toBe('fulfill');
       expect(rule.responseCode).toBe(404);
       expect(rule.responseHeaders).toEqual({ 'X-Custom': 'val' });
       expect(rule.responseBody).toBe('{"json":true}');
@@ -102,6 +109,24 @@ describe('InterceptHandlers', () => {
       await handlers.handleNetworkInterceptResponse({ urlPattern: '*' });
       const call = deps.consoleMonitor.enableFetchIntercept.mock.calls[0]![0] as unknown[];
       expect((call[0] as Record<string, unknown>).urlPatternType).toBe('glob');
+    });
+
+    it('passes continue and abort actions through normalization', async () => {
+      deps.consoleMonitor.enableFetchIntercept.mockImplementation(async (rules) => rules);
+      deps.consoleMonitor.getFetchInterceptStatus.mockReturnValue({ rules: [] });
+
+      await handlers.handleNetworkInterceptResponse({
+        rules: [
+          { urlPattern: '*a*', interceptAction: 'continue' },
+          { urlPattern: '*b*', interceptAction: 'abort' },
+        ],
+      });
+
+      const call = deps.consoleMonitor.enableFetchIntercept.mock.calls[0]![0] as Array<
+        Record<string, unknown>
+      >;
+      expect(call[0]?.interceptAction).toBe('continue');
+      expect(call[1]?.interceptAction).toBe('abort');
     });
   });
 

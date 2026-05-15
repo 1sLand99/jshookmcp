@@ -1,10 +1,12 @@
 import { AdvancedToolHandlersRaw as AdvancedToolHandlersReplay } from '@server/domains/network/handlers.impl.core.runtime.raw';
+import type { FetchInterceptAction } from '@modules/monitor/FetchInterceptor';
 import { R } from '@server/domains/shared/ResponseBuilder';
 
 interface InterceptRuleInput {
   urlPattern: string;
   urlPatternType?: 'glob' | 'regex';
   stage?: 'Request' | 'Response';
+  interceptAction?: FetchInterceptAction;
   responseCode?: number;
   responseHeaders?: Record<string, string>;
   responseBody?: string;
@@ -31,6 +33,7 @@ export class AdvancedToolHandlersIntercept extends AdvancedToolHandlersReplay {
 
               urlPatternType: rawRule.urlPatternType === 'regex' ? 'regex' : 'glob',
               stage: rawRule.stage === 'Request' ? 'Request' : 'Response',
+              interceptAction: this.toInterceptAction(rawRule.interceptAction),
               responseCode: typeof rawRule.responseCode === 'number' ? rawRule.responseCode : 200,
               responseHeaders: isObjectRecord(rawRule.responseHeaders)
                 ? (rawRule.responseHeaders as Record<string, string>)
@@ -50,6 +53,7 @@ export class AdvancedToolHandlersIntercept extends AdvancedToolHandlersReplay {
           urlPattern: args.urlPattern,
           urlPatternType: args.urlPatternType === 'regex' ? 'regex' : 'glob',
           stage: args.stage === 'Request' ? 'Request' : 'Response',
+          interceptAction: this.toInterceptAction(args.interceptAction),
           responseCode: typeof args.responseCode === 'number' ? args.responseCode : 200,
           responseHeaders: isObjectRecord(args.responseHeaders)
             ? (args.responseHeaders as Record<string, string>)
@@ -100,6 +104,7 @@ export class AdvancedToolHandlersIntercept extends AdvancedToolHandlersReplay {
           createdRules: createdRules.map((r) => ({
             id: r.id,
             urlPattern: r.urlPattern,
+            interceptAction: r.interceptAction,
             stage: r.stage,
             responseCode: r.responseCode,
           })),
@@ -173,5 +178,12 @@ export class AdvancedToolHandlersIntercept extends AdvancedToolHandlersReplay {
     } catch (error) {
       return R.fail(error instanceof Error ? error.message : String(error)).json();
     }
+  }
+
+  private toInterceptAction(value: unknown): FetchInterceptAction {
+    if (value === 'continue' || value === 'abort') {
+      return value;
+    }
+    return 'fulfill';
   }
 }

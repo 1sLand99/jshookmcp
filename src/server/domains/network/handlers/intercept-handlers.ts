@@ -4,6 +4,7 @@
  * Extracted from AdvancedToolHandlersIntercept (handlers.impl.core.runtime.intercept.ts).
  */
 
+import type { FetchInterceptAction } from '@modules/monitor/FetchInterceptor';
 import type { ConsoleMonitor } from '@server/domains/shared/modules/collector';
 import type { EventBus, ServerEventMap } from '@server/EventBus';
 import { R } from '@server/domains/shared/ResponseBuilder';
@@ -13,6 +14,7 @@ interface InterceptRuleInput {
   urlPattern: string;
   urlPatternType?: 'glob' | 'regex';
   stage?: 'Request' | 'Response';
+  interceptAction?: FetchInterceptAction;
   responseCode?: number;
   responseHeaders?: Record<string, string>;
   responseBody?: string;
@@ -70,6 +72,7 @@ export class InterceptHandlers {
           createdRules: createdRules.map((r) => ({
             id: r.id,
             urlPattern: r.urlPattern,
+            interceptAction: r.interceptAction,
             stage: r.stage,
             responseCode: r.responseCode,
           })),
@@ -162,6 +165,7 @@ export class InterceptHandlers {
       urlPattern: source.urlPattern as string,
       urlPatternType: source.urlPatternType === 'regex' ? 'regex' : 'glob',
       stage: source.stage === 'Request' ? 'Request' : 'Response',
+      interceptAction: this.toInterceptAction(source.interceptAction),
       responseCode: typeof source.responseCode === 'number' ? source.responseCode : 200,
       responseHeaders: isObjectRecord(source.responseHeaders)
         ? (source.responseHeaders as Record<string, string>)
@@ -173,5 +177,12 @@ export class InterceptHandlers {
             ? JSON.stringify(source.responseBody)
             : undefined,
     };
+  }
+
+  private toInterceptAction(value: unknown): FetchInterceptAction {
+    if (value === 'continue' || value === 'abort') {
+      return value;
+    }
+    return 'fulfill';
   }
 }

@@ -80,6 +80,7 @@ describe('FetchInterceptor', () => {
         urlPattern: '*api/test*',
         urlPatternType: 'glob',
         stage: 'Response',
+        interceptAction: 'fulfill',
         responseCode: 200,
         responseHeaders: [],
         responseBody: '',
@@ -106,6 +107,7 @@ describe('FetchInterceptor', () => {
       expect(rules[0]).toMatchObject({
         urlPatternType: 'glob',
         stage: 'Response',
+        interceptAction: 'fulfill',
         responseCode: 200,
         responseBody: '',
         responseHeaders: [],
@@ -148,6 +150,7 @@ describe('FetchInterceptor', () => {
         urlPattern: '/api/v[12]/users',
         urlPatternType: 'regex',
         stage: 'Request',
+        interceptAction: 'fulfill',
       });
     });
 
@@ -430,6 +433,70 @@ describe('FetchInterceptor', () => {
       expect(send).toHaveBeenCalledWith('Fetch.fulfillRequest', expect.anything());
     });
 
+    it('continues matched request when interceptAction is continue', async () => {
+      const { session, send, emit } = createMockSession();
+      const interceptor = new FetchInterceptor(session);
+
+      await interceptor.enable([
+        {
+          urlPattern: '*api/users*',
+          interceptAction: 'continue',
+        },
+      ]);
+
+      send.mockClear();
+
+      await emit('Fetch.requestPaused', {
+        requestId: 'req-continue',
+        request: {
+          url: withPath(TEST_URLS.root, 'api/users?page=1'),
+          method: 'GET',
+          headers: {},
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(send).toHaveBeenCalledWith('Fetch.continueRequest', {
+        requestId: 'req-continue',
+      });
+      expect(send).not.toHaveBeenCalledWith('Fetch.fulfillRequest', expect.anything());
+      expect(send).not.toHaveBeenCalledWith('Fetch.failRequest', expect.anything());
+      expect(interceptor.listRules().totalHits).toBe(1);
+    });
+
+    it('aborts matched request when interceptAction is abort', async () => {
+      const { session, send, emit } = createMockSession();
+      const interceptor = new FetchInterceptor(session);
+
+      await interceptor.enable([
+        {
+          urlPattern: '*api/users*',
+          interceptAction: 'abort',
+        },
+      ]);
+
+      send.mockClear();
+
+      await emit('Fetch.requestPaused', {
+        requestId: 'req-abort',
+        request: {
+          url: withPath(TEST_URLS.root, 'api/users?page=1'),
+          method: 'GET',
+          headers: {},
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(send).toHaveBeenCalledWith('Fetch.failRequest', {
+        requestId: 'req-abort',
+        errorReason: 'Failed',
+      });
+      expect(send).not.toHaveBeenCalledWith('Fetch.fulfillRequest', expect.anything());
+      expect(interceptor.listRules().totalHits).toBe(1);
+    });
+
     it('falls back to literal match when regex is invalid', async () => {
       const { session, send, emit } = createMockSession();
       const interceptor = new FetchInterceptor(session);
@@ -684,6 +751,30 @@ describe('FetchInterceptor', () => {
 
       expect(loggerState.error).toHaveBeenCalled();
       // Should fall through to continueRequest
+      expect(send).toHaveBeenCalledWith('Fetch.continueRequest', { requestId: 'req-1' });
+    });
+
+    it('falls through when abort action fails', async () => {
+      const { session, send, emit } = createMockSession();
+      const interceptor = new FetchInterceptor(session);
+
+      await interceptor.enable([{ urlPattern: '*test*', interceptAction: 'abort' }]);
+
+      send.mockImplementation(async (method: string) => {
+        if (method === 'Fetch.failRequest') {
+          throw new Error('Abort failed');
+        }
+        return {};
+      });
+
+      await emit('Fetch.requestPaused', {
+        requestId: 'req-1',
+        request: { url: withPath(TEST_URLS.root, 'test'), method: 'GET', headers: {} },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(loggerState.error).toHaveBeenCalled();
       expect(send).toHaveBeenCalledWith('Fetch.continueRequest', { requestId: 'req-1' });
     });
 

@@ -99,6 +99,9 @@ export const analysisTools: Tool[] = [
       .enum('action', ['add', 'list', 'disable'], 'Intercept operation')
       .string('urlPattern', 'URL pattern to match')
       .enum('urlPatternType', ['glob', 'regex'], 'How to interpret urlPattern', { default: 'glob' })
+      .enum('interceptAction', ['continue', 'abort', 'fulfill'], 'Match action', {
+        default: 'fulfill',
+      })
       .enum(
         'stage',
         ['Request', 'Response'],
@@ -123,6 +126,7 @@ export const analysisTools: Tool[] = [
           properties: {
             urlPattern: { type: 'string' },
             urlPatternType: { type: 'string', enum: ['glob', 'regex'] },
+            interceptAction: { type: 'string', enum: ['continue', 'abort', 'fulfill'] },
             stage: { type: 'string', enum: ['Request', 'Response'] },
             responseCode: { type: 'number' },
             responseHeaders: { type: 'object', additionalProperties: { type: 'string' } },
