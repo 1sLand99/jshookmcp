@@ -65,6 +65,7 @@ const {
     handlePageGetCookies: vi.fn(async (args: any) => ({ from: 'get-cookies', args })),
     handlePageClearCookies: vi.fn(async (args: any) => ({ from: 'clear-cookies', args })),
     getPageCookieCount: vi.fn(async () => 3),
+    handlePageListFrames: vi.fn(async (args: any) => ({ from: 'list-frames', args })),
     handlePageSetViewport: vi.fn(async (args: any) => ({ from: 'set-viewport', args })),
     handlePageEmulateDevice: vi.fn(async (args: any) => ({ from: 'emulate', args })),
     handlePageGetLocalStorage: vi.fn(async (args: any) => ({ from: 'get-ls', args })),
@@ -108,9 +109,15 @@ const {
     handleCamoufoxServerClose: vi.fn(async (args: any) => ({ from: 'cfox-close', args })),
     handleCamoufoxServerStatus: vi.fn(async (args: any) => ({ from: 'cfox-status', args })),
   } as MockHandler,
-  humanMouseMock: vi.fn(async (args: any, _collector: any) => ({ from: 'human-mouse', args })),
+  humanMouseMock: vi.fn(async (args: any, _collector: any, _pageController: any) => ({
+    from: 'human-mouse',
+    args,
+  })),
   humanScrollMock: vi.fn(async (args: any, _collector: any) => ({ from: 'human-scroll', args })),
-  humanTypingMock: vi.fn(async (args: any, _collector: any) => ({ from: 'human-typing', args })),
+  humanTypingMock: vi.fn(async (args: any, _collector: any, _pageController: any) => ({
+    from: 'human-typing',
+    args,
+  })),
   captchaVisionSolveMock: vi.fn(async (args: any, _collector: any) => ({
     from: 'captcha-vision',
     args,
@@ -218,9 +225,11 @@ vi.mock('@src/server/domains/browser/handlers/tab-workflow', () => ({
   TabWorkflowHandlers: classFactory(vi.fn(), tabWorkflowMocks),
 }));
 vi.mock('@src/server/domains/browser/handlers/human-behavior', () => ({
-  handleHumanMouse: (args: any, collector: any) => humanMouseMock(args, collector),
+  handleHumanMouse: (args: any, collector: any, pageController: any) =>
+    humanMouseMock(args, collector, pageController),
   handleHumanScroll: (args: any, collector: any) => humanScrollMock(args, collector),
-  handleHumanTyping: (args: any, collector: any) => humanTypingMock(args, collector),
+  handleHumanTyping: (args: any, collector: any, pageController: any) =>
+    humanTypingMock(args, collector, pageController),
 }));
 vi.mock('@src/server/domains/browser/handlers/captcha-solver', () => ({
   handleCaptchaVisionSolve: (args: any, collector: any) => captchaVisionSolveMock(args, collector),
@@ -270,6 +279,7 @@ import {
   createConsoleMonitorMock,
 } from '@tests/server/domains/shared/mock-factories';
 import { TEST_URLS } from '@tests/shared/test-urls';
+import { EventBus } from '@server/EventBus';
 
 describe('BrowserToolHandlers — additional delegation coverage', () => {
   const collector = createCodeCollectorMock({ getActivePage: vi.fn() } as any);
@@ -280,6 +290,7 @@ describe('BrowserToolHandlers — additional delegation coverage', () => {
     disable: vi.fn(async () => {}),
     clearPlaywrightPage: vi.fn(),
   } as any);
+  const eventBus = new EventBus();
 
   let handlers: TestBrowserToolHandlers;
 
@@ -290,6 +301,7 @@ describe('BrowserToolHandlers — additional delegation coverage', () => {
       pageController as any,
       scriptManager as any,
       consoleMonitor as any,
+      eventBus as any,
     );
   });
 
@@ -378,6 +390,12 @@ describe('BrowserToolHandlers — additional delegation coverage', () => {
 
   // ============ Page Data delegation ============
   describe('page data delegation', () => {
+    it('delegates handlePageListFrames', async () => {
+      const result = await handlers.handlePageListFrames({});
+      expect(pageDataMocks.handlePageListFrames).toHaveBeenCalledWith({});
+      expect(result).toEqual({ from: 'list-frames', args: {} });
+    });
+
     it('delegates handlePageCookiesDispatch (get)', async () => {
       await handlers.handlePageCookiesDispatch({ action: 'get' });
       expect(pageDataMocks.handlePageGetCookies).toHaveBeenCalledWith({ action: 'get' });
@@ -612,7 +630,7 @@ describe('BrowserToolHandlers — additional delegation coverage', () => {
       it('delegates handleHumanMouse with collector', async () => {
         const args = { toX: 100, toY: 200 };
         const result = await handlers.handleHumanMouse(args);
-        expect(humanMouseMock).toHaveBeenCalledWith(args, collector);
+        expect(humanMouseMock).toHaveBeenCalledWith(args, collector, pageController);
         expect(result).toEqual({ from: 'human-mouse', args });
       });
 
@@ -626,8 +644,95 @@ describe('BrowserToolHandlers — additional delegation coverage', () => {
       it('delegates handleHumanTyping with collector', async () => {
         const args = { selector: '#input', text: 'hello' };
         const result = await handlers.handleHumanTyping(args);
-        expect(humanTypingMock).toHaveBeenCalledWith(args, collector);
+        expect(humanTypingMock).toHaveBeenCalledWith(args, collector, pageController);
         expect(result).toEqual({ from: 'human-typing', args });
+      });
+    });
+
+    describe('browser codegen recording', () => {
+      it('records browser tool calls and returns a cleaned replay script', async () => {
+        const start = parseJson<any>(await handlers.handleBrowserCodegenStart());
+        expect(start.success).toBe(true);
+        expect(start.recording).toBe(true);
+
+        await eventBus.emit('tool:called', {
+          toolName: 'page_navigate',
+          domain: 'browser',
+          timestamp: '2026-01-01T00:00:00.000Z',
+          success: true,
+          args: { url: TEST_URLS.root },
+        } as any);
+        await eventBus.emit('tool:called', {
+          toolName: 'page_click',
+          domain: 'browser',
+          timestamp: '2026-01-01T00:00:01.000Z',
+          success: true,
+          args: { selector: '#login', frameSelector: 'iframe#auth' },
+        } as any);
+        await eventBus.emit('tool:called', {
+          toolName: 'page_wait_for_selector',
+          domain: 'browser',
+          timestamp: '2026-01-01T00:00:01.500Z',
+          success: true,
+          args: { selector: '#login', frameSelector: 'iframe#auth' },
+        } as any);
+        await eventBus.emit('tool:called', {
+          toolName: 'page_wait_for_selector',
+          domain: 'browser',
+          timestamp: '2026-01-01T00:00:01.750Z',
+          success: true,
+          args: { selector: '#login', frameSelector: 'iframe#auth' },
+        } as any);
+        await eventBus.emit('tool:called', {
+          toolName: 'console_get_logs',
+          domain: 'browser',
+          timestamp: '2026-01-01T00:00:02.000Z',
+          success: true,
+          args: {},
+        } as any);
+        await eventBus.emit('tool:called', {
+          toolName: 'page_click',
+          domain: 'browser',
+          timestamp: '2026-01-01T00:00:03.000Z',
+          success: false,
+          args: { selector: '#missing' },
+          result: { success: false, isError: false },
+        } as any);
+
+        const stop = parseJson<any>(await handlers.handleBrowserCodegenStop());
+        expect(stop.success).toBe(true);
+        expect(stop.recording).toBe(false);
+        expect(stop.rawStepCount).toBe(4);
+        expect(stop.stepCount).toBe(2);
+        expect(stop.steps).toEqual([
+          {
+            tool: 'page_navigate',
+            args: { url: TEST_URLS.root },
+            timestamp: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            tool: 'page_click',
+            args: { selector: '#login', frameSelector: 'iframe#auth' },
+            timestamp: '2026-01-01T00:00:01.000Z',
+          },
+        ]);
+        expect(stop.script).toContain('await callTool(step.tool, step.args);');
+        expect(stop.script).toContain('"tool":"page_navigate"');
+        expect(stop.script).toContain('"frameSelector":"iframe#auth"');
+        expect(stop.script).not.toContain('page_wait_for_selector');
+        expect(stop.script).not.toContain('#missing');
+      });
+
+      it('reports unavailable recorder when eventBus is missing', async () => {
+        const noBusHandlers = new TestBrowserToolHandlers(
+          collector as any,
+          pageController as any,
+          scriptManager as any,
+          consoleMonitor as any,
+        );
+
+        const body = parseJson<any>(await noBusHandlers.handleBrowserCodegenStart());
+        expect(body.success).toBe(false);
       });
     });
 

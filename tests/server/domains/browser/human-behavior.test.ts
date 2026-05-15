@@ -2,6 +2,7 @@ import { parseJson } from '@tests/server/domains/shared/mock-factories';
 import type { BrowserStatusResponse } from '@tests/shared/common-test-types';
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { buildTestUrl } from '@tests/shared/test-urls';
+import type { FrameResolveOptions } from '@modules/collector/PageController';
 import {
   handleHumanMouse,
   handleHumanScroll,
@@ -12,6 +13,11 @@ import {
 function createMockCollector(hasPage = true) {
   const mouse = { move: vi.fn(), click: vi.fn() };
   const keyboard = { type: vi.fn(), press: vi.fn() };
+  const frame = {
+    evaluate: vi.fn().mockResolvedValue(null),
+    click: vi.fn(),
+    frameElement: vi.fn(),
+  };
   const page = hasPage
     ? {
         mouse,
@@ -21,11 +27,16 @@ function createMockCollector(hasPage = true) {
         url: () => buildTestUrl('test', { scheme: 'http', suffix: 'local', path: '/' }),
       }
     : null;
+  const pageController = {
+    resolveFrame: vi.fn(async (_page: unknown, _frameOptions?: FrameResolveOptions) => frame),
+  };
   return {
     collector: { getActivePage: vi.fn().mockResolvedValue(page) } as any,
+    pageController,
     page,
     mouse,
     keyboard,
+    frame,
   };
 }
 
@@ -146,6 +157,29 @@ describe('handleHumanMouse', () => {
     const parsed = parseJson<BrowserStatusResponse>(result);
     expect(parsed.success).toBe(true);
     expect(parsed.to).toEqual({ x: 200, y: 300 });
+  });
+
+  it('resolves selector inside a frame when frameSelector is provided', async () => {
+    const { collector, pageController, frame } = createMockCollector(true);
+    frame.evaluate.mockResolvedValueOnce({ x: 200, y: 300 });
+    frame.frameElement.mockResolvedValue({
+      boundingBox: vi.fn().mockResolvedValue({ x: 40, y: 50, width: 400, height: 300 }),
+    });
+    const result = await runWithFakeTimers(() =>
+      handleHumanMouse(
+        { selector: '#btn', frameSelector: 'iframe#game', steps: 1 },
+        collector,
+        pageController as any,
+      ),
+    );
+    const parsed = parseJson<BrowserStatusResponse>(result);
+    expect(parsed.success).toBe(true);
+    expect(parsed.frame).toEqual({ frameSelector: 'iframe#game' });
+    expect(parsed.to).toEqual({ x: 240, y: 350 });
+    expect(pageController.resolveFrame).toHaveBeenCalledWith(expect.anything(), {
+      frameUrl: undefined,
+      frameSelector: 'iframe#game',
+    });
   });
 });
 
@@ -280,6 +314,26 @@ describe('handleHumanTyping', () => {
     const parsed = parseJson<BrowserStatusResponse>(result);
     expect(parsed.success).toBe(true);
     expect(parsed.length).toBe(2);
+    expect(keyboard.type).toHaveBeenCalled();
+  });
+
+  it('types inside a frame when frameUrl is provided', async () => {
+    const { collector, keyboard, pageController, frame } = createMockCollector(true);
+    const result = await runWithFakeTimers(() =>
+      handleHumanTyping(
+        { selector: '#in', text: 'hi', errorRate: 0, frameUrl: '/embed' },
+        collector,
+        pageController as any,
+      ),
+    );
+    const parsed = parseJson<BrowserStatusResponse>(result);
+    expect(parsed.success).toBe(true);
+    expect(parsed.frame).toEqual({ frameUrl: '/embed' });
+    expect(pageController.resolveFrame).toHaveBeenCalledWith(expect.anything(), {
+      frameUrl: '/embed',
+      frameSelector: undefined,
+    });
+    expect(frame.click).toHaveBeenCalledWith('#in');
     expect(keyboard.type).toHaveBeenCalled();
   });
 });

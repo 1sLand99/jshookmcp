@@ -30,6 +30,7 @@ export const browserPageCoreTools: Tool[] = [
   ),
   tool('page_back', (t) => t.desc('Navigate back in browser history.').openWorld()),
   tool('page_forward', (t) => t.desc('Navigate forward in browser history.').openWorld()),
+  tool('page_list_frames', (t) => t.desc('List page frames for frame targeting.').query()),
   tool('page_click', (t) =>
     t
       .desc('Click a page element by CSS selector.')

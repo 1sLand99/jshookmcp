@@ -17,10 +17,72 @@ interface PageCookieInput {
 interface PageDataHandlersDeps {
   pageController: PageController;
   getActiveDriver: () => 'chrome' | 'camoufox';
+  getCamoufoxPage?: () => Promise<unknown>;
 }
 
 export class PageDataHandlers {
   constructor(private deps: PageDataHandlersDeps) {}
+
+  private safeOrigin(url: string): string | null {
+    try {
+      return new URL(url).origin;
+    } catch {
+      return null;
+    }
+  }
+
+  private async listCamoufoxFrames() {
+    const getCamoufoxPage = this.deps.getCamoufoxPage;
+    if (!getCamoufoxPage) {
+      throw new Error('Camoufox page is not available');
+    }
+
+    const page = (await getCamoufoxPage()) as {
+      mainFrame(): {
+        url(): string;
+      };
+      frames(): Array<{
+        url(): string;
+        name(): string;
+        parentFrame(): { url(): string } | null;
+      }>;
+    };
+    const frames = page.frames();
+    const mainFrame = page.mainFrame();
+    const mainOrigin = this.safeOrigin(mainFrame.url());
+
+    return frames.map((frame, index) => {
+      const parentFrame = frame.parentFrame();
+      const frameOrigin = this.safeOrigin(frame.url());
+      const parentIndex = parentFrame
+        ? frames.findIndex((candidate) => candidate === parentFrame)
+        : -1;
+
+      return {
+        frameId: `frame-${index}`,
+        url: frame.url(),
+        name: frame.name() || '',
+        parentFrameId: parentIndex >= 0 ? `frame-${parentIndex}` : null,
+        parentUrl: parentFrame?.url() || null,
+        isMainFrame: frame === mainFrame,
+        crossOrigin: Boolean(
+          frame !== mainFrame && frameOrigin && mainOrigin && frameOrigin !== mainOrigin,
+        ),
+      };
+    });
+  }
+
+  async handlePageListFrames(_args: Record<string, unknown>): Promise<ToolResponse> {
+    try {
+      const frames =
+        this.deps.getActiveDriver() === 'camoufox'
+          ? await this.listCamoufoxFrames()
+          : await this.deps.pageController.listFrames();
+      return R.ok().build({ count: frames.length, frames });
+    } catch (e) {
+      return R.fail(e).build();
+    }
+  }
 
   async handleGetContent(_args: Record<string, unknown>): Promise<ToolResponse> {
     try {

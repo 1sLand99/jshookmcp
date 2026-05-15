@@ -52,6 +52,31 @@ import {
   handleCamoufoxLaunchFlow,
   handleCamoufoxNavigateFlow,
 } from '@server/domains/browser/handlers/camoufox-flow';
+import type { ToolArgs } from '@server/types';
+
+interface BrowserCodegenStep {
+  tool: string;
+  args: ToolArgs;
+  timestamp: string;
+}
+
+interface BrowserCodegenOutputStep {
+  tool: string;
+  args: ToolArgs;
+  timestamp: string;
+}
+
+const CODEGEN_RECORDABLE_TOOLS = new Set([
+  'page_navigate',
+  'page_click',
+  'page_type',
+  'page_hover',
+  'page_scroll',
+  'page_press_key',
+  'page_select',
+  'page_upload_files',
+  'page_wait_for_selector',
+]);
 
 export class BrowserToolHandlers {
   protected collector: CodeCollector;
@@ -89,6 +114,9 @@ export class BrowserToolHandlers {
   private detailedData: DetailedDataHandlers;
   private jsdomHandlers: JsdomHandlers;
   private tabRegistry: TabRegistry;
+  private readonly eventBus?: EventBus<ServerEventMap>;
+  private codegenStopListening?: () => void;
+  private codegenSteps: BrowserCodegenStep[] = [];
 
   constructor(
     collector: CodeCollector,
@@ -103,6 +131,7 @@ export class BrowserToolHandlers {
 
     this.scriptManager = scriptManager;
     this.consoleMonitor = consoleMonitor;
+    this.eventBus = eventBus;
 
     const screenshotDir = resolveOutputDirectory(
       getConfig().paths.captchaScreenshotDir,
@@ -161,6 +190,91 @@ export class BrowserToolHandlers {
     this.detailedData = modules.detailedData;
     this.jsdomHandlers = modules.jsdomHandlers;
     this.tabRegistry = modules.tabRegistry;
+  }
+
+  private makeJsonResponse(payload: unknown) {
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
+    };
+  }
+
+  private sanitizeCodegenArgs(args: ToolArgs): ToolArgs {
+    const sanitized = { ...args };
+    for (const key of ['delay', 'timeout']) {
+      if (sanitized[key] === undefined) {
+        delete sanitized[key];
+      }
+    }
+    return sanitized;
+  }
+
+  private isSameFrameArgs(left: ToolArgs, right: ToolArgs): boolean {
+    return (
+      (left.frameUrl ?? null) === (right.frameUrl ?? null) &&
+      (left.frameSelector ?? null) === (right.frameSelector ?? null)
+    );
+  }
+
+  private compactCodegenSteps(steps: BrowserCodegenStep[]): BrowserCodegenOutputStep[] {
+    const compacted: BrowserCodegenOutputStep[] = [];
+
+    for (const step of steps) {
+      const current: BrowserCodegenOutputStep = {
+        tool: step.tool,
+        args: this.sanitizeCodegenArgs(step.args),
+        timestamp: step.timestamp,
+      };
+      const previous = compacted.at(-1);
+
+      if (!previous) {
+        compacted.push(current);
+        continue;
+      }
+
+      if (
+        current.tool === 'page_wait_for_selector' &&
+        previous.tool === 'page_wait_for_selector' &&
+        current.args.selector === previous.args.selector &&
+        this.isSameFrameArgs(current.args, previous.args)
+      ) {
+        previous.timestamp = current.timestamp;
+        continue;
+      }
+
+      if (
+        current.tool === 'page_wait_for_selector' &&
+        (previous.tool === 'page_click' || previous.tool === 'page_type') &&
+        current.args.selector === previous.args.selector &&
+        this.isSameFrameArgs(current.args, previous.args)
+      ) {
+        continue;
+      }
+
+      if (
+        current.tool === previous.tool &&
+        JSON.stringify(current.args) === JSON.stringify(previous.args)
+      ) {
+        previous.timestamp = current.timestamp;
+        continue;
+      }
+
+      compacted.push(current);
+    }
+
+    return compacted;
+  }
+
+  private formatCodegenScript(steps: BrowserCodegenOutputStep[]): string {
+    const lines = [
+      'const steps = [',
+      ...steps.map((step) => `  ${JSON.stringify({ tool: step.tool, args: step.args }, null, 0)},`),
+      '];',
+      '',
+      'for (const step of steps) {',
+      '  await callTool(step.tool, step.args);',
+      '}',
+    ];
+    return lines.join('\n');
   }
 
   /** Get the shared TabRegistry for context enrichment. */
@@ -327,6 +441,10 @@ export class BrowserToolHandlers {
 
   async handlePageForward(args: Record<string, unknown>) {
     return this.pageNavigation.handlePageForward(args);
+  }
+
+  async handlePageListFrames(args: Record<string, unknown>) {
+    return this.pageData.handlePageListFrames(args);
   }
 
   // ── Page Interaction ──
@@ -521,6 +639,52 @@ export class BrowserToolHandlers {
     return this.tabWorkflow.handleTabWorkflow(args);
   }
 
+  async handleBrowserCodegenStart() {
+    if (!this.eventBus) {
+      return this.makeJsonResponse({
+        success: false,
+        message: 'Event bus unavailable for browser codegen recording.',
+      });
+    }
+
+    this.codegenStopListening?.();
+    this.codegenSteps = [];
+    this.codegenStopListening = this.eventBus.on('tool:called', (payload) => {
+      if (payload.domain !== 'browser' || !payload.success || payload.result?.success === false)
+        return;
+      if (!CODEGEN_RECORDABLE_TOOLS.has(payload.toolName)) return;
+      this.codegenSteps.push({
+        tool: payload.toolName,
+        args: { ...payload.args },
+        timestamp: payload.timestamp,
+      });
+    });
+
+    return this.makeJsonResponse({
+      success: true,
+      recording: true,
+      message: 'Browser action recording started.',
+    });
+  }
+
+  async handleBrowserCodegenStop() {
+    this.codegenStopListening?.();
+    this.codegenStopListening = undefined;
+
+    const rawSteps = [...this.codegenSteps];
+    const steps = this.compactCodegenSteps(rawSteps);
+    this.codegenSteps = [];
+
+    return this.makeJsonResponse({
+      success: true,
+      recording: false,
+      stepCount: steps.length,
+      rawStepCount: rawSteps.length,
+      steps,
+      script: this.formatCodegenScript(steps),
+    });
+  }
+
   // ── Detailed Data ──
   async handleGetDetailedData(args: Record<string, unknown>) {
     return this.detailedData.handleGetDetailedData(args);
@@ -558,7 +722,7 @@ export class BrowserToolHandlers {
 
   // ── Human Behavior ──
   async handleHumanMouse(args: Record<string, unknown>) {
-    return handleHumanMouse(args, this.collector);
+    return handleHumanMouse(args, this.collector, this.pageController);
   }
 
   async handleHumanScroll(args: Record<string, unknown>) {
@@ -566,7 +730,7 @@ export class BrowserToolHandlers {
   }
 
   async handleHumanTyping(args: Record<string, unknown>) {
-    return handleHumanTyping(args, this.collector);
+    return handleHumanTyping(args, this.collector, this.pageController);
   }
 
   // ── CAPTCHA Solving ──

@@ -5,6 +5,8 @@
  * realistic typing with typo simulation.
  */
 import type { CodeCollector } from '@server/domains/shared/modules/collector';
+import type { PageController } from '@server/domains/shared/modules/collector';
+import type { FrameResolveOptions } from '@modules/collector/PageController';
 import { argString, argNumber, argBool } from '@server/domains/shared/parse-args';
 import { R, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
 
@@ -69,15 +71,79 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function getFrameOptions(args: Record<string, unknown>): FrameResolveOptions | undefined {
+  const frameUrl = argString(args, 'frameUrl');
+  const frameSelector = argString(args, 'frameSelector');
+
+  if (!frameUrl && !frameSelector) {
+    return undefined;
+  }
+
+  return {
+    frameUrl: frameUrl || undefined,
+    frameSelector: frameSelector || undefined,
+  };
+}
+
+async function resolveContext(
+  collector: CodeCollector,
+  pageController?: PageController,
+  frameOptions?: FrameResolveOptions,
+) {
+  const page = await collector.getActivePage();
+  if (!page) {
+    return null;
+  }
+
+  if (!frameOptions?.frameUrl && !frameOptions?.frameSelector) {
+    return { page, context: page };
+  }
+
+  if (!pageController) {
+    throw new Error('frameUrl/frameSelector requires PageController');
+  }
+
+  const context = await pageController.resolveFrame(page as any, frameOptions);
+  return { page, context };
+}
+
+async function toPageCoordinates(page: any, context: any, point: Point): Promise<Point> {
+  if (context === page) {
+    return point;
+  }
+
+  if (typeof context.frameElement !== 'function') {
+    return point;
+  }
+
+  const frameElement = await context.frameElement();
+  const frameBox =
+    frameElement && typeof frameElement.boundingBox === 'function'
+      ? await frameElement.boundingBox()
+      : null;
+  if (!frameBox) {
+    return point;
+  }
+
+  return {
+    x: frameBox.x + point.x,
+    y: frameBox.y + point.y,
+  };
+}
+
 // ── Exported handlers ──
 
 export async function handleHumanMouse(
   args: Record<string, unknown>,
   collector: CodeCollector,
+  pageController?: PageController,
 ): Promise<ToolResponse> {
   try {
-    const page = await collector.getActivePage();
-    if (!page) return R.fail('No active page. Use browser_launch or browser_attach first.').build();
+    const frameOptions = getFrameOptions(args);
+    const resolved = await resolveContext(collector, pageController, frameOptions);
+    if (!resolved)
+      return R.fail('No active page. Use browser_launch or browser_attach first.').build();
+    const { page, context } = resolved;
 
     let toX = argNumber(args, 'toX');
     let toY = argNumber(args, 'toY');
@@ -85,15 +151,16 @@ export async function handleHumanMouse(
     // Resolve selector to coordinates if provided
     const selector = argString(args, 'selector');
     if (selector) {
-      const box = await page.evaluate((sel: string) => {
+      const box = await context.evaluate((sel: string) => {
         const el = document.querySelector(sel);
         if (!el) return null;
         const rect = el.getBoundingClientRect();
         return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
       }, selector);
       if (!box) return R.fail(`Selector not found: ${selector}`).build();
-      toX = box.x;
-      toY = box.y;
+      const target = await toPageCoordinates(page, context, box);
+      toX = target.x;
+      toY = target.y;
     }
 
     if (toX === undefined || toY === undefined) {
@@ -144,6 +211,7 @@ export async function handleHumanMouse(
       steps,
       durationMs,
       clicked: shouldClick,
+      ...(frameOptions ? { frame: frameOptions } : {}),
     });
   } catch (e) {
     return R.fail(e).build();
@@ -227,10 +295,13 @@ export async function handleHumanScroll(
 export async function handleHumanTyping(
   args: Record<string, unknown>,
   collector: CodeCollector,
+  pageController?: PageController,
 ): Promise<ToolResponse> {
   try {
-    const page = await collector.getActivePage();
-    if (!page) return R.fail('No active page.').build();
+    const frameOptions = getFrameOptions(args);
+    const resolved = await resolveContext(collector, pageController, frameOptions);
+    if (!resolved) return R.fail('No active page.').build();
+    const { page, context } = resolved;
 
     const selector = argString(args, 'selector', '');
     const text = argString(args, 'text', '');
@@ -247,9 +318,9 @@ export async function handleHumanTyping(
     const avgDelayMs = 60_000 / (wpm * 5);
 
     // Focus and optionally clear
-    await page.click(selector);
+    await context.click(selector);
     if (clearFirst) {
-      await page.evaluate((sel: string) => {
+      await context.evaluate((sel: string) => {
         const el = document.querySelector(sel) as HTMLInputElement;
         if (el) el.value = '';
       }, selector);
@@ -288,6 +359,7 @@ export async function handleHumanTyping(
       wpm,
       typosSimulated: typoCount,
       errorRate,
+      ...(frameOptions ? { frame: frameOptions } : {}),
     });
   } catch (e) {
     return R.fail(e).build();

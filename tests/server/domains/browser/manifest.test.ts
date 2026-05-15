@@ -75,6 +75,7 @@ describe('server/domains/browser/manifest', () => {
     expect(toolNames).toContain('page_upload_files');
     expect(toolNames).toContain('page_screenshot');
     expect(toolNames).toContain('page_evaluate');
+    expect(toolNames).toContain('page_list_frames');
   });
 
   it('includes advanced browser tools in registrations', async () => {
@@ -98,6 +99,8 @@ describe('server/domains/browser/manifest', () => {
     expect(toolNames).toContain('human_mouse');
     expect(toolNames).toContain('human_scroll');
     expect(toolNames).toContain('human_typing');
+    expect(toolNames).toContain('browser_codegen_start');
+    expect(toolNames).toContain('browser_codegen_stop');
   });
 
   it('includes captcha solving tools in registrations', async () => {

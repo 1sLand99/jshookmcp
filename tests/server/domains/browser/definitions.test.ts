@@ -242,6 +242,11 @@ describe('browser tool definitions', () => {
       expect(getInputSchema(tool).required).toBeUndefined();
     });
 
+    it('page_list_frames has no required properties', async () => {
+      const tool = getToolByName(browserPageCoreTools, 'page_list_frames');
+      expect(getInputSchema(tool).required).toBeUndefined();
+    });
+
     it('page_click requires selector', async () => {
       const tool = getToolByName(browserPageCoreTools, 'page_click');
       expect(getInputSchema(tool).required).toContain('selector');
@@ -396,10 +401,12 @@ describe('browser tool definitions', () => {
 
   describe('behaviorTools', () => {
     it('has exactly 6 behavior tools', async () => {
-      expect(behaviorTools).toHaveLength(6);
+      expect(behaviorTools).toHaveLength(8);
     });
 
     const expectedBehaviorNames = [
+      'browser_codegen_start',
+      'browser_codegen_stop',
       'captcha_solver_capabilities',
       'human_mouse',
       'human_scroll',
@@ -417,11 +424,16 @@ describe('browser tool definitions', () => {
       const schema = getInputSchema(tool);
       expect(schema.required).toContain('selector');
       expect(schema.required).toContain('text');
+      expect(schema.properties).toHaveProperty('frameUrl');
+      expect(schema.properties).toHaveProperty('frameSelector');
     });
 
     it('human_mouse has no required properties', async () => {
       const tool = getToolByName(behaviorTools, 'human_mouse');
-      expect(getInputSchema(tool).required).toBeUndefined();
+      const schema = getInputSchema(tool);
+      expect(schema.required).toBeUndefined();
+      expect(schema.properties).toHaveProperty('frameUrl');
+      expect(schema.properties).toHaveProperty('frameSelector');
     });
 
     it('human_scroll has no required properties', async () => {
@@ -432,6 +444,15 @@ describe('browser tool definitions', () => {
     it('captcha_solver_capabilities has no required properties', async () => {
       const tool = getToolByName(behaviorTools, 'captcha_solver_capabilities');
       expect(getInputSchema(tool).required).toBeUndefined();
+    });
+
+    it('browser_codegen tools have no required properties', async () => {
+      expect(getInputSchema(getToolByName(behaviorTools, 'browser_codegen_start')).required).toBe(
+        undefined,
+      );
+      expect(getInputSchema(getToolByName(behaviorTools, 'browser_codegen_stop')).required).toBe(
+        undefined,
+      );
     });
 
     it('captcha_vision_solve has mode enum', async () => {

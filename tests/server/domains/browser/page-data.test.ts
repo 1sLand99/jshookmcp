@@ -1,5 +1,6 @@
 import { parseJson } from '@tests/server/domains/shared/mock-factories';
 import type { BrowserStatusResponse } from '@tests/shared/common-test-types';
+import { TEST_URLS, withPath } from '@tests/shared/test-urls';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PageDataHandlers } from '@server/domains/browser/handlers/page-data';
 
@@ -10,6 +11,7 @@ describe('PageDataHandlers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     pageController = {
+      listFrames: vi.fn(),
       getPerformanceMetrics: vi.fn(),
       setCookies: vi.fn(),
       getCookies: vi.fn(),
@@ -22,6 +24,60 @@ describe('PageDataHandlers', () => {
     handlers = new PageDataHandlers({
       pageController,
       getActiveDriver: () => 'chrome',
+    });
+  });
+
+  it('lists frames and returns a count', async () => {
+    const mainFrameUrl = TEST_URLS.root;
+    const childFrameUrl = withPath(TEST_URLS.cdn, 'embed');
+
+    pageController.listFrames.mockResolvedValue([
+      {
+        frameId: 'main',
+        url: mainFrameUrl,
+        name: '',
+        parentFrameId: null,
+        parentUrl: null,
+        isMainFrame: true,
+        crossOrigin: false,
+      },
+      {
+        frameId: 'child',
+        url: childFrameUrl,
+        name: 'embed',
+        parentFrameId: 'main',
+        parentUrl: mainFrameUrl,
+        isMainFrame: false,
+        crossOrigin: true,
+      },
+    ]);
+
+    const body = parseJson<BrowserStatusResponse>(await handlers.handlePageListFrames({}));
+
+    expect(pageController.listFrames).toHaveBeenCalledOnce();
+    expect(body).toEqual({
+      success: true,
+      count: 2,
+      frames: [
+        {
+          frameId: 'main',
+          url: mainFrameUrl,
+          name: '',
+          parentFrameId: null,
+          parentUrl: null,
+          isMainFrame: true,
+          crossOrigin: false,
+        },
+        {
+          frameId: 'child',
+          url: childFrameUrl,
+          name: 'embed',
+          parentFrameId: 'main',
+          parentUrl: mainFrameUrl,
+          isMainFrame: false,
+          crossOrigin: true,
+        },
+      ],
     });
   });
 

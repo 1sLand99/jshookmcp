@@ -136,4 +136,60 @@ describe('human-behavior runtime coverage', () => {
     expect(page.keyboard.press).toHaveBeenCalledWith('Backspace');
     expect(page.keyboard.type).toHaveBeenCalled();
   });
+
+  it('uses frame context for selector resolution and clearing', async () => {
+    const frameDocument = {
+      querySelector: vi.fn(() => ({
+        value: 'old',
+        getBoundingClientRect: () => ({ x: 10, y: 20, width: 30, height: 40 }),
+      })),
+    };
+    const frame = {
+      evaluate: vi.fn(async (pageFunction: any, ...args: any[]) => {
+        const prevDocument = (globalThis as any).document;
+        (globalThis as any).document = frameDocument;
+        try {
+          return await pageFunction(...args);
+        } finally {
+          (globalThis as any).document = prevDocument;
+        }
+      }),
+      click: vi.fn(),
+      frameElement: vi.fn(async () => ({
+        boundingBox: vi.fn(async () => ({ x: 100, y: 200, width: 320, height: 240 })),
+      })),
+    };
+    const page = createPage();
+    const collector = createCollector(page);
+    const pageController = {
+      resolveFrame: vi.fn(async () => frame),
+    };
+
+    const mouseResult = await runWithFakeTimers(() =>
+      handleHumanMouse(
+        { selector: '#inside', frameSelector: 'iframe#game', steps: 1 },
+        collector,
+        pageController as any,
+      ),
+    );
+    const typingResult = await runWithFakeTimers(() =>
+      handleHumanTyping(
+        {
+          selector: '#inside',
+          text: 'ok',
+          clearFirst: true,
+          errorRate: 0,
+          frameSelector: 'iframe#game',
+        },
+        collector,
+        pageController as any,
+      ),
+    );
+
+    expect(parseJson<any>(mouseResult).frame).toEqual({ frameSelector: 'iframe#game' });
+    expect(parseJson<any>(mouseResult).to).toEqual({ x: 125, y: 240 });
+    expect(parseJson<any>(typingResult).frame).toEqual({ frameSelector: 'iframe#game' });
+    expect(pageController.resolveFrame).toHaveBeenCalledTimes(2);
+    expect(frame.click).toHaveBeenCalledWith('#inside');
+  });
 });

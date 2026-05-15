@@ -338,16 +338,43 @@ export class PageController {
 
   /** List all frames in the active page with URL and name info. */
   async listFrames(): Promise<
-    Array<{ url: string; name: string; id: string; isMainFrame: boolean }>
+    Array<{
+      frameId: string;
+      url: string;
+      name: string;
+      parentFrameId: string | null;
+      parentUrl: string | null;
+      isMainFrame: boolean;
+      crossOrigin: boolean;
+    }>
   > {
     const page = await this.collector.getActivePage();
     const mainFrame = page.mainFrame();
-    return page.frames().map((frame) => ({
-      url: frame.url(),
-      name: frame.name() || '',
-      id: ((frame as unknown as Record<string, unknown>)['_id'] as string | undefined) || '',
-      isMainFrame: frame === mainFrame,
-    }));
+    const frames = page.frames();
+    const mainOrigin = safeFrameOrigin(mainFrame.url());
+
+    return frames.map((frame) => {
+      const frameId =
+        ((frame as unknown as Record<string, unknown>)['_id'] as string | undefined) || frame.url();
+      const parent = frame.parentFrame();
+      const parentId = parent
+        ? ((parent as unknown as Record<string, unknown>)['_id'] as string | undefined) ||
+          parent.url()
+        : null;
+      const frameOrigin = safeFrameOrigin(frame.url());
+
+      return {
+        frameId,
+        url: frame.url(),
+        name: frame.name() || '',
+        parentFrameId: parentId,
+        parentUrl: parent?.url() || null,
+        isMainFrame: frame === mainFrame,
+        crossOrigin: Boolean(
+          frame !== mainFrame && frameOrigin && mainOrigin && frameOrigin !== mainOrigin,
+        ),
+      };
+    });
   }
 
   async getURL(): Promise<string> {
@@ -791,6 +818,14 @@ export async function evaluateOnNewDocumentWithTimeout<Args extends readonly unk
       ),
     ),
   ]);
+}
+
+function safeFrameOrigin(url: string): string | null {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
 }
 
 /** Structural type for pages with coverage API (Puppeteer / rebrowser-puppeteer). */
