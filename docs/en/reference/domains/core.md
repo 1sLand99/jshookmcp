@@ -20,7 +20,7 @@ Core static and semi-static analysis domain for script collection, deobfuscation
 - browser + network + core
 - core + sourcemap + transform
 
-## Full tool list (17)
+## Full tool list (20)
 
 | Tool | Description |
 | --- | --- |
@@ -41,3 +41,6 @@ Core static and semi-static analysis domain for script collection, deobfuscation
 | `js_deobfuscate_pipeline` | Three-stage deobfuscation pipeline: preprocess → deobfuscate → humanize. |
 | `js_analyze_vm` | Analyze JSVMP/VM interpreter: dispatch type, handler table, opcode map. |
 | `js_solve_constraints` | Solve opaque predicates and constant expressions in obfuscated code. |
+| `analysis_ast_match` | Match AST nodes by type and optional property filter. |
+| `analysis_deflat_control_flow` | Flatten switch-dispatch control flow back to straight-line code. |
+| `analysis_decode_string_array` | Decode literal string-array access back to strings. |

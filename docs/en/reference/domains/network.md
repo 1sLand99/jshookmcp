@@ -21,7 +21,7 @@ Request capture, response extraction, HAR export, safe replay, and performance t
 - browser + network
 - network + workflow
 
-## Full tool list (33)
+## Full tool list (37)
 
 | Tool | Description |
 | --- | --- |
@@ -48,10 +48,14 @@ Request capture, response extraction, HAR export, safe replay, and performance t
 | `http2_probe` | Probe an HTTP/2 endpoint. |
 | `http2_frame_build` | Build a raw HTTP/2 frame. |
 | `network_rtt_measure` | Measure round-trip time to a target URL. |
+| `network_latency_stats` | Measure repeated latency and compute percentile stats. |
 | `network_traceroute` | Run an ICMP traceroute. |
 | `network_icmp_probe` | Run an ICMP echo probe. |
 | `dns_resolve` | Resolve a hostname to DNS records using the system resolver. |
 | `dns_reverse` | Reverse DNS lookup — find hostnames for an IP address. |
+| `dns_probe` | Run a DNS query and return structured status instead of throwing. |
+| `dns_cname_chain` | Trace the full CNAME chain for a hostname. |
+| `dns_bulk_resolve` | Resolve many hostnames concurrently with per-host status. |
 | `network_extract_auth` | Extract authentication data from captured network requests. |
 | `network_export_har` | Export captured network traffic as HAR. |
 | `network_replay_request` | Replay a captured network request with optional changes. |

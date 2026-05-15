@@ -21,7 +21,7 @@
 - browser + hooks
 - browser + workflow
 
-## 工具清单（60）
+## 工具清单（63）
 
 | 工具 | 说明 |
 | --- | --- |
@@ -40,6 +40,7 @@
 | `page_reload` | 重新加载当前页面。 |
 | `page_back` | 后退到上一个页面。 |
 | `page_forward` | 前进到下一个页面。 |
+| `page_list_frames` | 待补充中文：List page frames for frame targeting. |
 | `page_click` | 点击页面上的元素。 |
 | `page_type` | 在输入框中输入文字。 |
 | `page_upload_files` | 向 &lt;input type="file"&gt; 元素上传一个或多个本地文件。 |
@@ -74,6 +75,8 @@
 | `indexeddb_dump` | 导出所有 IndexedDB 数据库及其内容，便于分析 PWA 数据、令牌或离线状态。 |
 | `js_heap_search` | 在浏览器 JavaScript 堆中检索匹配模式的字符串值，用于定位 token、密钥、签名等敏感数据。 |
 | `tab_workflow` | 多标签页协同操作，支持跨标签页传递数据。 |
+| `browser_codegen_start` | 待补充中文：Start recording browser actions as replayable steps. |
+| `browser_codegen_stop` | 待补充中文：Stop recording browser actions and return cleaned replay steps. |
 | `human_mouse` | 模拟真人移动鼠标，带随机轨迹和抖动。 |
 | `human_scroll` | 模拟真人滚动页面，带变速和停顿。 |
 | `human_typing` | 模拟真人打字，带变速和偶尔打错再修正。 |

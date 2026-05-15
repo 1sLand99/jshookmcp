@@ -20,7 +20,7 @@
 - browser + network + core
 - core + sourcemap + transform
 
-## 工具清单（17）
+## 工具清单（20）
 
 | 工具 | 说明 |
 | --- | --- |
@@ -41,3 +41,6 @@
 | `js_deobfuscate_pipeline` | 三阶段反混淆管线：预处理 → 去混淆 → 可读化。 |
 | `js_analyze_vm` | 分析 JSVMP/VM 解释器结构：调度类型、handler 表、操作码映射。 |
 | `js_solve_constraints` | 求解混淆代码中的不透明谓词和常量表达式。 |
+| `analysis_ast_match` | 待补充中文：Match AST nodes by type and optional property filter. |
+| `analysis_deflat_control_flow` | 待补充中文：Flatten switch-dispatch control flow back to straight-line code. |
+| `analysis_decode_string_array` | 待补充中文：Decode literal string-array access back to strings. |

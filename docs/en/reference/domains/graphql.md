@@ -19,7 +19,7 @@ GraphQL discovery, extraction, replay, and introspection tooling.
 
 - network + graphql
 
-## Full tool list (5)
+## Full tool list (6)
 
 | Tool | Description |
 | --- | --- |
@@ -28,3 +28,4 @@ GraphQL discovery, extraction, replay, and introspection tooling.
 | `graphql_introspect` | Run GraphQL introspection query against a target endpoint. |
 | `graphql_extract_queries` | Extract GraphQL queries/mutations from captured network traces. |
 | `graphql_replay` | Replay a GraphQL operation with optional variables. |
+| `graphql_enum_schema` | Enumerate GraphQL fields from server suggestion errors with introspection fallback. |

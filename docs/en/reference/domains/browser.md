@@ -21,7 +21,7 @@ Primary browser control and DOM interaction domain; the usual entry point for mo
 - browser + hooks
 - browser + workflow
 
-## Full tool list (60)
+## Full tool list (63)
 
 | Tool | Description |
 | --- | --- |
@@ -40,6 +40,7 @@ Primary browser control and DOM interaction domain; the usual entry point for mo
 | `page_reload` | Reload the page with optional cache bypass. |
 | `page_back` | Navigate back in browser history. |
 | `page_forward` | Navigate forward in browser history. |
+| `page_list_frames` | List page frames for frame targeting. |
 | `page_click` | Click a page element by CSS selector. |
 | `page_type` | Type text into an element. |
 | `page_upload_files` | Upload one or more local files into an &lt;input type="file"&gt; element. |
@@ -74,6 +75,8 @@ Primary browser control and DOM interaction domain; the usual entry point for mo
 | `indexeddb_dump` | Export all IndexedDB databases and records for offline analysis. |
 | `js_heap_search` | Search JS heap for strings matching a pattern. |
 | `tab_workflow` | Cross-tab coordination. |
+| `browser_codegen_start` | Start recording browser actions as replayable steps. |
+| `browser_codegen_stop` | Stop recording browser actions and return cleaned replay steps. |
 | `human_mouse` | Move mouse along a Bezier curve with jitter. |
 | `human_scroll` | Scroll with randomized speed and pauses to mimic human behavior. |
 | `human_typing` | Type text with human-like speed and occasional typos. |
