@@ -1,4 +1,4 @@
-import type { ObfuscationType, VMFeatures } from '@internal-types/index';
+import type { ObfuscationClassifier, ObfuscationType, VMFeatures } from '@internal-types/index';
 import { logger } from '@utils/logger';
 import { JSVMPDeobfuscator } from '@modules/deobfuscator/JSVMPDeobfuscator';
 
@@ -12,6 +12,7 @@ export interface DetectionResult {
     reason: string;
     suggestedArgs?: Record<string, unknown>;
   }>;
+  classifier: ObfuscationClassifier;
   vmFeatures?: VMFeatures;
 }
 
@@ -172,6 +173,8 @@ export class ObfuscationDetector {
       recommendations.push('Code may be clean or use custom obfuscation');
     }
 
+    const classifier = this.buildClassifier(code, types, confidence);
+
     logger.info(`Detected obfuscation types: ${types.join(', ')}`);
 
     return {
@@ -180,7 +183,89 @@ export class ObfuscationDetector {
       features,
       recommendations,
       toolRecommendations: this.buildToolRecommendations(types, code),
+      classifier,
       vmFeatures,
+    };
+  }
+
+  private buildClassifier(
+    code: string,
+    types: ObfuscationType[],
+    confidence: Partial<Record<ObfuscationType, number>>,
+  ): ObfuscationClassifier {
+    const withConfidence = (type: ObfuscationType, fallback: number) =>
+      confidence[type] ?? fallback;
+
+    if (types.includes('javascript-obfuscator')) {
+      const branded = /obfuscator\.io/i.test(code);
+      return {
+        name: branded ? 'obfuscator.io' : 'javascript-obfuscator',
+        version: 'unknown',
+        confidence: withConfidence('javascript-obfuscator', 0.9),
+        deobfuscateStrategy:
+          'Start with deobfuscate(engine="webcrack"), then use analysis_deflat_control_flow when dispatcher-based control flow is present.',
+      };
+    }
+
+    if (types.includes('jsfuck')) {
+      return {
+        name: 'jsfuck',
+        version: 'unknown',
+        confidence: withConfidence('jsfuck', 1),
+        deobfuscateStrategy:
+          'Decode the JSFuck payload first, then run deobfuscate for secondary cleanup if needed.',
+      };
+    }
+
+    if (types.includes('aaencode')) {
+      return {
+        name: 'aaencode',
+        version: 'unknown',
+        confidence: withConfidence('aaencode', 1),
+        deobfuscateStrategy:
+          'Decode AAEncode first, then run deobfuscate or understand_code on the decoded output.',
+      };
+    }
+
+    if (types.includes('jjencode')) {
+      return {
+        name: 'jjencode',
+        version: 'unknown',
+        confidence: withConfidence('jjencode', 1),
+        deobfuscateStrategy:
+          'Decode JJEncode first, then run deobfuscate or understand_code on the decoded output.',
+      };
+    }
+
+    if (types.includes('packer')) {
+      return {
+        name: 'packer',
+        version: 'unknown',
+        confidence: withConfidence('packer', 0.95),
+        deobfuscateStrategy:
+          'Unpack the wrapper first, then run deobfuscate on the extracted inner payload.',
+      };
+    }
+
+    if (types.includes('jscrambler')) {
+      return {
+        name: 'jscrambler',
+        version: 'unknown',
+        confidence: withConfidence('jscrambler', 0.85),
+        deobfuscateStrategy:
+          'Prioritize control-flow cleanup and runtime-assisted analysis; static deobfuscation alone is often insufficient.',
+      };
+    }
+
+    return {
+      name: 'generic',
+      version: 'unknown',
+      confidence: Math.max(
+        ...types.map((type) => confidence[type] ?? 0),
+        confidence.unknown ?? 0.5,
+      ),
+      deobfuscateStrategy:
+        'Use the standard webcrack-backed deobfuscation path first, then escalate to targeted transforms based on detected techniques.',
     };
   }
 
@@ -430,6 +515,12 @@ export class ObfuscationDetector {
 
   generateReport(result: DetectionResult): string {
     let report = '=== Obfuscation Detection Report ===\n\n';
+
+    report += `Classifier:\n`;
+    report += `  - name: ${result.classifier.name}\n`;
+    report += `  - version: ${result.classifier.version}\n`;
+    report += `  - confidence: ${(result.classifier.confidence * 100).toFixed(0)}%\n`;
+    report += `  - strategy: ${result.classifier.deobfuscateStrategy}\n`;
 
     report += `Detected Types (${result.types.length}):\n`;
     result.types.forEach((type) => {

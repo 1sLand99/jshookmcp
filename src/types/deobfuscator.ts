@@ -26,6 +26,21 @@ export type ObfuscationType =
   | 'mangle'
   | 'webcrack';
 
+export interface ObfuscationClassifier {
+  name:
+    | 'javascript-obfuscator'
+    | 'obfuscator.io'
+    | 'jsfuck'
+    | 'aaencode'
+    | 'jjencode'
+    | 'packer'
+    | 'jscrambler'
+    | 'generic';
+  version: string;
+  confidence: number;
+  deobfuscateStrategy: string;
+}
+
 export interface Transformation {
   type: string;
   description: string;

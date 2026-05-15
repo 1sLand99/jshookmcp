@@ -21,6 +21,7 @@ export type {
 } from '@internal-types/collector';
 export type {
   ObfuscationType,
+  ObfuscationClassifier,
   Transformation,
   DeobfuscateOptions,
   DeobfuscateResult,

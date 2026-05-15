@@ -81,6 +81,12 @@ describe('ObfuscationDetector extra coverage', () => {
         }),
       }),
     ]);
+    expect(result.classifier).toEqual(
+      expect.objectContaining({
+        name: 'packer',
+        confidence: 0.95,
+      }),
+    );
   });
 
   it('keeps unknown detection on the fallback path and surfaces default tooling', () => {

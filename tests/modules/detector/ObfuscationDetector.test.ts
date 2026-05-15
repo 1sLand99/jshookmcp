@@ -29,6 +29,12 @@ describe('ObfuscationDetector', () => {
 
     expect(result.types).toEqual(['unknown']);
     expect(result.confidence.unknown).toBe(0.5);
+    expect(result.classifier).toEqual(
+      expect.objectContaining({
+        name: 'generic',
+        confidence: 0.5,
+      }),
+    );
   });
 
   it('detects webpack obfuscation pattern', () => {
@@ -42,6 +48,7 @@ describe('ObfuscationDetector', () => {
     const jsfuck = '[](!+[]+!![])[+!![]]';
     const result = detector.detect(jsfuck);
     expect(result.types).toContain('jsfuck');
+    expect(result.classifier.name).toBe('jsfuck');
   });
 
   it('uses direct VM detection result when available', () => {
@@ -75,8 +82,29 @@ describe('ObfuscationDetector', () => {
     const report = detector.generateReport(detected);
 
     expect(report).toContain('Obfuscation Detection Report');
+    expect(report).toContain('Classifier');
     expect(report).toContain('Detected Types');
     expect(report).toContain('Recommendations');
+  });
+
+  it('classifies javascript-obfuscator and obfuscator.io branding through existing heuristics', () => {
+    const detector = new ObfuscationDetector();
+    const code = `
+      /* obfuscator.io */
+      var _0x12ab = ['alpha', 'beta'];
+      (function(_0x12ab, _0x77ff) { return _0x12ab[_0x77ff]; })(_0x12ab, 0);
+      while (!![]) { break; }
+    `;
+
+    const result = detector.detect(code);
+
+    expect(result.types).toContain('javascript-obfuscator');
+    expect(result.classifier).toEqual(
+      expect.objectContaining({
+        name: 'obfuscator.io',
+        confidence: 0.9,
+      }),
+    );
   });
 
   it('detects remaining signature families and recommends runtime hooks when needed', () => {
