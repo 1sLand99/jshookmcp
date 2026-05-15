@@ -66,4 +66,23 @@ export const graphqlTools: Tool[] = [
       )
       .requiredOpenWorld('endpoint', 'query'),
   ),
+  tool('graphql_enum_schema', (t) =>
+    t
+      .desc('Enumerate GraphQL fields from server suggestion errors with introspection fallback.')
+      .string('endpoint', 'GraphQL endpoint URL')
+      .string('typeName', 'Root type name to report', { default: 'Query' })
+      .string('parentType', 'Type name to probe fields on')
+      .number('maxDepth', 'Maximum enumeration depth', { default: 1, minimum: 1, maximum: 6 })
+      .number('concurrency', 'Reserved concurrency hint for future expansion', {
+        default: 3,
+        minimum: 1,
+        maximum: 10,
+      })
+      .prop('headers', {
+        type: 'object',
+        description: 'Custom request headers',
+        additionalProperties: { type: 'string' },
+      })
+      .requiredOpenWorld('endpoint'),
+  ),
 ];

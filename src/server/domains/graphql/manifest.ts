@@ -17,6 +17,7 @@ const registrations = defineMethodRegistrations<H, (typeof graphqlTools)[number]
     { tool: 'graphql_introspect', method: 'handleGraphqlIntrospect' },
     { tool: 'graphql_extract_queries', method: 'handleGraphqlExtractQueries' },
     { tool: 'graphql_replay', method: 'handleGraphqlReplay' },
+    { tool: 'graphql_enum_schema', method: 'handleGraphqlEnumSchema' },
   ],
 });
 

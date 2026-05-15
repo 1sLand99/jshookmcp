@@ -15,8 +15,8 @@ describe('graphql definitions', () => {
       expect(graphqlTools.length).toBeGreaterThan(0);
     });
 
-    it('contains exactly 5 tools', async () => {
-      expect(graphqlTools).toHaveLength(5);
+    it('contains exactly 6 tools', async () => {
+      expect(graphqlTools).toHaveLength(6);
     });
 
     it('every tool has a name and description', async () => {
@@ -173,6 +173,25 @@ describe('graphql definitions', () => {
       expect(useBrowser.default).toBe(true);
     });
   });
+
+  describe('graphql_enum_schema tool', () => {
+    const tool = graphqlTools.find((t) => t.name === 'graphql_enum_schema')!;
+
+    it('exists', async () => {
+      expect(tool).toBeDefined();
+    });
+
+    it('has endpoint as required', async () => {
+      expect(tool.inputSchema.required).toEqual(['endpoint']);
+    });
+
+    it('has parentType and typeName properties', async () => {
+      const properties = tool.inputSchema.properties as any;
+      expect(properties.parentType.type).toBe('string');
+      expect(properties.typeName.type).toBe('string');
+      expect(properties.typeName.default).toBe('Query');
+    });
+  });
 });
 
 describe('graphql barrel/re-export chain', () => {
@@ -215,17 +234,18 @@ describe('graphql manifest', () => {
     expect(manifest.profiles).toEqual(['workflow', 'full']);
   });
 
-  it('has registrations for all 5 tools', async () => {
+  it('has registrations for all 6 tools', async () => {
     const manifestModule = await import('@server/domains/graphql/manifest');
     const manifest = manifestModule.default;
 
-    expect(manifest.registrations).toHaveLength(5);
+    expect(manifest.registrations).toHaveLength(6);
     const toolNames = manifest.registrations.map((r: any) => r.tool.name);
     expect(toolNames).toContain('call_graph_analyze');
     expect(toolNames).toContain('script_replace_persist');
     expect(toolNames).toContain('graphql_introspect');
     expect(toolNames).toContain('graphql_extract_queries');
     expect(toolNames).toContain('graphql_replay');
+    expect(toolNames).toContain('graphql_enum_schema');
   });
 
   it('all registrations have domain set to graphql', async () => {

@@ -73,6 +73,16 @@ export {
   GRAPHQL_MAX_GRAPH_EDGES,
 } from '@src/constants';
 
+const INTROSPECTION_TYPE_REF_DEPTH = 7;
+
+export function buildGraphqlTypeRefSelection(depth: number): string {
+  const current = ['kind', 'name'];
+  if (depth > 0) {
+    current.push(`ofType { ${buildGraphqlTypeRefSelection(depth - 1)} }`);
+  }
+  return current.join('\n');
+}
+
 export const INTROSPECTION_QUERY = `
 query IntrospectionQuery {
   __schema {
@@ -119,35 +129,6 @@ fragment InputValue on __InputValue {
   deprecationReason
 }
 fragment TypeRef on __Type {
-  kind
-  name
-  ofType {
-    kind
-    name
-    ofType {
-      kind
-      name
-      ofType {
-        kind
-        name
-        ofType {
-          kind
-          name
-          ofType {
-            kind
-            name
-            ofType {
-              kind
-              name
-              ofType {
-                kind
-                name
-              }
-            }
-          }
-        }
-      }
-    }
-  }
+  ${buildGraphqlTypeRefSelection(INTROSPECTION_TYPE_REF_DEPTH)}
 }
 `.trim();

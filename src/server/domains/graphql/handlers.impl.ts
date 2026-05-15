@@ -20,6 +20,7 @@ import {
   type GraphQLExtractDependencies,
 } from '@server/domains/graphql/handlers/extract';
 import { ReplayHandlers } from '@server/domains/graphql/handlers/replay';
+import { SchemaEnumHandlers } from '@server/domains/graphql/handlers/schema-enum';
 
 export type GraphQLToolHandlerDependencies = GraphQLExtractDependencies;
 
@@ -35,6 +36,7 @@ export class GraphQLToolHandlers {
   private introspection: IntrospectionHandlers;
   private extract: ExtractHandlers;
   private replay: ReplayHandlers;
+  private schemaEnum: SchemaEnumHandlers;
 
   constructor(deps: CodeCollector | GraphQLToolHandlerDependencies) {
     const normalized = normalizeDependencies(deps);
@@ -43,6 +45,7 @@ export class GraphQLToolHandlers {
     this.introspection = new IntrospectionHandlers(normalized.collector);
     this.extract = new ExtractHandlers(normalized);
     this.replay = new ReplayHandlers(normalized.collector);
+    this.schemaEnum = new SchemaEnumHandlers();
   }
 
   // ── Call Graph ──
@@ -69,6 +72,10 @@ export class GraphQLToolHandlers {
   async handleGraphqlReplay(args: Record<string, unknown>) {
     return this.replay.handleGraphqlReplay(args);
   }
+
+  async handleGraphqlEnumSchema(args: Record<string, unknown>) {
+    return this.schemaEnum.handleGraphqlEnumSchema(args);
+  }
 }
 
 // Re-export sub-handlers for direct access
@@ -78,4 +85,5 @@ export {
   IntrospectionHandlers,
   ExtractHandlers,
   ReplayHandlers,
+  SchemaEnumHandlers,
 };
