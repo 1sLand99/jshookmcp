@@ -195,10 +195,11 @@ export default defineConfig({
         // catch regressions without blocking on long-standing uncovered surfaces.
         // Branch coverage varies slightly across V8/OS combinations in CI, so
         // keep a small buffer below the observed Linux baseline instead of
-        // failing healthy pushes on 0.01-0.05% runner deltas.
+        // failing healthy pushes on 0.01-0.1% runner deltas. GitHub-hosted
+        // Linux runners have recently reported 78.84% for doc-only pushes.
         lines: 88,
         functions: 88,
-        branches: 78.9,
+        branches: 78.8,
         statements: 88,
       },
     },
