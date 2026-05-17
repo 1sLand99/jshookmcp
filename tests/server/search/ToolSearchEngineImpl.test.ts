@@ -82,6 +82,7 @@ vi.mock('@src/constants', () => ({
   SEARCH_VECTOR_LEARN_DOWN: 0.03,
   SEARCH_VECTOR_LEARN_TOP_N: 5,
   SEARCH_RECENCY_TRACKER_MAX: 200,
+  SEARCH_SELF_RAG_ENABLED: false,
 }));
 
 function vectorFor(text: string): Float32Array {

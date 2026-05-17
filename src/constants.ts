@@ -449,6 +449,15 @@ export const SEARCH_COVERAGE_PRECISION_FACTOR = float('SEARCH_COVERAGE_PRECISION
 export const SEARCH_PREFIX_MATCH_MULTIPLIER = float('SEARCH_PREFIX_MATCH_MULTIPLIER', 0.84);
 
 /**
+ * Self-RAG quick path: when the query is a simple form (exact tool name or
+ * single token), skip expensive signals (embedding, synonym expansion, RRF
+ * fusion) and use only BM25 + trigram. Reduces latency from ~200ms to ~5ms.
+ *
+ *   SEARCH_SELF_RAG_ENABLED — master toggle for the quick path.
+ */
+export const SEARCH_SELF_RAG_ENABLED = bool('SEARCH_SELF_RAG_ENABLED', true);
+
+/**
  * ToolRouter reranking multipliers (§4.1.6 context-aware rerank).
  * Applied after search engine scoring to contextualize results based on task
  * classification (browser/network vs maintenance vs stateless compute) and
@@ -847,3 +856,16 @@ export const MEMORY_VMMAP_ENUM_TIMEOUT_MS = int('MEMORY_VMMAP_ENUM_TIMEOUT_MS', 
 
 /** Timeout for PowerShell-based module listing subprocesses. */
 export const MEMORY_MODULES_TIMEOUT_MS = int('MEMORY_MODULES_TIMEOUT_MS', 30_000);
+
+/* ================================================================== */
+/*  MCP structured logging                                             */
+/* ================================================================== */
+
+/** Whether to enable MCP `notifications/message` structured log transport. */
+export const MCP_LOG_ENABLED = bool('MCP_LOG_ENABLED', false);
+
+/** Minimum log level for the MCP structured log transport. */
+export const MCP_LOG_LEVEL = str('MCP_LOG_LEVEL', 'info');
+
+/** Directory for file-based MCP log persistence. Empty = disabled. */
+export const MCP_LOG_FILE_DIR = str('MCP_LOG_FILE_DIR', '');

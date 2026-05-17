@@ -51,6 +51,7 @@ vi.mock('@src/constants', () => ({
   SEARCH_VECTOR_LEARN_UP: 0.05,
   SEARCH_VECTOR_LEARN_DOWN: 0.03,
   SEARCH_VECTOR_LEARN_TOP_N: 5,
+  SEARCH_SELF_RAG_ENABLED: false,
 }));
 
 function makeTool(name: string, description: string, params?: Record<string, object>): Tool {

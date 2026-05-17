@@ -16,6 +16,7 @@ import {
   SEARCH_RECENCY_WINDOW_MS,
   SEARCH_RRF_K,
   SEARCH_SCENE_KEYWORD_WEIGHT,
+  SEARCH_SELF_RAG_ENABLED,
   SEARCH_TIER_PENALTY,
   SEARCH_TIER_PENALTY_SEARCH,
   SEARCH_TIER_PENALTY_WORKFLOW,
@@ -31,6 +32,8 @@ import { IntentBoostImpl } from './IntentBoost';
 import { TrigramIndex } from './TrigramIndex';
 import { FeedbackTracker } from './FeedbackTracker';
 import { QueryNormalizer } from './QueryNormalizer';
+import { ReRanker, type ReRankInput, type ToolMetadata } from './ReRanker';
+import { SearchQualityTracker } from './SearchQualityTracker';
 import {
   applyGraphExpansionToScores,
   buildAffinityGraph,
@@ -173,6 +176,8 @@ export class ToolSearchEngine {
   // Extracted modules
   private readonly bm25Scorer: BM25ScorerImpl;
   private readonly intentBoost: IntentBoostImpl;
+  private readonly reRanker: ReRanker;
+  private readonly qualityTracker = new SearchQualityTracker();
 
   constructor(
     tools?: Tool[],
@@ -276,6 +281,18 @@ export class ToolSearchEngine {
     this.avgDocLength = this.docCount > 0 ? totalLength / this.docCount : 1;
     this.sortedKeys = [...this.invertedIndex.keys()].toSorted();
 
+    // ── Re-ranker: build domain keywords from tool metadata ──
+    this.reRanker = new ReRanker();
+    this.reRanker.buildFromTools(
+      this.docs.map(
+        (d): ToolMetadata => ({
+          name: d.name,
+          domain: d.domain ?? '',
+          description: d.description,
+        }),
+      ),
+    );
+
     // ── Tool affinity graph (§4.1.4 dependency hull expansion) ──
     this.affinityGraph = buildAffinityGraph(this.docs);
 
@@ -293,10 +310,17 @@ export class ToolSearchEngine {
     visibleDomains?: ReadonlySet<string>,
     profile?: ToolProfile,
   ): Promise<ToolSearchResult[]> {
+    const searchStartTime = performance.now();
+
     // Tokenise without synonyms first, distill, then expand.
     let queryTokens = this.bm25Scorer.tokenise(query);
     if (queryTokens.length === 0) {
       return [];
+    }
+
+    // ── Self-RAG quick path: skip expensive signals for simple queries ──
+    if (SEARCH_SELF_RAG_ENABLED && this.isSimpleQuery(query, queryTokens)) {
+      return this.quickPathSearch(query, queryTokens, topK, activeToolNames);
     }
 
     // ── IDF-based query distillation ──
@@ -496,7 +520,22 @@ export class ToolSearchEngine {
     }
 
     candidates.sort((a, b) => b.score - a.score);
-    const results = candidates.slice(0, topK);
+    let results = candidates.slice(0, topK);
+
+    // ── Re-ranker: rule-based precision re-ranking ──
+    if (results.length > 1) {
+      const reRankInputs: ReRankInput[] = results.map((r) => ({
+        toolName: r.name,
+        score: r.score,
+        domain: r.domain ?? '',
+        description: this.docs[this.docNameIndex.get(r.name) ?? 0]?.description ?? '',
+      }));
+      const reRanked = this.reRanker.reRank(query, reRankInputs, topK);
+      const rankMap = new Map(reRanked.map((rr, idx) => [rr.toolName, idx]));
+      results = results
+        .slice()
+        .toSorted((a, b) => (rankMap.get(a.name) ?? 0) - (rankMap.get(b.name) ?? 0));
+    }
 
     // ── Cache store (value-versioned) ──
     this.queryCache.set(cacheKey, {
@@ -504,6 +543,15 @@ export class ToolSearchEngine {
       vectorWeightAtCache: this.feedbackTracker.getVectorWeight(),
       cachedAtMs: Date.now(),
     });
+
+    // ── Search quality tracking ──
+    const latencyMs = performance.now() - searchStartTime;
+    this.qualityTracker.recordSearch(
+      query,
+      results.map((r) => r.name),
+      results.map((r) => r.score),
+      latencyMs,
+    );
 
     return results;
   }
@@ -518,6 +566,84 @@ export class ToolSearchEngine {
     return (
       Math.abs(currentWeight - entry.vectorWeightAtCache) <= SEARCH_CACHE_VECTOR_WEIGHT_TOLERANCE
     );
+  }
+
+  /**
+   * Self-RAG quick path: determine if the query is simple enough to bypass
+   * expensive signals (embedding, synonym expansion, RRF fusion).
+   * Triggers on exact tool name matches and single-token queries.
+   */
+  private isSimpleQuery(rawQuery: string, queryTokens: string[]): boolean {
+    const normalised = rawQuery.toLowerCase().replace(/[\s-]+/g, '_');
+
+    if (this.docNameIndex.has(normalised)) return true;
+
+    if (queryTokens.length === 1) return true;
+
+    return false;
+  }
+
+  /**
+   * Fast search path: BM25 + trigram only, skipping embedding/RRF/synonym.
+   * Used for simple queries identified by isSimpleQuery().
+   */
+  private quickPathSearch(
+    query: string,
+    queryTokens: string[],
+    topK: number,
+    activeToolNames?: ReadonlySet<string>,
+  ): ToolSearchResult[] {
+    const scores = new Float64Array(this.docCount);
+
+    for (const qToken of queryTokens) {
+      this.scoreToken(qToken, scores);
+      if (qToken.length >= 3) {
+        const prefixMatches = this.findPrefixMatches(qToken);
+        for (const indexToken of prefixMatches) {
+          if (indexToken !== qToken) {
+            const postings = this.invertedIndex.get(indexToken);
+            if (postings) {
+              this.scorePostings(postings, this.docCount, scores, SEARCH_PREFIX_MATCH_MULTIPLIER);
+            }
+          }
+        }
+      }
+    }
+
+    const trigramScores = this.trigramIndex.search(query, SEARCH_TRIGRAM_THRESHOLD);
+    const trigramWeight = SEARCH_TRIGRAM_WEIGHT;
+    if (trigramWeight > 0) {
+      for (const [docIdx, triScore] of trigramScores) {
+        if (triScore > 0) {
+          scores[docIdx]! += triScore * trigramWeight;
+        }
+      }
+    }
+
+    const queryNormalised = query.toLowerCase().replace(/[\s-]+/g, '_');
+    if (this.docNameIndex.has(queryNormalised)) {
+      const idx = this.docNameIndex.get(queryNormalised)!;
+      scores[idx]! *= SEARCH_EXACT_NAME_MATCH_MULTIPLIER;
+    }
+
+    const active = activeToolNames ?? new Set<string>();
+    const candidates: ToolSearchResult[] = [];
+
+    for (let i = 0; i < this.docCount; i++) {
+      if (scores[i]! > 0) {
+        const doc = this.docs[i]!;
+        candidates.push({
+          name: doc.name,
+          domain: doc.domain,
+          shortDescription: doc.shortDescription,
+          score: Math.round(scores[i]! * 1000) / 1000,
+          isActive: active.has(doc.name),
+        });
+      }
+    }
+
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates.slice(0, topK);
   }
 
   /**
@@ -796,6 +922,25 @@ export class ToolSearchEngine {
       if (oldest === undefined) break;
       this.recencyTracker.delete(oldest);
     }
+  }
+
+  /**
+   * Associate a tool call with the most recent search quality record.
+   * Called from MCPServer when a tool is invoked after a search.
+   */
+  associateLastSearch(toolName: string): void {
+    this.qualityTracker.associateLastSearch(toolName);
+  }
+
+  /**
+   * Return current search quality metrics.
+   */
+  getSearchQualityMetrics(): import('./SearchQualityTracker').SearchQualityMetrics {
+    return this.qualityTracker.computeMetrics();
+  }
+
+  getSearchQualityTracker(): import('./SearchQualityTracker').SearchQualityTracker {
+    return this.qualityTracker;
   }
 
   /**
