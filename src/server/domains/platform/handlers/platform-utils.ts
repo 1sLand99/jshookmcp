@@ -1,3 +1,4 @@
+import type { Stats } from 'node:fs';
 import { readFile, readdir, stat, mkdir } from 'node:fs/promises';
 import { basename, extname, join, normalize, relative, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
@@ -7,7 +8,7 @@ import { logger } from '@utils/logger';
 
 // ── Shared types ──
 
-export type FsStats = Awaited<ReturnType<typeof stat>>;
+export type FsStats = Stats;
 
 export interface MiniappPkgScanItem {
   path: string;
