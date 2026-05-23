@@ -77,7 +77,7 @@ Runtime configuration is defined by `src/utils/config.ts`. The current runtime d
 
 | Variable                                  | Purpose                                                           | Default / Typical value          |
 | ----------------------------------------- | ----------------------------------------------------------------- | -------------------------------- |
-| `MCP_TOOL_PROFILE`                        | Selects the tool profile: `search`, `workflow`, or `full`.        | default: `search`                |
+| `MCP_TOOL_PROFILE`                        | Selects the tool profile: `search`, `workflow`, or `full`. `search` starts with only 8 meta-tools registered; other domains are enabled on demand through `activate_domain` / `call_tool`. | default: `search`                |
 | `MCP_TOOL_DOMAINS`                        | Explicit domain allowlist; overrides `MCP_TOOL_PROFILE` when set. | no default                       |
 | `SEARCH_INTENT_TOOL_BOOST_RULES_JSON`     | JSON override for explicit intent-to-tool ranking boosts.         | no default                       |
 | `MCP_DEFAULT_PLUGIN_BOOST_TIER`           | Default tier for plugin auto-registration during boost.           | `full`                           |

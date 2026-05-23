@@ -54,7 +54,7 @@ MCP_TOOL_PROFILE=workflow
 | Scenario | Recommended Profile | Why |
 |----------|-------------------|-----|
 | Day-to-day reverse engineering | `workflow` | Browser, network, debugger, hooks always resident; moderate token cost |
-| Search/exploration only | `search` | Minimal mode, only meta-tools exposed, lowest token cost |
+| Search/exploration only | `search` | Registers only 8 meta-tools at startup; other domains stay lazy-activatable, with the lowest token cost |
 | Deep analysis (WASM/process/memory) | `full` | All domains pre-loaded, designed for heavy tasks |
 
 Switch profile (choose one):

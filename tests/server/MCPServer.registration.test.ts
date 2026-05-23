@@ -84,4 +84,19 @@ describe('MCPServer.registration', () => {
     expect(result.profile).toBe('full');
     expect(mocks.getToolsForProfile).toHaveBeenCalledWith('full');
   });
+
+  it('logs search bootstrap guidance when search profile is selected', () => {
+    vi.stubEnv('MCP_TOOL_PROFILE', 'search');
+    mocks.getToolsForProfile.mockReturnValue([]);
+
+    const result = resolveToolsForRegistration();
+
+    expect(result).toEqual({
+      tools: [],
+      profile: 'search',
+    });
+    expect(mocks.logger.info).toHaveBeenCalledWith(
+      'Tool registration mode=search bootstrap, transport=stdio, baseCount=0. Meta-tools remain available for domain activation and call_tool bridging.',
+    );
+  });
 });

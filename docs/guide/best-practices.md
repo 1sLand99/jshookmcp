@@ -54,7 +54,7 @@ MCP_TOOL_PROFILE=workflow
 | 场景 | 推荐 Profile | 理由 |
 |------|-------------|------|
 | 日常逆向 | `workflow` | 浏览器、网络、调试、Hook 常驻，token 开销适中 |
-| 只做搜索/探索 | `search` | 极简模式，仅暴露元工具，token 最省 |
+| 只做搜索/探索 | `search` | 启动时仅注册 8 个元工具，其他域按需 lazy activation，token 最省 |
 | 深度分析（WASM/进程/内存） | `full` | 全域预载，适合重型任务 |
 
 切换方式（任选一种）：

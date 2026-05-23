@@ -118,13 +118,19 @@ export async function discoverDomainManifests(
   }
 
   const totalTools = manifests.reduce((n, m) => n + m.registrations.length, 0);
-  logger.info(
-    '[discovery] Discovered ' +
-      String(manifests.length) +
-      ' domains, ' +
-      String(totalTools) +
-      ' tools total',
-  );
+  if (domainsToLoad && manifests.length === 0) {
+    logger.info(
+      '[discovery] No manifests loaded for the requested startup profile. Domains remain available for lazy activation.',
+    );
+  } else {
+    logger.info(
+      '[discovery] Discovered ' +
+        String(manifests.length) +
+        ' domains, ' +
+        String(totalTools) +
+        ' tools total',
+    );
+  }
   return manifests;
 }
 

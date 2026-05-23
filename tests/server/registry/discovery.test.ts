@@ -250,6 +250,14 @@ describe('registry/discovery', () => {
 
       expect(manifests).toEqual([]);
     });
+
+    it('logs lazy-activation guidance when a filtered startup profile loads no domains', async () => {
+      const { discoverDomainManifests } = await import('@server/registry/discovery');
+      await expect(discoverDomainManifests(new Set(['browser']))).resolves.toEqual([]);
+      expect(state.logger.info).toHaveBeenCalledWith(
+        '[discovery] No manifests loaded for the requested startup profile. Domains remain available for lazy activation.',
+      );
+    });
   });
 
   describe('loadSingleManifest', () => {

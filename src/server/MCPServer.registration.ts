@@ -36,8 +36,15 @@ export function resolveToolsForRegistration(): { tools: Tool[]; profile: ToolPro
   }
 
   const tools = getToolsForProfile(profile);
-  logger.info(
-    `Tool registration mode=${profile}, transport=${transportMode}, count=${tools.length}`,
-  );
+  if (profile === 'search') {
+    logger.info(
+      `Tool registration mode=search bootstrap, transport=${transportMode}, baseCount=${tools.length}. ` +
+        `Meta-tools remain available for domain activation and call_tool bridging.`,
+    );
+  } else {
+    logger.info(
+      `Tool registration mode=${profile}, transport=${transportMode}, count=${tools.length}`,
+    );
+  }
   return { tools, profile };
 }

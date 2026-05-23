@@ -892,7 +892,10 @@ export class MCPServer implements MCPServerContext {
     registerSearchMetaTools(this);
     registerServerResources(this);
     registerServerPrompts(this);
-    logger.info(`Registered ${this.selectedTools.length} tools + meta tools with McpServer`);
+    const metaToolCount = this.metaToolsByName.size;
+    logger.info(
+      `Registered ${this.selectedTools.length} base tools + ${metaToolCount} meta tools with McpServer`,
+    );
     this.mcpLog.info('jshookmcp', {
       event: 'registry_discovered',
       domainCount: this.enabledDomains.size,

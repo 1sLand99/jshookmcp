@@ -77,7 +77,7 @@ Clone 仓库后，在项目根目录创建 `.env` 文件（参考 `.env.example`
 
 | 变量                                      | 作用                                                  | 默认值 / 典型值           |
 | ----------------------------------------- | ----------------------------------------------------- | ------------------------- |
-| `MCP_TOOL_PROFILE`                        | 选择工具档位：`search` / `workflow` / `full`。        | 默认：`search`            |
+| `MCP_TOOL_PROFILE`                        | 选择工具档位：`search` / `workflow` / `full`。`search` 启动时只注册 8 个元工具，其余域通过 `activate_domain` / `call_tool` 按需启用。 | 默认：`search`            |
 | `MCP_TOOL_DOMAINS`                        | 手动指定启用域；设置后优先级高于 `MCP_TOOL_PROFILE`。 | 无默认值                  |
 | `SEARCH_INTENT_TOOL_BOOST_RULES_JSON`     | 用 JSON 自定义”意图 -> 工具”加权规则。                | 无默认值                  |
 | `MCP_DEFAULT_PLUGIN_BOOST_TIER`           | plugin 在 boost 时自动注册的默认档位。                | `full`                    |
