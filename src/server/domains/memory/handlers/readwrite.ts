@@ -1,24 +1,8 @@
-/**
- * ReadWriteHandlers — memory reads, writes, freeze, undo/redo.
- */
 import type { MemoryController } from '@native/MemoryController';
 import type { UnifiedProcessManager } from '@server/domains/shared/modules/native';
 import type { MCPServerContext } from '@server/MCPServer.context';
 import { resolveMemoryDomainPid } from '@server/domains/memory/pid-resolver';
-
-function toTextResponse(payload: Record<string, unknown>) {
-  return {
-    content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
-  };
-}
-
-function toErrorResponse(tool: string, error: unknown) {
-  return toTextResponse({
-    success: false,
-    tool,
-    error: error instanceof Error ? error.message : String(error),
-  });
-}
+import { handleSafe } from '@server/domains/shared/ResponseBuilder';
 
 export class ReadWriteHandlers {
   constructor(
@@ -35,7 +19,7 @@ export class ReadWriteHandlers {
   }
 
   async handleWriteValue(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const pid = await this.resolvePid(args.pid);
       const entry = await this.memCtrl.writeValue(
         pid,
@@ -43,18 +27,15 @@ export class ReadWriteHandlers {
         args.value as string,
         args.valueType as string,
       );
-      return toTextResponse({
-        success: true,
+      return {
         ...entry,
         hint: "Use memory_write_history with action='undo' to revert.",
-      });
-    } catch (error) {
-      return toErrorResponse('memory_write_value', error);
-    }
+      };
+    });
   }
 
   async handleFreeze(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const pid = await this.resolvePid(args.pid);
       const entry = await this.memCtrl.freeze(
         pid,
@@ -63,56 +44,42 @@ export class ReadWriteHandlers {
         args.valueType as string,
         args.intervalMs as number | undefined,
       );
-      return toTextResponse({
-        success: true,
+      return {
         ...entry,
         hint: `Frozen. Use memory_freeze with action="unfreeze" and freezeId "${entry.id}" to stop.`,
-      });
-    } catch (error) {
-      return toErrorResponse('memory_freeze', error);
-    }
+      };
+    });
   }
 
   async handleUnfreeze(args: Record<string, unknown>) {
-    try {
-      return toTextResponse({
-        success: true,
-        unfrozen: await this.memCtrl.unfreeze(args.freezeId as string),
-      });
-    } catch (error) {
-      return toErrorResponse('memory_freeze', error);
-    }
+    return handleSafe(async () => ({
+      unfrozen: await this.memCtrl.unfreeze(args.freezeId as string),
+    }));
   }
 
   async handleDump(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const pid = await this.resolvePid(args.pid);
       const hexDump = await this.memCtrl.dumpMemoryHex(
         pid,
         args.address as string,
         (args.size as number) ?? 256,
       );
-      return toTextResponse({ success: true, dump: hexDump });
-    } catch (error) {
-      return toErrorResponse('memory_dump', error);
-    }
+      return { dump: hexDump };
+    });
   }
 
   async handleWriteUndo(_args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const entry = await this.memCtrl.undo();
-      return toTextResponse({ success: true, undone: entry !== null, entry });
-    } catch (error) {
-      return toErrorResponse('memory_write_history', error);
-    }
+      return { undone: entry !== null, entry };
+    });
   }
 
   async handleWriteRedo(_args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const entry = await this.memCtrl.redo();
-      return toTextResponse({ success: true, redone: entry !== null, entry });
-    } catch (error) {
-      return toErrorResponse('memory_write_history', error);
-    }
+      return { redone: entry !== null, entry };
+    });
   }
 }

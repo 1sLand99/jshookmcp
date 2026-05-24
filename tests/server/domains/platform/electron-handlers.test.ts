@@ -64,7 +64,8 @@ import type { CodeCollector } from '@server/domains/shared/modules/collector';
 // ---------------------------------------------------------------------------
 
 type JsonTextResponse = {
-  content: Array<{ text: string }>;
+  content: Array<{ text?: string; type?: string }>;
+  [key: string]: unknown;
 };
 
 function parsePayload(response: JsonTextResponse): Record<string, unknown> {

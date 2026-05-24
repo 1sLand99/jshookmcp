@@ -2,7 +2,7 @@ import type { ScriptManager } from '@server/domains/shared/modules';
 import type { DetailedDataManager } from '@utils/DetailedDataManager';
 import { argString, argNumber, argBool } from '@server/domains/shared/parse-args';
 import { SCRIPTS_MAX_CAP } from '@src/constants';
-import { R } from '@server/domains/shared/ResponseBuilder';
+import { handleSafe } from '@server/domains/shared/ResponseBuilder';
 import type { ToolResponse } from '@server/domains/shared/ResponseBuilder';
 
 interface ScriptManagementHandlersDeps {
@@ -14,29 +14,22 @@ export class ScriptManagementHandlers {
   constructor(private deps: ScriptManagementHandlersDeps) {}
 
   async handleGetAllScripts(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const includeSource = argBool(args, 'includeSource', false);
-      const MAX_SCRIPTS_CAP = SCRIPTS_MAX_CAP;
       const maxScripts = Math.min(
         argNumber(args, 'maxScripts', includeSource ? 200 : 1000),
-        MAX_SCRIPTS_CAP,
+        SCRIPTS_MAX_CAP,
       );
-
       const scripts = await this.deps.scriptManager.getAllScripts(includeSource, maxScripts);
-
-      const data = { count: scripts.length, scripts };
-      const processed = this.deps.detailedDataManager.smartHandle(data);
-
-      return R.ok()
-        .merge(processed as Record<string, unknown>)
-        .build();
-    } catch (e) {
-      return R.fail(e).build();
-    }
+      return this.deps.detailedDataManager.smartHandle({
+        count: scripts.length,
+        scripts,
+      }) as Record<string, unknown>;
+    });
   }
 
   async handleGetScriptSource(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const scriptId = argString(args, 'scriptId');
       const url = argString(args, 'url');
       const preview = argBool(args, 'preview', true);
@@ -45,10 +38,7 @@ export class ScriptManagementHandlers {
       const endLine = argNumber(args, 'endLine');
 
       const script = await this.deps.scriptManager.getScriptSource(scriptId, url);
-
-      if (!script) {
-        return R.fail('Script not found').build();
-      }
+      if (!script) throw new Error('Script not found');
 
       if (preview || startLine !== undefined || endLine !== undefined) {
         const source = script.source || '';
@@ -70,7 +60,7 @@ export class ScriptManagementHandlers {
           previewContent = lines.slice(0, maxLines).join('\n');
         }
 
-        const result = {
+        return {
           scriptId: script.scriptId,
           url: script.url,
           preview: true,
@@ -85,16 +75,12 @@ export class ScriptManagementHandlers {
                 `set preview=false to get full source (will return detailId).`
               : 'Set preview=false to get full source',
         };
-
-        return R.ok().build(result);
       }
 
-      const processedScript = this.deps.detailedDataManager.smartHandle(script, 51200);
-      return R.ok()
-        .merge(processedScript as unknown as Record<string, unknown>)
-        .build();
-    } catch (e) {
-      return R.fail(e).build();
-    }
+      return this.deps.detailedDataManager.smartHandle(script, 51200) as unknown as Record<
+        string,
+        unknown
+      >;
+    });
   }
 }

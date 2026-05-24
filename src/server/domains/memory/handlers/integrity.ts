@@ -1,6 +1,3 @@
-/**
- * IntegrityHandlers — PE module introspection and anti-cheat/anti-debug detection.
- */
 import type { HeapAnalyzer } from '@native/HeapAnalyzer';
 import type { PEAnalyzer } from '@native/PEAnalyzer';
 import type { AntiCheatDetector } from '@native/AntiCheatDetector';
@@ -8,20 +5,7 @@ import type { Speedhack } from '@native/Speedhack';
 import type { UnifiedProcessManager } from '@server/domains/shared/modules/native';
 import type { MCPServerContext } from '@server/MCPServer.context';
 import { resolveMemoryDomainPid } from '@server/domains/memory/pid-resolver';
-
-function toTextResponse(payload: Record<string, unknown>) {
-  return {
-    content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
-  };
-}
-
-function toErrorResponse(tool: string, error: unknown) {
-  return toTextResponse({
-    success: false,
-    tool,
-    error: error instanceof Error ? error.message : String(error),
-  });
-}
+import { handleSafe } from '@server/domains/shared/ResponseBuilder';
 
 export class IntegrityHandlers {
   constructor(
@@ -40,177 +24,136 @@ export class IntegrityHandlers {
     return await resolveMemoryDomainPid(value, this.processManager, this.ctx);
   }
 
-  // ── Speedhack (Win32 timer hooking) ──
-
   async handleSpeedhackApply(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const pid = await this.resolvePid(args.pid);
       const result = await this.speedhackEngine!.apply(pid, args.speed as number);
-      return toTextResponse({
+      return {
         ...result,
-        success: true,
         hint: `Speedhack active (${args.speed}x). Use memory_speedhack({ action: 'set' }) to adjust.`,
-      });
-    } catch (error) {
-      return toErrorResponse('memory_speedhack', error);
-    }
+      };
+    });
   }
 
   async handleSpeedhackSet(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const pid = await this.resolvePid(args.pid);
-      return toTextResponse({
-        success: true,
+      return {
         updated: await this.speedhackEngine!.setSpeed(pid, args.speed as number),
         newSpeed: args.speed,
-      });
-    } catch (error) {
-      return toErrorResponse('memory_speedhack', error);
-    }
+      };
+    });
   }
 
-  // ── Heap analysis (Win32 Toolhelp32) ──
-
   async handleHeapEnumerate(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const pid = await this.resolvePid(args.pid);
       const result = await this.heapAnalyzer!.enumerateHeaps(pid);
-      return toTextResponse({
-        success: true,
+      return {
         ...result,
-        hint:
-          `Enumerated ${result.heaps.length} heaps. Use memory_heap_stats for statistics or ` +
-          `memory_heap_anomalies to ` +
-          `check for issues.`,
-      });
-    } catch (error) {
-      return toErrorResponse('memory_heap_enumerate', error);
-    }
+        hint: `Enumerated ${result.heaps.length} heaps. Use memory_heap_stats for statistics or memory_heap_anomalies to check for issues.`,
+      };
+    });
   }
 
   async handleHeapStats(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const pid = await this.resolvePid(args.pid);
-      const stats = await this.heapAnalyzer!.getStats(pid);
-      return toTextResponse({ success: true, ...stats });
-    } catch (error) {
-      return toErrorResponse('memory_heap_stats', error);
-    }
+      return { ...(await this.heapAnalyzer!.getStats(pid)) };
+    });
   }
 
   async handleHeapAnomalies(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const pid = await this.resolvePid(args.pid);
       const anomalies = await this.heapAnalyzer!.detectAnomalies(pid);
-      return toTextResponse({
-        success: true,
+      return {
         anomalies,
         count: anomalies.length,
         hint:
           anomalies.length > 0
             ? `Found ${anomalies.length} anomalies — inspect types for spray, UAF, or suspicious patterns.`
             : 'No heap anomalies detected.',
-      });
-    } catch (error) {
-      return toErrorResponse('memory_heap_anomalies', error);
-    }
+      };
+    });
   }
 
-  // ── PE / Module introspection ──
-
   async handlePEHeaders(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const pid = await this.resolvePid(args.pid);
-      const headers = await this.peAnalyzer!.parseHeaders(pid, args.moduleBase as string);
-      return toTextResponse({ success: true, ...headers });
-    } catch (error) {
-      return toErrorResponse('memory_pe_headers', error);
-    }
+      return { ...(await this.peAnalyzer!.parseHeaders(pid, args.moduleBase as string)) };
+    });
   }
 
   async handlePEImportsExports(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const table = (args.table as string) || 'both';
       const base = args.moduleBase as string;
       const pid = await this.resolvePid(args.pid);
-      const result: Record<string, unknown> = { success: true };
+      const result: Record<string, unknown> = {};
       if (table === 'imports' || table === 'both') {
         result.imports = await this.peAnalyzer!.parseImports(pid, base);
       }
       if (table === 'exports' || table === 'both') {
         result.exports = await this.peAnalyzer!.parseExports(pid, base);
       }
-      return toTextResponse(result);
-    } catch (error) {
-      return toErrorResponse('memory_pe_imports_exports', error);
-    }
+      return result;
+    });
   }
 
   async handleInlineHookDetect(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const pid = await this.resolvePid(args.pid);
       const hooks = await this.peAnalyzer!.detectInlineHooks(
         pid,
         args.moduleName as string | undefined,
       );
-      return toTextResponse({
-        success: true,
+      return {
         hooks,
         count: hooks.length,
         hint:
           hooks.length > 0
             ? `Detected ${hooks.length} inline hooks — check hookType and jumpTarget for each.`
             : 'No inline hooks detected — exports match disk bytes.',
-      });
-    } catch (error) {
-      return toErrorResponse('memory_inline_hook_detect', error);
-    }
+      };
+    });
   }
 
-  // ── Anti-cheat / Anti-debug ──
-
   async handleAntiCheatDetect(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const pid = await this.resolvePid(args.pid);
       const detections = await this.antiCheatDetector!.detect(pid);
-      return toTextResponse({
-        success: true,
+      return {
         detections,
         count: detections.length,
         hint:
           detections.length > 0
             ? `Found ${detections.length} anti-debug mechanisms. Each includes a bypassSuggestion.`
             : 'No anti-debug mechanisms detected in imports.',
-      });
-    } catch (error) {
-      return toErrorResponse('memory_anticheat_detect', error);
-    }
+      };
+    });
   }
 
   async handleGuardPages(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const pid = await this.resolvePid(args.pid);
       const result = await this.antiCheatDetector!.scanGuardPages(pid);
       const { guardPages, stats } = result;
-      return toTextResponse({
-        success: true,
+      return {
         guardPages,
         count: guardPages.length,
         scan: stats,
         hint: stats.truncated
-          ? `Scan stopped after ${stats.scannedRegions} regions in ${stats.durationMs}ms to avoid ` +
-            `hanging. Results may be partial.`
+          ? `Scan stopped after ${stats.scannedRegions} regions in ${stats.durationMs}ms to avoid hanging. Results may be partial.`
           : guardPages.length > 0
             ? `Found ${guardPages.length} guard page regions — these may indicate anti-tampering.`
             : 'No guard pages found.',
-      });
-    } catch (error) {
-      return toErrorResponse('memory_guard_pages', error);
-    }
+      };
+    });
   }
 
   async handleIntegrityCheck(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const pid = await this.resolvePid(args.pid);
       const result = await this.antiCheatDetector!.scanIntegrity(
         pid,
@@ -218,21 +161,17 @@ export class IntegrityHandlers {
       );
       const { sections, stats } = result;
       const modified = sections.filter((r) => r.isModified);
-      return toTextResponse({
-        success: true,
+      return {
         sections,
         totalChecked: sections.length,
         modifiedCount: modified.length,
         scan: stats,
         hint: stats.truncated
-          ? `Checked ${stats.scannedSections} executable section(s) across ${stats.scannedModules} module(s) before ` +
-            `hitting safety limits. Results may be partial.`
+          ? `Checked ${stats.scannedSections} executable section(s) across ${stats.scannedModules} module(s) before hitting safety limits. Results may be partial.`
           : modified.length > 0
             ? `${modified.length} section(s) modified — code may have been patched or hooked.`
             : 'All checked sections match disk — no runtime modifications detected.',
-      });
-    } catch (error) {
-      return toErrorResponse('memory_integrity_check', error);
-    }
+      };
+    });
   }
 }

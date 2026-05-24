@@ -7,12 +7,9 @@
 
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import {
-  toTextResponse,
-  toErrorResponse,
-  parseStringArg,
-  pathExists,
-} from '@server/domains/platform/handlers/platform-utils';
+import type { ToolResponse } from '@server/types';
+import { parseStringArg, pathExists } from '@server/domains/platform/handlers/platform-utils';
+import { handleSafe } from '@server/domains/shared/ResponseBuilder';
 
 interface ScannedFile {
   name: string;
@@ -27,8 +24,8 @@ interface SkippedFile {
 
 export async function handleElectronScanUserdata(
   args: Record<string, unknown>,
-): Promise<ReturnType<typeof toTextResponse>> {
-  try {
+): Promise<ToolResponse> {
+  return handleSafe(async () => {
     const dirPath = parseStringArg(args, 'dirPath', true);
     if (!dirPath) {
       throw new Error('dirPath is required');
@@ -40,31 +37,19 @@ export async function handleElectronScanUserdata(
     const maxFileSize = maxFileSizeKB * 1024;
 
     if (!(await pathExists(dirPath))) {
-      return toTextResponse({
-        success: false,
-        tool: 'electron_scan_userdata',
-        error: `Directory does not exist: ${dirPath}`,
-      });
+      return { success: false, error: `Directory does not exist: ${dirPath}` };
     }
 
     const dirStat = await stat(dirPath);
     if (!dirStat.isDirectory()) {
-      return toTextResponse({
-        success: false,
-        tool: 'electron_scan_userdata',
-        error: `Path is not a directory: ${dirPath}`,
-      });
+      return { success: false, error: `Path is not a directory: ${dirPath}` };
     }
 
     let dirEntries: string[];
     try {
       dirEntries = await readdir(dirPath);
     } catch {
-      return toTextResponse({
-        success: false,
-        tool: 'electron_scan_userdata',
-        error: `Cannot read directory: ${dirPath}`,
-      });
+      return { success: false, error: `Cannot read directory: ${dirPath}` };
     }
 
     const jsonFiles = dirEntries.filter((name) => name.endsWith('.json')).slice(0, maxFiles);
@@ -96,15 +81,11 @@ export async function handleElectronScanUserdata(
       }
     }
 
-    return toTextResponse({
-      success: true,
-      tool: 'electron_scan_userdata',
+    return {
       files,
       skipped,
       totalScanned: jsonFiles.length,
       directory: dirPath,
-    });
-  } catch (error) {
-    return toErrorResponse('electron_scan_userdata', error);
-  }
+    };
+  });
 }

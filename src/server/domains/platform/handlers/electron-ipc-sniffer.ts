@@ -8,11 +8,9 @@
  * EADV-03: IPC sniffing probe.
  */
 
-import {
-  toTextResponse,
-  toErrorResponse,
-  parseStringArg,
-} from '@server/domains/platform/handlers/platform-utils';
+import type { ToolResponse } from '@server/types';
+import { parseStringArg } from '@server/domains/platform/handlers/platform-utils';
+import { handleSafe } from '@server/domains/shared/ResponseBuilder';
 
 // ── IPC capture session tracking ──
 
@@ -280,10 +278,8 @@ function cdpEvalViaWs(
   });
 }
 
-export async function handleElectronIPCSniff(
-  args: Record<string, unknown>,
-): Promise<ReturnType<typeof toTextResponse>> {
-  try {
+export async function handleElectronIPCSniff(args: Record<string, unknown>): Promise<ToolResponse> {
+  return handleSafe(async () => {
     const action = parseStringArg(args, 'action') ?? 'guide';
 
     if (action === 'start') {
@@ -299,26 +295,24 @@ export async function handleElectronIPCSniff(
         const info = (await res.json()) as { webSocketDebuggerUrl?: string };
         wsUrl = info.webSocketDebuggerUrl ?? `ws://127.0.0.1:${port}/devtools/browser`;
       } catch {
-        return toTextResponse({
+        return {
           success: false,
-          tool: 'electron_ipc_sniff',
           error:
             `Cannot connect to CDP at port ${port}. Ensure Electron is launched with ` +
             `--remote-debugging-port=${port}.`,
           hint: 'Use electron_launch_debug to start the app with CDP enabled.',
-        });
+        };
       }
 
       // Inject IPC hooks
       const injectResult = await cdpEvaluate(wsUrl, IPC_HOOK_PAYLOAD);
 
       if (!injectResult.ok) {
-        return toTextResponse({
+        return {
           success: false,
-          tool: 'electron_ipc_sniff',
           error: `Failed to inject IPC hooks: ${injectResult.error}`,
           hint: 'The renderer may have contextIsolation enabled. Try injecting via main process CDP instead.',
-        });
+        };
       }
 
       const session: IPCSniffSession = {
@@ -332,9 +326,7 @@ export async function handleElectronIPCSniff(
 
       ipcSessions.set(sessionId, session);
 
-      return toTextResponse({
-        success: true,
-        tool: 'electron_ipc_sniff',
+      return {
         action: 'start',
         sessionId,
         port,
@@ -348,7 +340,7 @@ export async function handleElectronIPCSniff(
             ? 'ipcRenderer not accessible — contextIsolation may be enabled. IPC hooking requires nodeIntegration ' +
               'or a custom preload.'
             : 'IPC hooks installed. Interact with the app, then use dump to retrieve captured messages.',
-      });
+      };
     }
 
     if (action === 'dump') {
@@ -369,24 +361,22 @@ export async function handleElectronIPCSniff(
       }
 
       if (!session) {
-        return toTextResponse({
+        return {
           success: false,
-          tool: 'electron_ipc_sniff',
           error: 'No active IPC sniff session found.',
           activeSessions: Array.from(ipcSessions.keys()),
           hint: 'Start a session first: electron_ipc_sniff(action="start", port=9222)',
-        });
+        };
       }
 
       // Dump from renderer
       const dumpResult = await cdpEvaluate(session.wsUrl, IPC_DUMP_PAYLOAD);
 
       if (!dumpResult.ok) {
-        return toTextResponse({
+        return {
           success: false,
-          tool: 'electron_ipc_sniff',
           error: `Failed to dump IPC messages: ${dumpResult.error}`,
-        });
+        };
       }
 
       let messages: IPCMessage[] = [];
@@ -407,9 +397,7 @@ export async function handleElectronIPCSniff(
         channelSummary[msg.channel] = (channelSummary[msg.channel] ?? 0) + 1;
       }
 
-      return toTextResponse({
-        success: true,
-        tool: 'electron_ipc_sniff',
+      return {
         action: 'dump',
         sessionId: session.id,
         messageCount: messages.length,
@@ -420,40 +408,36 @@ export async function handleElectronIPCSniff(
           messages.length > 200
             ? `Showing first 200 of ${messages.length} messages. Use dump repeatedly for ongoing capture.`
             : undefined,
-      });
+      };
     }
 
     if (action === 'stop') {
       const sessionId = parseStringArg(args, 'sessionId');
       if (!sessionId) {
-        return toTextResponse({
+        return {
           success: false,
-          tool: 'electron_ipc_sniff',
           error: 'sessionId is required for stop.',
           activeSessions: Array.from(ipcSessions.keys()),
-        });
+        };
       }
 
       const session = ipcSessions.get(sessionId);
       if (!session) {
-        return toTextResponse({
+        return {
           success: false,
-          tool: 'electron_ipc_sniff',
           error: `Session not found: ${sessionId}`,
-        });
+        };
       }
 
       session.active = false;
       ipcSessions.delete(sessionId);
 
-      return toTextResponse({
-        success: true,
-        tool: 'electron_ipc_sniff',
+      return {
         action: 'stop',
         sessionId,
         message: 'IPC sniff session stopped.',
         uptime: Math.round((Date.now() - session.startedAt) / 1000),
-      });
+      };
     }
 
     if (action === 'list') {
@@ -464,18 +448,15 @@ export async function handleElectronIPCSniff(
         uptime: Math.round((Date.now() - s.startedAt) / 1000),
       }));
 
-      return toTextResponse({
-        success: true,
-        tool: 'electron_ipc_sniff',
+      return {
         action: 'list',
         sessions,
         count: sessions.length,
-      });
+      };
     }
 
     // action === 'guide'
-    return toTextResponse({
-      success: true,
+    return {
       guide: {
         what: 'Electron IPC sniffer — intercepts ipcRenderer.invoke/send/sendSync messages via CDP injection.',
         workflow: [
@@ -492,8 +473,6 @@ export async function handleElectronIPCSniff(
           'Main process IPC (ipcMain) is captured indirectly through renderer-side hooks',
         ],
       },
-    });
-  } catch (error) {
-    return toErrorResponse('electron_ipc_sniff', error);
-  }
+    };
+  });
 }

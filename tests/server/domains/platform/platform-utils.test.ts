@@ -75,7 +75,7 @@ import {
 function getFirstTextContent(result: ReturnType<typeof toTextResponse>) {
   const content = result.content[0];
   expect(content).toBeDefined();
-  return content!;
+  return content! as Extract<typeof content, { type: 'text' }>;
 }
 
 describe('platform-utils', () => {

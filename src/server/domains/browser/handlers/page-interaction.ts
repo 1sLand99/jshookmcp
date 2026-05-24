@@ -1,7 +1,7 @@
 import type { PageController } from '@server/domains/shared/modules/collector';
 import type { FrameResolveOptions } from '@modules/collector/PageController';
 import { argString, argNumber, argStringArray } from '@server/domains/shared/parse-args';
-import { R } from '@server/domains/shared/ResponseBuilder';
+import { R, handleSafe } from '@server/domains/shared/ResponseBuilder';
 import type { ToolResponse } from '@server/domains/shared/ResponseBuilder';
 import { resolveRelativeProjectPath } from '@utils/outputPaths';
 
@@ -200,7 +200,7 @@ export class PageInteractionHandlers {
   }
 
   async handlePageType(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const selector = argString(args, 'selector', '');
       const text = argString(args, 'text', '');
       const delay = argNumber(args, 'delay');
@@ -214,11 +214,11 @@ export class PageInteractionHandlers {
       if (this.deps.getActiveDriver() === 'camoufox') {
         const context = await this.getCamoufoxInteractionContext(frameOptions);
         await context.fill(selector, text);
-        return R.ok().build({
+        return {
           driver: 'camoufox',
           message: `Typed into ${selector}`,
           ...(frameOptions ? { frame: frameOptions } : {}),
-        });
+        };
       }
 
       if (frameOptions) {
@@ -227,13 +227,11 @@ export class PageInteractionHandlers {
         await this.deps.pageController.type(selector, text, { delay });
       }
 
-      return R.ok().build({
+      return {
         message: `Typed into ${selector}`,
         ...(frameOptions ? { frame: frameOptions } : {}),
-      });
-    } catch (e) {
-      return R.fail(e).build();
-    }
+      };
+    });
   }
 
   async handlePageUploadFiles(args: Record<string, unknown>): Promise<ToolResponse> {
@@ -297,7 +295,7 @@ export class PageInteractionHandlers {
   }
 
   async handlePageSelect(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const selector = argString(args, 'selector', '');
       const values = argStringArray(args, 'values');
       const frameUrl = argString(args, 'frameUrl');
@@ -310,11 +308,11 @@ export class PageInteractionHandlers {
       if (this.deps.getActiveDriver() === 'camoufox') {
         const context = await this.getCamoufoxInteractionContext(frameOptions);
         await context.selectOption(selector, values);
-        return R.ok().build({
+        return {
           driver: 'camoufox',
           message: `Selected in ${selector}: ${values.join(', ')}`,
           ...(frameOptions ? { frame: frameOptions } : {}),
-        });
+        };
       }
 
       if (frameOptions) {
@@ -323,17 +321,15 @@ export class PageInteractionHandlers {
         await this.deps.pageController.select(selector, values);
       }
 
-      return R.ok().build({
+      return {
         message: `Selected in ${selector}: ${values.join(', ')}`,
         ...(frameOptions ? { frame: frameOptions } : {}),
-      });
-    } catch (e) {
-      return R.fail(e).build();
-    }
+      };
+    });
   }
 
   async handlePageHover(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const selector = argString(args, 'selector', '');
       const frameUrl = argString(args, 'frameUrl');
       const frameSelector = argString(args, 'frameSelector');
@@ -345,11 +341,11 @@ export class PageInteractionHandlers {
       if (this.deps.getActiveDriver() === 'camoufox') {
         const context = await this.getCamoufoxInteractionContext(frameOptions);
         await context.hover(selector);
-        return R.ok().build({
+        return {
           driver: 'camoufox',
           message: `Hovered: ${selector}`,
           ...(frameOptions ? { frame: frameOptions } : {}),
-        });
+        };
       }
 
       if (frameOptions) {
@@ -358,17 +354,15 @@ export class PageInteractionHandlers {
         await this.deps.pageController.hover(selector);
       }
 
-      return R.ok().build({
+      return {
         message: `Hovered: ${selector}`,
         ...(frameOptions ? { frame: frameOptions } : {}),
-      });
-    } catch (e) {
-      return R.fail(e).build();
-    }
+      };
+    });
   }
 
   async handlePageScroll(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const x = argNumber(args, 'x', 0);
       const y = argNumber(args, 'y', 0);
 
@@ -380,42 +374,38 @@ export class PageInteractionHandlers {
           },
           { x, y },
         );
-        return R.ok().build({
+        return {
           driver: 'camoufox',
           message: `Scrolled to: x=${x || 0}, y=${y || 0}`,
-        });
+        };
       }
 
       await this.deps.pageController.scroll({ x, y });
 
-      return R.ok().build({
+      return {
         message: `Scrolled to: x=${x || 0}, y=${y || 0}`,
-      });
-    } catch (e) {
-      return R.fail(e).build();
-    }
+      };
+    });
   }
 
   async handlePagePressKey(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const key = argString(args, 'key', '');
 
       if (this.deps.getActiveDriver() === 'camoufox') {
         const page = (await this.deps.getCamoufoxPage()) as CamoufoxPageLike;
         await page.keyboard.press(key);
-        return R.ok().build({
+        return {
           driver: 'camoufox',
           key,
-        });
+        };
       }
 
       await this.deps.pageController.pressKey(key);
 
-      return R.ok().build({
+      return {
         key,
-      });
-    } catch (e) {
-      return R.fail(e).build();
-    }
+      };
+    });
   }
 }

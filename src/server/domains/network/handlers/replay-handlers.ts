@@ -11,7 +11,7 @@ import type { BuildHarParams } from '@server/domains/network/har';
 import { replayRequest } from '@server/domains/network/replay';
 import type { NetworkAuthorizationInput } from '@utils/network/ssrf-policy';
 import type { SessionProfile } from '@internal-types/SessionProfile';
-import { R } from '@server/domains/shared/ResponseBuilder';
+import { handleSafe, R } from '@server/domains/shared/ResponseBuilder';
 import type { ConsoleMonitor } from '@server/domains/shared/modules/collector';
 import { getDetailedDataManager, parseBooleanArg, parseNumberArg } from './shared';
 
@@ -173,31 +173,27 @@ export class ReplayHandlers {
   constructor(private deps: ReplayHandlerDeps) {}
 
   async handleNetworkExtractAuth(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const minConfidence = parseNumberArg(args.minConfidence, { defaultValue: 0.4 });
       const requests = this.deps.consoleMonitor.getNetworkRequests();
 
       if (requests.length === 0) {
-        return R.fail(
+        throw new Error(
           'No captured requests found. Call network_enable then page_navigate first.',
-        ).json();
+        );
       }
 
       const findings = extractAuthFromRequests(requests).filter(
         (f) => f.confidence >= minConfidence,
       );
 
-      return R.ok()
-        .merge({
-          scannedRequests: requests.length,
-          found: findings.length,
-          findings,
-          note: 'Values are masked (first 6 + last 4 chars). Use network_replay_request to test with actual values.',
-        })
-        .json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return {
+        scannedRequests: requests.length,
+        found: findings.length,
+        findings,
+        note: 'Values are masked (first 6 + last 4 chars). Use network_replay_request to test with actual values.',
+      };
+    });
   }
 
   async handleNetworkExportHar(args: Record<string, unknown>) {
@@ -294,12 +290,12 @@ export class ReplayHandlers {
   }
 
   async handleNetworkReplayRequest(args: Record<string, unknown>) {
-    try {
-      const requestId = args.requestId as string;
-      if (!requestId) {
-        return R.fail('requestId is required').json();
-      }
+    const requestId = args.requestId as string;
+    if (!requestId) {
+      return R.fail('requestId is required').json();
+    }
 
+    try {
       const requests = this.deps.consoleMonitor.getNetworkRequests();
       const base = requests.find(
         (request: unknown): request is ReplayableRequest =>
@@ -308,26 +304,26 @@ export class ReplayHandlers {
 
       if (!base) {
         return R.fail(`Request ${requestId} not found in captured requests`)
-          .merge({ hint: 'Use network_get_requests to list available requestIds' })
+          .set('hint', 'Use network_get_requests to see available request IDs')
           .json();
       }
 
-      const authorization = parseReplayAuthorization(args, requestId);
-      const result = await replayRequest(base, {
-        requestId,
-        headerPatch: args.headerPatch as Record<string, string> | undefined,
-        sessionProfile: args.sessionProfile as SessionProfile | undefined,
-        bodyPatch: args.bodyPatch as string | undefined,
-        methodOverride: args.methodOverride as string | undefined,
-        urlOverride: args.urlOverride as string | undefined,
-        timeoutMs: args.timeoutMs as number | undefined,
-        dryRun: args.dryRun !== false,
-        authorization,
-      });
+      return handleSafe(async () => {
+        const authorization = parseReplayAuthorization(args, requestId);
+        const result = await replayRequest(base, {
+          requestId,
+          headerPatch: args.headerPatch as Record<string, string> | undefined,
+          sessionProfile: args.sessionProfile as SessionProfile | undefined,
+          bodyPatch: args.bodyPatch as string | undefined,
+          methodOverride: args.methodOverride as string | undefined,
+          urlOverride: args.urlOverride as string | undefined,
+          timeoutMs: args.timeoutMs as number | undefined,
+          dryRun: args.dryRun !== false,
+          authorization,
+        });
 
-      return R.ok()
-        .merge(result as unknown as Record<string, unknown>)
-        .json();
+        return result as unknown as Record<string, unknown>;
+      });
     } catch (error) {
       return R.fail(error).json();
     }

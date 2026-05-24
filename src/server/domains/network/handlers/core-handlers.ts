@@ -4,7 +4,7 @@
  * Extracted from NetworkHandlersCore (handlers.base.core.ts).
  */
 
-import { R } from '@server/domains/shared/ResponseBuilder';
+import { handleSafe, R } from '@server/domains/shared/ResponseBuilder';
 import type { ToolResponse } from '@server/types';
 import {
   EXCLUDED_RESOURCE_TYPES,
@@ -61,7 +61,7 @@ export class CoreHandlers {
   }
 
   async handleNetworkEnable(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const enableExceptions = parseBooleanArg(args.enableExceptions, true);
 
       await this.deps.consoleMonitor.enable({
@@ -71,33 +71,27 @@ export class CoreHandlers {
 
       const status = this.deps.consoleMonitor.getNetworkStatus();
 
-      return R.ok()
-        .merge({
-          message: ' Network monitoring enabled successfully',
-          enabled: status.enabled,
-          cdpSessionActive: status.cdpSessionActive,
-          listenerCount: status.listenerCount,
-          usage: {
-            step1: 'Network monitoring is now active',
-            step2: 'Navigate to a page using page_navigate tool',
-            step3: 'Use network_get_requests to retrieve captured requests',
-            step4: 'Use network_get_response_body to get response content',
-          },
-          important: 'Network monitoring must be enabled BEFORE navigating to capture requests',
-        })
-        .json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return {
+        message: ' Network monitoring enabled successfully',
+        enabled: status.enabled,
+        cdpSessionActive: status.cdpSessionActive,
+        listenerCount: status.listenerCount,
+        usage: {
+          step1: 'Network monitoring is now active',
+          step2: 'Navigate to a page using page_navigate tool',
+          step3: 'Use network_get_requests to retrieve captured requests',
+          step4: 'Use network_get_response_body to get response content',
+        },
+        important: 'Network monitoring must be enabled BEFORE navigating to capture requests',
+      };
+    });
   }
 
   async handleNetworkDisable(_args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       await this.deps.consoleMonitor.disable();
-      return R.ok().set('message', 'Network monitoring disabled').json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return { message: 'Network monitoring disabled' };
+    });
   }
 
   async handleNetworkGetStatus(_args: Record<string, unknown>): Promise<ToolResponse> {
@@ -296,11 +290,9 @@ export class CoreHandlers {
   }
 
   async handleNetworkGetStats(_args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       if (!this.deps.consoleMonitor.isNetworkEnabled()) {
-        return R.fail('Network monitoring is not enabled')
-          .set('hint', 'Use network_enable tool first')
-          .json();
+        throw new Error('Network monitoring is not enabled. Use network_enable tool first');
       }
 
       const requests = this.deps.consoleMonitor
@@ -338,8 +330,8 @@ export class CoreHandlers {
             }
           : null;
 
-      return R.ok()
-        .set('stats', {
+      return {
+        stats: {
           totalRequests: requests.length,
           totalResponses: responses.length,
           byMethod,
@@ -347,11 +339,9 @@ export class CoreHandlers {
           byType,
           timeStats,
           monitoringEnabled: true,
-        })
-        .json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+        },
+      };
+    });
   }
 
   // ── Private Helpers ──

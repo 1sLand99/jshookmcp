@@ -1,5 +1,5 @@
 import { argString, argNumber } from '@server/domains/shared/parse-args';
-import { R } from '@server/domains/shared/ResponseBuilder';
+import { handleSafe } from '@server/domains/shared/ResponseBuilder';
 import type { ToolResponse } from '@server/domains/shared/ResponseBuilder';
 
 interface EvaluatablePage {
@@ -18,7 +18,7 @@ export class IndexedDBDumpHandlers {
     const store = argString(args, 'store', '');
     const maxRecords = argNumber(args, 'maxRecords', 100);
 
-    try {
+    return handleSafe(async () => {
       const page = (await this.deps.getActivePage()) as EvaluatablePage;
       const result = await page.evaluate(
         async (opts: { database: string; store: string; maxRecords: number }) => {
@@ -78,9 +78,7 @@ export class IndexedDBDumpHandlers {
         { database, store, maxRecords },
       );
 
-      return R.ok().build(result as Record<string, unknown>);
-    } catch (error) {
-      return R.fail(error).build();
-    }
+      return result as Record<string, unknown>;
+    });
   }
 }

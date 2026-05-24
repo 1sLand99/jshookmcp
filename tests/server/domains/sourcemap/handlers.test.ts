@@ -7,6 +7,11 @@ import * as fsPromises from 'node:fs/promises';
 import { resolveArtifactPath } from '@utils/artifacts';
 import { TEST_HTTP_URLS, withPath } from '@tests/shared/test-urls';
 
+function getText(res: { content: Array<{ type: string; text?: string }> }): string {
+  const block = res.content[0];
+  return block?.text ?? '';
+}
+
 vi.mock('../../../../src/modules/collector/PageController', () => ({
   evaluateWithTimeout: vi.fn(),
 }));
@@ -88,10 +93,8 @@ describe('SourcemapToolHandlers', () => {
       });
 
       const res = await handlers.handleSourcemapDiscover({ includeInline: false });
-      // @ts-expect-error
-      expect(res.content[0].text).toContain('app.js.map');
-      // @ts-expect-error
-      expect(res.content[0].text).toContain(withPath(TEST_HTTP_URLS.root, 'app.js.map'));
+      expect(getText(res)).toContain('app.js.map');
+      expect(getText(res)).toContain(withPath(TEST_HTTP_URLS.root, 'app.js.map'));
     });
 
     it('falls back to fetching script source for map extraction over CDP', async () => {
@@ -118,21 +121,18 @@ describe('SourcemapToolHandlers', () => {
       });
 
       const res = await handlers.handleSourcemapDiscover({});
-      // @ts-expect-error
-      expect(res.content[0].text).toContain('app2.js.map');
+      expect(getText(res)).toContain('app2.js.map');
     });
 
     it('returns empty array if no maps found returning fast path', async () => {
       const res = await handlers.handleSourcemapDiscover({});
-      // @ts-expect-error
-      expect(res.content[0].text).toContain('[]');
+      expect(getText(res)).toContain('[]');
     });
 
     it('handles session communication errors globally', async () => {
       sessionMock.send.mockRejectedValue(new Error('CDP error'));
       const res = await handlers.handleSourcemapDiscover({});
-      // @ts-expect-error
-      expect(res.content[0].text).toContain('CDP error');
+      expect(getText(res)).toContain('CDP error');
     });
   });
 
@@ -154,10 +154,8 @@ describe('SourcemapToolHandlers', () => {
         scriptUrl: withPath(TEST_HTTP_URLS.root, 'test.js'),
       });
 
-      // @ts-expect-error
-      expect(res.content[0].text).toContain('mappingsCount');
-      // @ts-expect-error
-      expect(res.content[0].text).toContain('index.ts');
+      expect(getText(res)).toContain('mappingsCount');
+      expect(getText(res)).toContain('index.ts');
     });
 
     it('fetches and parses data URI source map locally immediately', async () => {
@@ -174,8 +172,7 @@ describe('SourcemapToolHandlers', () => {
         sourceMapUrl: dataUri,
       });
 
-      // @ts-expect-error
-      expect(res.content[0].text).toContain('inline.ts');
+      expect(getText(res)).toContain('inline.ts');
     });
 
     it('surfaces corrupted VLQ payloads as parse errors', async () => {
@@ -195,7 +192,7 @@ describe('SourcemapToolHandlers', () => {
         scriptUrl: withPath(TEST_HTTP_URLS.root, 'test.js'),
       });
 
-      const parsed = JSON.parse(res.content[0]!.text ?? '{}');
+      const parsed = JSON.parse(getText(res) || '{}');
       expect(parsed.success).toBe(false);
       expect(parsed.tool).toBe('sourcemap_fetch_and_parse');
       expect(parsed.error).toContain('Invalid VLQ base64 char');
@@ -205,8 +202,7 @@ describe('SourcemapToolHandlers', () => {
       const res = await handlers.handleSourcemapFetchAndParse({
         sourceMapUrl: 'http://169.254.169.254/meta.map',
       });
-      // @ts-expect-error
-      expect(res.content[0].text).toContain('SSRF blocked');
+      expect(getText(res)).toContain('SSRF blocked');
     });
 
     it('falls back to evaluateWithTimeout on fetch failure timeout or block', async () => {
@@ -217,8 +213,7 @@ describe('SourcemapToolHandlers', () => {
       const res = await handlers.handleSourcemapFetchAndParse({
         sourceMapUrl: withPath(TEST_HTTP_URLS.root, 'fallback.map'),
       });
-      // @ts-expect-error
-      expect(res.content[0].text).toContain('fallback.ts');
+      expect(getText(res)).toContain('fallback.ts');
     });
   });
 
@@ -239,7 +234,7 @@ describe('SourcemapToolHandlers', () => {
       const res = await handlers.handleSourcemapCoverage({
         sourceMapUrl: withPath(TEST_HTTP_URLS.root, 'coverage.map'),
       });
-      const parsed = JSON.parse(res.content[0]!.text ?? '{}');
+      const parsed = JSON.parse(getText(res) || '{}');
       expect(parsed.resolvedUrl).toBe(withPath(TEST_HTTP_URLS.root, 'coverage.map'));
       expect(parsed.totalMappings).toBe(3);
       expect(parsed.mappedSourceCount).toBe(2);
@@ -291,7 +286,7 @@ describe('SourcemapToolHandlers', () => {
       const res = await handlers.handleSourcemapCoverage({
         sourceMapUrl: withPath(TEST_HTTP_URLS.root, 'coverage-missing.map'),
       });
-      const parsed = JSON.parse(res.content[0]!.text ?? '{}');
+      const parsed = JSON.parse(getText(res) || '{}');
       expect(parsed.sources).toEqual([
         {
           source: 'src/a.ts',
@@ -322,7 +317,7 @@ describe('SourcemapToolHandlers', () => {
       const res = await handlers.handleSourcemapCoverage({
         sourceMapUrl: withPath(TEST_HTTP_URLS.root, 'coverage-unmapped.map'),
       });
-      const parsed = JSON.parse(res.content[0]!.text ?? '{}');
+      const parsed = JSON.parse(getText(res) || '{}');
       expect(parsed.uncoveredGeneratedBytes).toBe(1);
       expect(parsed.buckets).toEqual([
         {
@@ -337,7 +332,7 @@ describe('SourcemapToolHandlers', () => {
       const res = await handlers.handleSourcemapCoverage({
         sourceMapUrl: 'http://169.254.169.254/blocked.map',
       });
-      const parsed = JSON.parse(res.content[0]!.text ?? '{}');
+      const parsed = JSON.parse(getText(res) || '{}');
       expect(parsed.success).toBe(false);
       expect(parsed.tool).toBe('sourcemap_coverage');
     });
@@ -361,7 +356,7 @@ describe('SourcemapToolHandlers', () => {
         line: 1,
         column: 0,
       });
-      const parsed = JSON.parse(res.content[0]!.text ?? '{}');
+      const parsed = JSON.parse(getText(res) || '{}');
       expect(parsed.success).toBe(true);
       expect(parsed.matchType).toBe('exact');
       expect(parsed.original.source).toBe('src/a.ts');
@@ -386,7 +381,7 @@ describe('SourcemapToolHandlers', () => {
         line: 1,
         column: 1.5,
       });
-      const parsed = JSON.parse(res.content[0]!.text ?? '{}');
+      const parsed = JSON.parse(getText(res) || '{}');
       expect(parsed.success).toBe(true);
       expect(parsed.matchType).toBe('closest-preceding');
     });
@@ -397,7 +392,7 @@ describe('SourcemapToolHandlers', () => {
         line: 0,
         column: 0,
       });
-      const parsed = JSON.parse(res.content[0]!.text ?? '{}');
+      const parsed = JSON.parse(getText(res) || '{}');
       expect(parsed.success).toBe(false);
       expect(parsed.tool).toBe('sourcemap_lookup');
     });
@@ -420,14 +415,11 @@ describe('SourcemapToolHandlers', () => {
       const res = await handlers.handleSourcemapReconstructTree({
         sourceMapUrl: withPath(TEST_HTTP_URLS.root, 'tree.map'),
       });
-      // @ts-expect-error
-      if (res.content[0].text.includes('"success": false')) {
-        // @ts-expect-error
-        console.error('Tree error 1:', res.content[0].text);
+      if (getText(res).includes('"success": false')) {
+        console.error('Tree error 1:', getText(res));
       }
 
-      // @ts-expect-error
-      expect(res.content[0].text).toContain('"writtenFiles": 2');
+      expect(getText(res)).toContain('"writtenFiles": 2');
       expect(fsPromises.mkdir).toHaveBeenCalled();
       expect(fsPromises.writeFile).toHaveBeenCalledTimes(2);
     });
@@ -451,8 +443,7 @@ describe('SourcemapToolHandlers', () => {
         sourceMapUrl: withPath(TEST_HTTP_URLS.root, 'fail.map'),
       });
 
-      // @ts-expect-error
-      expect(res.content[0].text).toContain('"skippedFiles": 1');
+      expect(getText(res)).toContain('"skippedFiles": 1');
     });
   });
 
@@ -471,17 +462,14 @@ describe('SourcemapToolHandlers', () => {
       });
 
       const res = await handlers.handleExtensionListInstalled({});
-      // @ts-expect-error
-      expect(res.content[0].text).toContain('abcdefghijklmnopabcdefghijklmnop');
-      // @ts-expect-error
-      expect(res.content[0].text).toContain('Test Ext');
+      expect(getText(res)).toContain('abcdefghijklmnopabcdefghijklmnop');
+      expect(getText(res)).toContain('Test Ext');
     });
 
     it('succeeds gracefully when none exist', async () => {
       sessionMock.send.mockResolvedValue({});
       const res = await handlers.handleExtensionListInstalled({});
-      // @ts-expect-error
-      expect(res.content[0].text).toContain('[]');
+      expect(getText(res)).toContain('[]');
     });
   });
 
@@ -510,8 +498,7 @@ describe('SourcemapToolHandlers', () => {
         extensionId: 'abcdefghijklmnopabcdefghijklmnop',
         code: '1+1',
       });
-      // @ts-expect-error
-      expect(res.content[0].text).toContain('execution_result');
+      expect(getText(res)).toContain('execution_result');
       expect(attachedSessionMock.send).toHaveBeenCalledWith('Runtime.evaluate', {
         expression: '1+1',
         returnByValue: true,
@@ -529,8 +516,7 @@ describe('SourcemapToolHandlers', () => {
         extensionId: 'abcdefghijklmnopabcdefghijklmnop',
         code: '1+1',
       });
-      // @ts-expect-error
-      expect(res.content[0].text).toContain('No background target found');
+      expect(getText(res)).toContain('No background target found');
     });
   });
 });

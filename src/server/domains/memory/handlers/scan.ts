@@ -1,6 +1,3 @@
-/**
- * ScanHandlers — first/next/unknown/pointer/group scans.
- */
 import type { MemoryScanner } from '@native/MemoryScanner';
 import type {
   ScanCompareMode,
@@ -12,25 +9,11 @@ import { MEMORY_SCAN_MAX_RESULTS } from '@src/constants';
 import type { UnifiedProcessManager } from '@server/domains/shared/modules/native';
 import type { MCPServerContext } from '@server/MCPServer.context';
 import { resolveMemoryDomainPid } from '@server/domains/memory/pid-resolver';
+import { handleSafe } from '@server/domains/shared/ResponseBuilder';
 
-/** SECURITY: Cap user-supplied maxResults to prevent OOM */
 function capMaxResults(value: number | undefined): number {
   if (value === undefined || !Number.isFinite(value) || value <= 0) return MEMORY_SCAN_MAX_RESULTS;
   return Math.min(value, MEMORY_SCAN_MAX_RESULTS);
-}
-
-function toTextResponse(payload: Record<string, unknown>) {
-  return {
-    content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
-  };
-}
-
-function toErrorResponse(tool: string, error: unknown) {
-  return toTextResponse({
-    success: false,
-    tool,
-    error: error instanceof Error ? error.message : String(error),
-  });
 }
 
 export class ScanHandlers {
@@ -49,7 +32,7 @@ export class ScanHandlers {
   }
 
   async handleFirstScan(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const pid = await this.resolvePid(args.pid);
       const options: ScanOptions = {
         valueType: args.valueType as ScanValueType,
@@ -64,43 +47,36 @@ export class ScanHandlers {
         resultCount: result.totalMatches ?? 0,
         timestamp: new Date().toISOString(),
       });
-      return toTextResponse({
-        success: true,
+      return {
         ...result,
         hint:
           result.totalMatches > 0
-            ? `Found ${result.totalMatches} matches. Use memory_next_scan with sessionId "${result.sessionId}" to ` +
-              `narrow down.`
+            ? `Found ${result.totalMatches} matches. Use memory_next_scan with sessionId "${result.sessionId}" to narrow down.`
             : 'No matches found. Try a different value or type.',
-      });
-    } catch (error) {
-      return toErrorResponse('memory_first_scan', error);
-    }
+      };
+    });
   }
 
   async handleNextScan(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const result = await this.scanner.nextScan(
         args.sessionId as string,
         args.mode as ScanCompareMode,
         args.value as string | undefined,
         args.value2 as string | undefined,
       );
-      return toTextResponse({
-        success: true,
+      return {
         ...result,
         hint:
           result.totalMatches <= 10
             ? 'Few matches remaining — inspect these addresses.'
             : `${result.totalMatches} matches remain. Continue narrowing with memory_next_scan.`,
-      });
-    } catch (error) {
-      return toErrorResponse('memory_next_scan', error);
-    }
+      };
+    });
   }
 
   async handleUnknownScan(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const pid = await this.resolvePid(args.pid);
       const options: ScanOptions = {
         valueType: args.valueType as ScanValueType,
@@ -110,34 +86,26 @@ export class ScanHandlers {
         onProgress: args.onProgress as ((p: number, t?: number) => void) | undefined,
       };
       const result = await this.scanner.unknownInitialScan(pid, options);
-      return toTextResponse({
-        success: true,
+      return {
         ...result,
-        hint:
-          `Captured ${result.totalMatches} addresses. Use memory_next_scan with ` +
-          `changed/unchanged/increased/decreased ` +
-          `to narrow.`,
-      });
-    } catch (error) {
-      return toErrorResponse('memory_unknown_scan', error);
-    }
+        hint: `Captured ${result.totalMatches} addresses. Use memory_next_scan with changed/unchanged/increased/decreased to narrow.`,
+      };
+    });
   }
 
   async handlePointerScan(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const pid = await this.resolvePid(args.pid);
       const result = await this.scanner.pointerScan(pid, args.targetAddress as string, {
         maxResults: capMaxResults(args.maxResults as number | undefined),
         moduleOnly: args.moduleOnly as boolean | undefined,
       });
-      return toTextResponse({ success: true, ...result });
-    } catch (error) {
-      return toErrorResponse('memory_pointer_scan', error);
-    }
+      return { ...result };
+    });
   }
 
   async handleGroupScan(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const pid = await this.resolvePid(args.pid);
       const result = await this.scanner.groupScan(
         pid,
@@ -147,9 +115,7 @@ export class ScanHandlers {
           maxResults: capMaxResults(args.maxResults as number | undefined),
         },
       );
-      return toTextResponse({ success: true, ...result });
-    } catch (error) {
-      return toErrorResponse('memory_group_scan', error);
-    }
+      return { ...result };
+    });
   }
 }

@@ -252,9 +252,11 @@ describe('SessionManagementHandlers – edge cases', () => {
       expect(result.content).toHaveLength(1);
       expect(firstContent).toBeDefined();
       expect(firstContent?.type).toBe('text');
-      expect(typeof firstContent?.text).toBe('string');
+      expect(typeof (firstContent as { type: string; text: string })?.text).toBe('string');
       // Verify the text is valid JSON
-      expect(() => JSON.parse(firstContent?.text ?? '')).not.toThrow();
+      expect(() =>
+        JSON.parse((firstContent as { type: string; text: string })?.text ?? ''),
+      ).not.toThrow();
     });
   });
 });

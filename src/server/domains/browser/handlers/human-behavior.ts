@@ -8,7 +8,7 @@ import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import type { PageController } from '@server/domains/shared/modules/collector';
 import type { FrameResolveOptions } from '@modules/collector/PageController';
 import { argString, argNumber, argBool } from '@server/domains/shared/parse-args';
-import { R, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
+import { handleSafe, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
 
 // ── Bezier helpers ──
 
@@ -138,11 +138,10 @@ export async function handleHumanMouse(
   collector: CodeCollector,
   pageController?: PageController,
 ): Promise<ToolResponse> {
-  try {
+  return handleSafe(async () => {
     const frameOptions = getFrameOptions(args);
     const resolved = await resolveContext(collector, pageController, frameOptions);
-    if (!resolved)
-      return R.fail('No active page. Use browser_launch or browser_attach first.').build();
+    if (!resolved) throw new Error('No active page. Use browser_launch or browser_attach first.');
     const { page, context } = resolved;
 
     let toX = argNumber(args, 'toX');
@@ -157,14 +156,14 @@ export async function handleHumanMouse(
         const rect = el.getBoundingClientRect();
         return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
       }, selector);
-      if (!box) return R.fail(`Selector not found: ${selector}`).build();
+      if (!box) throw new Error(`Selector not found: ${selector}`);
       const target = await toPageCoordinates(page, context, box);
       toX = target.x;
       toY = target.y;
     }
 
     if (toX === undefined || toY === undefined) {
-      return R.fail('Either selector or toX/toY coordinates are required').build();
+      throw new Error('Either selector or toX/toY coordinates are required');
     }
 
     const fromX = argNumber(args, 'fromX', 0);
@@ -205,26 +204,24 @@ export async function handleHumanMouse(
       await page.mouse.click(toX, toY);
     }
 
-    return R.ok().build({
+    return {
       from: { x: fromX, y: fromY },
       to: { x: toX, y: toY },
       steps,
       durationMs,
       clicked: shouldClick,
       ...(frameOptions ? { frame: frameOptions } : {}),
-    });
-  } catch (e) {
-    return R.fail(e).build();
-  }
+    };
+  });
 }
 
 export async function handleHumanScroll(
   args: Record<string, unknown>,
   collector: CodeCollector,
 ): Promise<ToolResponse> {
-  try {
+  return handleSafe(async () => {
     const page = await collector.getActivePage();
-    if (!page) return R.fail('No active page.').build();
+    if (!page) throw new Error('No active page.');
 
     const distance = Math.max(1, Math.min(argNumber(args, 'distance', 500), 10000));
     const direction = argString(args, 'direction', 'down');
@@ -279,17 +276,15 @@ export async function handleHumanScroll(
       await sleep(actualPause);
     }
 
-    return R.ok().build({
+    return {
       direction,
       requestedDistance: distance,
       actualScrolled: Math.round(scrolled),
       durationMs,
       pauseMs,
       segments,
-    });
-  } catch (e) {
-    return R.fail(e).build();
-  }
+    };
+  });
 }
 
 export async function handleHumanTyping(
@@ -297,10 +292,10 @@ export async function handleHumanTyping(
   collector: CodeCollector,
   pageController?: PageController,
 ): Promise<ToolResponse> {
-  try {
+  return handleSafe(async () => {
     const frameOptions = getFrameOptions(args);
     const resolved = await resolveContext(collector, pageController, frameOptions);
-    if (!resolved) return R.fail('No active page.').build();
+    if (!resolved) throw new Error('No active page.');
     const { page, context } = resolved;
 
     const selector = argString(args, 'selector', '');
@@ -311,7 +306,7 @@ export async function handleHumanTyping(
     const clearFirst = argBool(args, 'clearFirst', false);
 
     if (!selector || !text) {
-      return R.fail('selector and text are required').build();
+      throw new Error('selector and text are required');
     }
 
     // Average delay per character from WPM (assuming 5 chars per word)
@@ -353,15 +348,13 @@ export async function handleHumanTyping(
       await sleep(delay);
     }
 
-    return R.ok().build({
+    return {
       selector,
       length: text.length,
       wpm,
       typosSimulated: typoCount,
       errorRate,
       ...(frameOptions ? { frame: frameOptions } : {}),
-    });
-  } catch (e) {
-    return R.fail(e).build();
-  }
+    };
+  });
 }

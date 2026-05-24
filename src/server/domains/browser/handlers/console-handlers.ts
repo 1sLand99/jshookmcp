@@ -1,7 +1,7 @@
 import type { ConsoleMonitor } from '@server/domains/shared/modules/collector';
 import type { DetailedDataManager } from '@utils/DetailedDataManager';
 import { argString, argNumber, argBool } from '@server/domains/shared/parse-args';
-import { R } from '@server/domains/shared/ResponseBuilder';
+import { handleSafe } from '@server/domains/shared/ResponseBuilder';
 import type { ToolResponse } from '@server/domains/shared/ResponseBuilder';
 import { applyEvaluationPostFilters } from '@server/domains/browser/handlers/evaluation-utils';
 
@@ -14,22 +14,19 @@ export class ConsoleHandlers {
   constructor(private deps: ConsoleHandlersDeps) {}
 
   async handleConsoleMonitor(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const action = argString(args, 'action') as 'enable' | 'disable';
       if (action === 'enable') {
         await this.deps.consoleMonitor.enable();
-        return R.ok().build({ message: 'Console monitoring enabled' });
-      } else {
-        await this.deps.consoleMonitor.disable();
-        return R.ok().build({ message: 'Console monitoring disabled' });
+        return { message: 'Console monitoring enabled' };
       }
-    } catch (e) {
-      return R.fail(e).build();
-    }
+      await this.deps.consoleMonitor.disable();
+      return { message: 'Console monitoring disabled' };
+    });
   }
 
   async handleConsoleGetLogs(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const type = argString(args, 'type') as NonNullable<
         Parameters<ConsoleMonitor['getLogs']>[0]
       >['type'];
@@ -37,44 +34,26 @@ export class ConsoleHandlers {
       const since = argNumber(args, 'since') as number;
 
       const logs = this.deps.consoleMonitor.getLogs({ type, limit, since });
-
-      const result = {
-        count: logs.length,
-        logs,
-      };
-
-      const processedResult = this.deps.detailedDataManager.smartHandle(result, 51200);
-      return R.ok()
-        .merge(processedResult as Record<string, unknown>)
-        .build();
-    } catch (e) {
-      return R.fail(e).build();
-    }
+      const result = this.deps.detailedDataManager.smartHandle({ count: logs.length, logs }, 51200);
+      return result as Record<string, unknown>;
+    });
   }
 
   async handleConsoleExecute(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const expression = argString(args, 'expression', '');
       const maxSize = argNumber(args, 'maxSize', 10485760);
       const stripBase64 = argBool(args, 'stripBase64', false);
 
-      if (!expression.trim()) {
-        return R.fail('expression is required').build();
-      }
+      if (!expression.trim()) throw new Error('expression is required');
 
       const raw = await this.deps.consoleMonitor.execute(expression);
-
-      // Apply smartHandle + optional base64 stripping before returning.
-      // This mirrors the post-processing in page_evaluate / browser_evaluate_cdp_target.
-      const result = applyEvaluationPostFilters(raw, this.deps.detailedDataManager, {
+      const processed = applyEvaluationPostFilters(raw, this.deps.detailedDataManager, {
         autoSummarize: true,
         maxSize,
         stripBase64,
       });
-
-      return R.ok().build({ result });
-    } catch (e) {
-      return R.fail(e).build();
-    }
+      return { result: processed } as Record<string, unknown>;
+    });
   }
 }

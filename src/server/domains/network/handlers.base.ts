@@ -17,14 +17,12 @@
 import { NetworkHandlersPerformance } from './handlers.base.performance';
 import { asOptionalString } from './handlers.base.types';
 import { argBool } from '@server/domains/shared/parse-args';
-import { R } from '@server/domains/shared/ResponseBuilder';
+import { handleSafe } from '@server/domains/shared/ResponseBuilder';
 import type { ToolResponse } from '@server/types';
 
 export class AdvancedHandlersBase extends NetworkHandlersPerformance {
-  // ── Console exception / interceptor / tracer handlers ──
-
   async handleConsoleGetExceptions(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const url = asOptionalString(args.url);
       const limit = this.parseNumberArg(args.limit, {
         defaultValue: 50,
@@ -32,129 +30,77 @@ export class AdvancedHandlersBase extends NetworkHandlersPerformance {
         max: 1000,
         integer: true,
       });
-
       let exceptions = this.consoleMonitor.getExceptions();
-
-      if (url) {
-        exceptions = exceptions.filter((ex) => ex.url?.includes(url));
-      }
-
+      if (url) exceptions = exceptions.filter((ex) => ex.url?.includes(url));
       exceptions = exceptions.slice(0, limit);
-
-      return R.ok()
-        .merge({
-          exceptions,
-          total: exceptions.length,
-        })
-        .json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return { exceptions, total: exceptions.length };
+    });
   }
 
   async handleConsoleInjectScriptMonitor(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const persistent = argBool(args, 'persistent', false);
       await this.consoleMonitor.enableDynamicScriptMonitoring({ persistent });
-
-      return R.ok()
-        .set(
-          'message',
-          persistent
-            ? 'Dynamic script monitoring enabled (persistent — survives navigations)'
-            : 'Dynamic script monitoring enabled',
-        )
-        .json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return {
+        message: persistent
+          ? 'Dynamic script monitoring enabled (persistent — survives navigations)'
+          : 'Dynamic script monitoring enabled',
+      };
+    });
   }
 
   async handleConsoleInjectXhrInterceptor(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const persistent = argBool(args, 'persistent', false);
       await this.consoleMonitor.injectXHRInterceptor({ persistent });
-
-      return R.ok()
-        .set(
-          'message',
-          persistent ? 'XHR interceptor injected (persistent)' : 'XHR interceptor injected',
-        )
-        .json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return {
+        message: persistent ? 'XHR interceptor injected (persistent)' : 'XHR interceptor injected',
+      };
+    });
   }
 
   async handleConsoleInjectFetchInterceptor(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const persistent = argBool(args, 'persistent', false);
       await this.consoleMonitor.injectFetchInterceptor({ persistent });
-
-      return R.ok()
-        .set(
-          'message',
-          persistent ? 'Fetch interceptor injected (persistent)' : 'Fetch interceptor injected',
-        )
-        .json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return {
+        message: persistent
+          ? 'Fetch interceptor injected (persistent)'
+          : 'Fetch interceptor injected',
+      };
+    });
   }
 
   async handleConsoleClearInjectedBuffers(_args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const result = await this.consoleMonitor.clearInjectedBuffers();
-
-      return R.ok()
-        .merge({
-          message: 'Injected buffers cleared',
-          ...result,
-        })
-        .json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return { message: 'Injected buffers cleared', ...(result as Record<string, unknown>) };
+    });
   }
 
   async handleConsoleResetInjectedInterceptors(
     _args: Record<string, unknown>,
   ): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const result = await this.consoleMonitor.resetInjectedInterceptors();
-
-      return R.ok()
-        .merge({
-          message: 'Injected interceptors/monitors reset',
-          ...result,
-        })
-        .json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return {
+        message: 'Injected interceptors/monitors reset',
+        ...(result as Record<string, unknown>),
+      };
+    });
   }
 
   async handleConsoleInjectFunctionTracer(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const functionName = asOptionalString(args.functionName) || '';
-
-      if (!functionName) {
-        return R.fail('functionName is required').json();
-      }
-
+      if (!functionName) throw new Error('functionName is required');
       const persistent = argBool(args, 'persistent', false);
       await this.consoleMonitor.injectFunctionTracer(functionName, { persistent });
-
-      return R.ok()
-        .set(
-          'message',
-          persistent
-            ? `Function tracer injected for: ${functionName} (persistent — survives navigations)`
-            : `Function tracer injected for: ${functionName}`,
-        )
-        .json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return {
+        message: persistent
+          ? `Function tracer injected for: ${functionName} (persistent — survives navigations)`
+          : `Function tracer injected for: ${functionName}`,
+      };
+    });
   }
 }

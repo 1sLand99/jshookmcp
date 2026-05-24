@@ -3,8 +3,8 @@ import { InstrumentationSessionManager } from '@server/instrumentation/Instrumen
 import { InstrumentationType } from '@server/instrumentation/types';
 import { InstrumentationHandlers } from '@server/domains/instrumentation/handlers';
 
-function parseResponse(result: { content: Array<{ type: string; text: string }> }) {
-  return JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+function parseResponse(result: { content: Array<{ type?: string; text?: string }> }) {
+  return JSON.parse(result.content[0]!.text!) as Record<string, unknown>;
 }
 
 describe('InstrumentationHandlers', () => {

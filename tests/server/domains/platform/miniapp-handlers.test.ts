@@ -54,7 +54,8 @@ import type { ExternalToolRunner } from '@server/domains/shared/modules';
 // ---------------------------------------------------------------------------
 
 type JsonTextResponse = {
-  content: Array<{ text: string }>;
+  content: Array<{ text?: string; type?: string }>;
+  [key: string]: unknown;
 };
 
 type RunnerOverrides = Partial<Pick<ExternalToolRunner, 'run' | 'probeAll'>>;

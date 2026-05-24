@@ -8,12 +8,9 @@
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import {
-  toTextResponse,
-  toErrorResponse,
-  parseStringArg,
-  pathExists,
-} from '@server/domains/platform/handlers/platform-utils';
+import type { ToolResponse } from '@server/types';
+import { parseStringArg, pathExists } from '@server/domains/platform/handlers/platform-utils';
+import { handleSafe } from '@server/domains/shared/ResponseBuilder';
 
 /** Fuse sentinel for quick check */
 const FUSE_SENTINEL = 'dL7pKGdnNz796PbbjQWNKmHXBZIA';
@@ -82,19 +79,15 @@ async function waitForCDP(
 
 export async function handleElectronLaunchDebug(
   args: Record<string, unknown>,
-): Promise<ReturnType<typeof toTextResponse>> {
-  try {
+): Promise<ToolResponse> {
+  return handleSafe(async () => {
     const exePath = parseStringArg(args, 'exePath', true);
     if (!exePath) {
       throw new Error('exePath is required — path to the Electron .exe');
     }
 
     if (!(await pathExists(exePath))) {
-      return toTextResponse({
-        success: false,
-        tool: 'electron_launch_debug',
-        error: `File does not exist: ${exePath}`,
-      });
+      return { success: false, error: `File does not exist: ${exePath}` };
     }
 
     // SECURITY: Validate that exePath looks like an Electron binary.
@@ -103,14 +96,13 @@ export async function handleElectronLaunchDebug(
     const ELECTRON_EXE_PATTERNS = [/^electron/i, /\.app$/i, /chrome/i, /chromium/i];
     const isElectronBinary = ELECTRON_EXE_PATTERNS.some((p) => p.test(exeBaseName));
     if (!isElectronBinary) {
-      return toTextResponse({
+      return {
         success: false,
-        tool: 'electron_launch_debug',
         error:
           `exePath does not appear to be an Electron binary: ${exeBaseName}. Only Electron/Chromium ` +
           `executables are ` +
           `allowed.`,
-      });
+      };
     }
 
     const mainPort = (args.mainPort as number | undefined) ?? 9229;
@@ -163,11 +155,7 @@ export async function handleElectronLaunchDebug(
     child.unref();
 
     if (!child.pid) {
-      return toTextResponse({
-        success: false,
-        tool: 'electron_launch_debug',
-        error: 'Failed to spawn process — no PID returned.',
-      });
+      return { success: false, error: 'Failed to spawn process — no PID returned.' };
     }
 
     const sessionId = `electron-${child.pid}`;
@@ -183,9 +171,7 @@ export async function handleElectronLaunchDebug(
       waitForCDP(rendererPort, waitMs),
     ]);
 
-    return toTextResponse({
-      success: true,
-      tool: 'electron_launch_debug',
+    return {
       sessionId,
       pid: child.pid,
       ports: {
@@ -202,27 +188,24 @@ export async function handleElectronLaunchDebug(
         renderer: `Use electron_attach(port=${rendererPort}) to debug the renderer (Chromium)`,
         combined: 'Both sessions can be used simultaneously for cross-process analysis',
       },
-    });
-  } catch (error) {
-    return toErrorResponse('electron_launch_debug', error);
-  }
+    };
+  });
 }
 
 export async function handleElectronDebugStatus(
   args: Record<string, unknown>,
-): Promise<ReturnType<typeof toTextResponse>> {
-  try {
+): Promise<ToolResponse> {
+  return handleSafe(async () => {
     const sessionId = parseStringArg(args, 'sessionId');
 
     if (sessionId) {
       const session = launchedProcesses.get(sessionId);
       if (!session) {
-        return toTextResponse({
+        return {
           success: false,
-          tool: 'electron_debug_status',
           error: `No session found: ${sessionId}`,
           activeSessions: Array.from(launchedProcesses.keys()),
-        });
+        };
       }
 
       const [mainCDP, rendererCDP] = await Promise.all([
@@ -230,14 +213,12 @@ export async function handleElectronDebugStatus(
         waitForCDP(session.ports.renderer, 2000),
       ]);
 
-      return toTextResponse({
-        success: true,
-        tool: 'electron_debug_status',
+      return {
         sessionId,
         pid: session.pid,
         main: { port: session.ports.main, alive: mainCDP.ok },
         renderer: { port: session.ports.renderer, alive: rendererCDP.ok },
-      });
+      };
     }
 
     // List all sessions
@@ -247,12 +228,6 @@ export async function handleElectronDebugStatus(
       ports: s.ports,
     }));
 
-    return toTextResponse({
-      success: true,
-      tool: 'electron_debug_status',
-      sessions,
-    });
-  } catch (error) {
-    return toErrorResponse('electron_debug_status', error);
-  }
+    return { sessions };
+  });
 }

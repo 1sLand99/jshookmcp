@@ -6,7 +6,7 @@ import { replayRequest } from '@server/domains/network/replay';
 import type { NetworkAuthorizationInput } from '@utils/network/ssrf-policy';
 import type { SessionProfile } from '@internal-types/SessionProfile';
 import { AdvancedHandlersBase } from '@server/domains/network/handlers.base';
-import { R } from '@server/domains/shared/ResponseBuilder';
+import { handleSafe, R } from '@server/domains/shared/ResponseBuilder';
 
 interface ReplayableRequest {
   requestId: string;
@@ -158,31 +158,27 @@ const parseReplayAuthorization = (
 
 export class AdvancedToolHandlersRuntime extends AdvancedHandlersBase {
   async handleNetworkExtractAuth(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const minConfidence = this.parseNumberArg(args.minConfidence, { defaultValue: 0.4 });
       const requests = this.consoleMonitor.getNetworkRequests();
 
       if (requests.length === 0) {
-        return R.fail(
+        throw new Error(
           'No captured requests found. Call network_enable then page_navigate first.',
-        ).json();
+        );
       }
 
       const findings = extractAuthFromRequests(requests).filter(
         (f) => f.confidence >= minConfidence,
       );
 
-      return R.ok()
-        .merge({
-          scannedRequests: requests.length,
-          found: findings.length,
-          findings,
-          note: 'Values are masked (first 6 + last 4 chars). Use network_replay_request to test with actual values.',
-        })
-        .json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return {
+        scannedRequests: requests.length,
+        found: findings.length,
+        findings,
+        note: 'Values are masked (first 6 + last 4 chars). Use network_replay_request to test with actual values.',
+      };
+    });
   }
 
   async handleNetworkExportHar(args: Record<string, unknown>) {
@@ -279,24 +275,24 @@ export class AdvancedToolHandlersRuntime extends AdvancedHandlersBase {
   }
 
   async handleNetworkReplayRequest(args: Record<string, unknown>) {
-    try {
-      const requestId = args.requestId as string;
-      if (!requestId) {
-        return R.fail('requestId is required').json();
-      }
+    const requestId = args.requestId as string;
+    if (!requestId) {
+      return R.fail('requestId is required').json();
+    }
 
-      const requests = this.consoleMonitor.getNetworkRequests();
-      const base = requests.find(
-        (request: unknown): request is ReplayableRequest =>
-          isReplayableRequest(request) && request.requestId === requestId,
-      );
+    const requests = this.consoleMonitor.getNetworkRequests();
+    const base = requests.find(
+      (request: unknown): request is ReplayableRequest =>
+        isReplayableRequest(request) && request.requestId === requestId,
+    );
 
-      if (!base) {
-        return R.fail(`Request ${requestId} not found in captured requests`)
-          .merge({ hint: 'Use network_get_requests to list available requestIds' })
-          .json();
-      }
+    if (!base) {
+      return R.fail(`Request ${requestId} not found in captured requests`)
+        .set('hint', 'Use network_get_requests to see available request IDs')
+        .json();
+    }
 
+    return handleSafe(async () => {
       const authorization = parseReplayAuthorization(args, requestId);
       const result = await replayRequest(base, {
         requestId,
@@ -310,11 +306,7 @@ export class AdvancedToolHandlersRuntime extends AdvancedHandlersBase {
         authorization,
       });
 
-      return R.ok()
-        .merge(result as unknown as Record<string, unknown>)
-        .json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return result as unknown as Record<string, unknown>;
+    });
   }
 }

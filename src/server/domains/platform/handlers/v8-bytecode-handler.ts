@@ -8,12 +8,9 @@ import { readFile, stat } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { extname } from 'node:path';
-import {
-  toTextResponse,
-  toErrorResponse,
-  parseStringArg,
-  pathExists,
-} from '@server/domains/platform/handlers/platform-utils';
+import type { ToolResponse } from '@server/types';
+import { parseStringArg, pathExists } from '@server/domains/platform/handlers/platform-utils';
+import { handleSafe } from '@server/domains/shared/ResponseBuilder';
 import { V8_BYTECODE_SUBPROC_TIMEOUT_MS } from '@src/constants';
 
 const execFileAsync = promisify(execFile);
@@ -251,43 +248,37 @@ function isLikelyCodeString(s: string): boolean {
 
 export async function handleV8BytecodeDecompile(
   args: Record<string, unknown>,
-): Promise<ReturnType<typeof toTextResponse>> {
-  try {
+): Promise<ToolResponse> {
+  return handleSafe(async () => {
     const filePath = parseStringArg(args, 'filePath', true);
     if (!filePath) {
       throw new Error('filePath is required — path to a .jsc or V8 bytecode file');
     }
 
     if (!(await pathExists(filePath))) {
-      return toTextResponse({
-        success: false,
-        tool: 'v8_bytecode_decompile',
-        error: `File does not exist: ${filePath}`,
-      });
+      return { success: false, error: `File does not exist: ${filePath}` };
     }
 
     const fileStat = await stat(filePath);
     if (fileStat.size > 50 * 1024 * 1024) {
-      return toTextResponse({
+      return {
         success: false,
-        tool: 'v8_bytecode_decompile',
         error: `File too large (${(fileStat.size / 1024 / 1024).toFixed(1)}MB). Maximum: 50MB.`,
-      });
+      };
     }
 
     const buffer = await readFile(filePath);
     const format = detectFormat(buffer, filePath);
 
     if (!format) {
-      return toTextResponse({
+      return {
         success: false,
-        tool: 'v8_bytecode_decompile',
         filePath,
         fileSize: fileStat.size,
         error:
           'Not a recognized V8 bytecode format. Expected .jsc, bytenode, or V8 serialized bytecode.',
         hint: 'Ensure the file is a V8 compiled bytecode file (created by bytenode or v8.serialize).',
-      });
+      };
     }
 
     const result: DecompileResult = {
@@ -311,7 +302,7 @@ export async function handleV8BytecodeDecompile(
             view8Result.output.length +
             ' chars]'
           : view8Result.output;
-      return toTextResponse(result);
+      return result;
     }
 
     // Strategy 2: Fallback to constant pool extraction
@@ -334,8 +325,6 @@ export async function handleV8BytecodeDecompile(
       result.note = 'The bytecode may be heavily optimized or use an unsupported V8 version.';
     }
 
-    return toTextResponse(result);
-  } catch (error) {
-    return toErrorResponse('v8_bytecode_decompile', error);
-  }
+    return result;
+  });
 }

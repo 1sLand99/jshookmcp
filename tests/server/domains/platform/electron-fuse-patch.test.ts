@@ -17,7 +17,7 @@ function buildMockElectronExe(fuseBytes: number[]): Buffer {
 
 type JsonPayload = Record<string, unknown>;
 
-function parse(result: { content: Array<{ text?: string }> }): JsonPayload {
+function parse(result: { content: Array<{ text?: string; type?: string }> }): JsonPayload {
   return JSON.parse(result.content[0]!.text!) as JsonPayload;
 }
 

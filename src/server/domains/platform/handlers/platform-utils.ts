@@ -3,6 +3,7 @@ import { readFile, readdir, stat, mkdir } from 'node:fs/promises';
 import { basename, extname, join, normalize, relative, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import type { CodeCollector } from '@server/domains/shared/modules/collector';
+import { asJsonResponse, serializeError } from '@server/domains/shared/response';
 import { resolveArtifactPath } from '@utils/artifacts';
 import { logger } from '@utils/logger';
 
@@ -51,24 +52,10 @@ export interface ParsedAsar {
 
 // ── Shared utility functions ──
 
-export function toTextResponse(payload: Record<string, unknown>) {
-  return {
-    content: [
-      {
-        type: 'text' as const,
-        text: JSON.stringify(payload, null, 2),
-      },
-    ],
-  };
-}
+export { asJsonResponse as toTextResponse } from '@server/domains/shared/response';
 
 export function toErrorResponse(tool: string, error: unknown, extra: Record<string, unknown> = {}) {
-  return toTextResponse({
-    success: false,
-    tool,
-    error: error instanceof Error ? error.message : String(error),
-    ...extra,
-  });
+  return asJsonResponse({ ...serializeError(error), tool, ...extra });
 }
 
 export function getCollectorState(collector: CodeCollector): string {
@@ -294,14 +281,14 @@ export async function checkExternalCommand(command: string, versionArgs: string[
     });
     const version = (stdout || stderr).trim().split('\n')[0] ?? '';
 
-    return toTextResponse({
+    return asJsonResponse({
       success: true,
       tool: label,
       available: true,
       version,
     });
   } catch (error) {
-    return toTextResponse({
+    return asJsonResponse({
       success: true,
       tool: label,
       available: false,

@@ -22,7 +22,7 @@ describe('electron_scan_userdata', () => {
     await writeFile(join(tempDir, 'settings.json'), JSON.stringify(settings));
 
     const result = await handleElectronScanUserdata({ dirPath: tempDir });
-    const data = JSON.parse(result.content[0]!.text!);
+    const data = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
 
     expect(data.success).toBe(true);
     expect(data.files).toHaveLength(2);
@@ -35,7 +35,7 @@ describe('electron_scan_userdata', () => {
     const result = await handleElectronScanUserdata({
       dirPath: join(tempDir, 'does-not-exist'),
     });
-    const data = JSON.parse(result.content[0]!.text!);
+    const data = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
     expect(data.success).toBe(false);
   });
 
@@ -48,7 +48,7 @@ describe('electron_scan_userdata', () => {
       dirPath: tempDir,
       maxFiles: 1,
     });
-    const data = JSON.parse(result.content[0]!.text!);
+    const data = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
 
     expect(data.success).toBe(true);
     expect(data.files).toHaveLength(1);
@@ -64,7 +64,7 @@ describe('electron_scan_userdata', () => {
       dirPath: tempDir,
       maxFileSizeKB: 1,
     });
-    const data = JSON.parse(result.content[0]!.text!);
+    const data = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
 
     expect(data.success).toBe(true);
     const fileNames = data.files.map((f: { name: string }) => f.name);
@@ -79,7 +79,7 @@ describe('electron_scan_userdata', () => {
     await writeFile(join(tempDir, 'script.js'), 'console.log()');
 
     const result = await handleElectronScanUserdata({ dirPath: tempDir });
-    const data = JSON.parse(result.content[0]!.text!);
+    const data = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
 
     expect(data.success).toBe(true);
     expect(data.files).toHaveLength(1);

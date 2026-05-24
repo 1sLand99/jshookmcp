@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-function parseJsonResponse(result: { content: Array<{ text?: string }> }) {
+function parseJsonResponse(result: { content: Array<{ text?: string; type?: string }> }) {
   return JSON.parse(result.content[0]?.text ?? '{}');
 }
 

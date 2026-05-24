@@ -4,8 +4,7 @@ import type { EventBus, ServerEventMap } from '@server/EventBus';
 import type { TabRegistry } from '@modules/browser/TabRegistry';
 import { argString, argNumber, argBool } from '@server/domains/shared/parse-args';
 import { parsePageNavigationWaitUntil } from '@server/domains/browser/page-navigation-wait-until';
-import { R } from '@server/domains/shared/ResponseBuilder';
-import type { ToolResponse } from '@server/domains/shared/ResponseBuilder';
+import { handleSafe, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
 
 interface CamoufoxPageLike {
   goto(url: string, options?: { waitUntil?: string; timeout?: number }): Promise<unknown>;
@@ -90,7 +89,7 @@ export class PageNavigationHandlers {
   }
 
   async handlePageNavigate(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const url = argString(args, 'url', '');
       const waitUntil = parsePageNavigationWaitUntil(args);
       const timeout = argNumber(args, 'timeout');
@@ -116,14 +115,14 @@ export class PageNavigationHandlers {
           timestamp: new Date().toISOString(),
         });
 
-        return R.ok().build({
+        return {
           driver: 'camoufox',
           url: navigatedUrl,
           title: title ?? '',
           network_monitoring: {
             enabled: this.deps.consoleMonitor.isNetworkEnabled(),
           },
-        });
+        };
       }
 
       // Enable network monitoring for Chrome path
@@ -143,20 +142,18 @@ export class PageNavigationHandlers {
         timestamp: new Date().toISOString(),
       });
 
-      return R.ok().build({
+      return {
         url: currentUrl,
         title,
         network_monitoring: {
           enabled: this.deps.consoleMonitor.isNetworkEnabled(),
         },
-      });
-    } catch (e) {
-      return R.fail(e).build();
-    }
+      };
+    });
   }
 
   async handlePageReload(_args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       if (this.deps.getActiveDriver() === 'camoufox') {
         const page = (await this.deps.getCamoufoxPage()) as CamoufoxPageLike;
         await page.reload();
@@ -164,7 +161,7 @@ export class PageNavigationHandlers {
         const title = await this.getCamoufoxTitleIfAvailable(page);
         this.syncCurrentTabMeta(page, { url, title });
         this.syncRuntimeAttachMeta({ url, title });
-        return R.ok().build({ message: 'Page reloaded', driver: 'camoufox' });
+        return { message: 'Page reloaded', driver: 'camoufox' };
       }
 
       await this.deps.pageController.reload();
@@ -174,16 +171,12 @@ export class PageNavigationHandlers {
       this.syncCurrentTabMeta(page, { url, title });
       this.syncRuntimeAttachMeta({ url, title });
 
-      return R.ok().build({
-        message: 'Page reloaded',
-      });
-    } catch (e) {
-      return R.fail(e).build();
-    }
+      return { message: 'Page reloaded' };
+    });
   }
 
   async handlePageBack(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const timeout = argNumber(args, 'timeout', 10_000);
 
       if (this.deps.getActiveDriver() === 'camoufox') {
@@ -193,7 +186,7 @@ export class PageNavigationHandlers {
         const title = await this.getCamoufoxTitleIfAvailable(page);
         this.syncCurrentTabMeta(page, { url, title });
         this.syncRuntimeAttachMeta({ url, title });
-        return R.ok().build({ url, driver: 'camoufox' });
+        return { url, driver: 'camoufox' };
       }
 
       await this.deps.pageController.goBack(timeout);
@@ -203,16 +196,12 @@ export class PageNavigationHandlers {
       this.syncCurrentTabMeta(page, { url, title });
       this.syncRuntimeAttachMeta({ url, title });
 
-      return R.ok().build({
-        url,
-      });
-    } catch (e) {
-      return R.fail(e).build();
-    }
+      return { url };
+    });
   }
 
   async handlePageForward(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const timeout = argNumber(args, 'timeout', 10_000);
 
       if (this.deps.getActiveDriver() === 'camoufox') {
@@ -222,7 +211,7 @@ export class PageNavigationHandlers {
         const title = await this.getCamoufoxTitleIfAvailable(page);
         this.syncCurrentTabMeta(page, { url, title });
         this.syncRuntimeAttachMeta({ url, title });
-        return R.ok().build({ url, driver: 'camoufox' });
+        return { url, driver: 'camoufox' };
       }
 
       await this.deps.pageController.goForward(timeout);
@@ -232,11 +221,7 @@ export class PageNavigationHandlers {
       this.syncCurrentTabMeta(page, { url, title });
       this.syncRuntimeAttachMeta({ url, title });
 
-      return R.ok().build({
-        url,
-      });
-    } catch (e) {
-      return R.fail(e).build();
-    }
+      return { url };
+    });
   }
 }

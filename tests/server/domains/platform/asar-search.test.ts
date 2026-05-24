@@ -80,7 +80,7 @@ describe('asar_search', () => {
       inputPath: asarPath,
       pattern: 'isPro|isFree',
     });
-    const data = JSON.parse(result.content[0]!.text!);
+    const data = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
 
     expect(data.success).toBe(true);
     expect(data.totalMatches).toBeGreaterThan(0);
@@ -97,7 +97,7 @@ describe('asar_search', () => {
       inputPath: asarPath,
       pattern: 'nonexistent_pattern_xyz',
     });
-    const data = JSON.parse(result.content[0]!.text!);
+    const data = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
 
     expect(data.success).toBe(true);
     expect(data.matches).toHaveLength(0);
@@ -117,7 +117,7 @@ describe('asar_search', () => {
       pattern: 'isPro',
       fileGlob: '*.json',
     });
-    const data = JSON.parse(result.content[0]!.text!);
+    const data = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
 
     expect(data.success).toBe(true);
     // Should only match in config.json, not main.js
@@ -140,7 +140,7 @@ describe('asar_search', () => {
       pattern: 'val\\d+',
       maxResults: 3,
     });
-    const data = JSON.parse(result.content[0]!.text!);
+    const data = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
 
     expect(data.success).toBe(true);
     expect(data.totalMatches).toBeLessThanOrEqual(3);
@@ -151,7 +151,7 @@ describe('asar_search', () => {
       inputPath: join(tempDir, 'nonexistent.asar'),
       pattern: 'test',
     });
-    const data = JSON.parse(result.content[0]!.text!);
+    const data = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
     expect(data.success).toBe(false);
   });
 
@@ -164,7 +164,7 @@ describe('asar_search', () => {
       inputPath: asarPath,
       pattern: '(',
     });
-    const data = JSON.parse(result.content[0]!.text!);
+    const data = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
 
     expect(data.success).toBe(false);
     expect(data.error).toContain('Invalid regex pattern');
@@ -213,7 +213,7 @@ describe('asar_search', () => {
       pattern: 'paywall',
       fileGlob: '*.js',
     });
-    const data = JSON.parse(result.content[0]!.text!);
+    const data = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
     expect(data.success).toBe(true);
     expect(data.totalMatches).toBe(1);
     expect(data.matches[0].filePath).toBe('dist/main.js');
@@ -246,7 +246,7 @@ describe('asar_search', () => {
       pattern: 'flag',
       fileGlob: '*.js',
     });
-    const data = JSON.parse(result.content[0]!.text!);
+    const data = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
     expect(data.success).toBe(true);
     expect(data.totalMatches).toBe(1);
     expect(data.matches[0].filePath).toBe('app.js');

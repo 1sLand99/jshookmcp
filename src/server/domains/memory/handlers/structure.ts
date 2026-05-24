@@ -1,25 +1,9 @@
-/**
- * StructureHandlers — structure analysis, vtable parsing, C struct export, comparison.
- */
 import type { StructureAnalyzer } from '@native/StructureAnalyzer';
 import type { FieldType, InferredStruct } from '@native/StructureAnalyzer.types';
 import type { UnifiedProcessManager } from '@server/domains/shared/modules/native';
 import type { MCPServerContext } from '@server/MCPServer.context';
 import { resolveMemoryDomainPid } from '@server/domains/memory/pid-resolver';
-
-function toTextResponse(payload: Record<string, unknown>) {
-  return {
-    content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
-  };
-}
-
-function toErrorResponse(tool: string, error: unknown) {
-  return toTextResponse({
-    success: false,
-    tool,
-    error: error instanceof Error ? error.message : String(error),
-  });
-}
+import { handleSafe } from '@server/domains/shared/ResponseBuilder';
 
 const FIELD_TYPE_ALIASES: Record<string, FieldType> = {
   int8_t: 'int8',
@@ -98,53 +82,40 @@ export class StructureHandlers {
   }
 
   async handleStructureAnalyze(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const pid = await this.resolvePid(args.pid);
       const result = await this.structAnalyzer.analyzeStructure(pid, args.address as string, {
         size: args.size as number | undefined,
         otherInstances: args.otherInstances as string[] | undefined,
         parseRtti: args.parseRtti as boolean | undefined,
       });
-      return toTextResponse({
-        success: true,
+      return {
         ...result,
         hint: result.className
           ? `Detected class: ${result.className}` +
             `${result.baseClasses?.length ? ` (inherits: ${result.baseClasses.join(' → ')})` : ''}`
           : `Inferred ${result.fields.length} fields. Use memory_structure_export_c to export as C struct.`,
-      });
-    } catch (error) {
-      return toErrorResponse('memory_structure_analyze', error);
-    }
+      };
+    });
   }
 
   async handleVtableParse(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const pid = await this.resolvePid(args.pid);
-      return toTextResponse({
-        success: true,
-        ...(await this.structAnalyzer.parseVtable(pid, args.vtableAddress as string)),
-      });
-    } catch (error) {
-      return toErrorResponse('memory_vtable_parse', error);
-    }
+      return { ...(await this.structAnalyzer.parseVtable(pid, args.vtableAddress as string)) };
+    });
   }
 
   async handleStructureExportC(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const parsed = JSON.parse(args.structure as string);
       const structure = normalizeStructureForExport(parsed);
-      return toTextResponse({
-        success: true,
-        ...this.structAnalyzer.exportToCStruct(structure, args.name as string | undefined),
-      });
-    } catch (error) {
-      return toErrorResponse('memory_structure_export_c', error);
-    }
+      return { ...this.structAnalyzer.exportToCStruct(structure, args.name as string | undefined) };
+    });
   }
 
   async handleStructureCompare(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const pid = await this.resolvePid(args.pid);
       const result = await this.structAnalyzer.compareInstances(
         pid,
@@ -152,14 +123,11 @@ export class StructureHandlers {
         args.address2 as string,
         args.size as number | undefined,
       );
-      return toTextResponse({
-        success: true,
+      return {
         matchingFieldCount: result.matching.length,
         differingFieldCount: result.differing.length,
         ...result,
-      });
-    } catch (error) {
-      return toErrorResponse('memory_structure_compare', error);
-    }
+      };
+    });
   }
 }

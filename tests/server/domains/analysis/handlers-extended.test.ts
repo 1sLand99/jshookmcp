@@ -1563,7 +1563,7 @@ describe('CoreAnalysisHandlers — extended coverage', () => {
       expect(body.analysis.dispatchType).toBe('while-switch');
       expect(body.analysis.bytecode).toHaveLength(3);
       expect(body.analysis.opcodeDistribution).toEqual({ load: 2, jump: 1 });
-      expect(body.analysis.suggestedStrategy).toContain('symbolic execution');
+      expect(body.analysis.suggestedStrategy).toContain('js_symbolic_execute_jsvmp');
     });
 
     it('maps missing opcode types to unknown when building the distribution', async () => {

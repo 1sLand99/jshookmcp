@@ -4,6 +4,7 @@
 
 import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import { ScriptManager } from '@server/domains/shared/modules';
+import { asJsonResponse, serializeError } from '@server/domains/shared/response';
 import { WorkerPool } from '@utils/WorkerPool';
 import {
   TRANSFORM_WORKER_TIMEOUT_MS,
@@ -208,12 +209,10 @@ export function createTransformSharedState(collector: CodeCollector): TransformS
 
 // ── Utility functions ──
 
-export function toTextResponse(payload: unknown) {
-  return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
-}
+export { asJsonResponse as toTextResponse } from '@server/domains/shared/response';
 
 export function fail(tool: string, error: unknown) {
-  return toTextResponse({ tool, error: error instanceof Error ? error.message : String(error) });
+  return asJsonResponse({ tool, ...serializeError(error) });
 }
 
 export function parseTransforms(raw: unknown): TransformKind[] {

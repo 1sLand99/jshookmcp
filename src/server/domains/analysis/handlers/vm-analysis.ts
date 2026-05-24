@@ -60,7 +60,7 @@ export function buildVmAnalysisResponse(options: {
     analysis.opcodeDistribution = buildOpcodeDistribution(vmResult.instructions);
     analysis.suggestedStrategy =
       vmResult.vmFeatures?.complexity === 'high'
-        ? 'Use symbolic execution (js_deobfuscate_jsvmp with aggressive=true) for high-complexity VMs'
+        ? 'Use js_symbolic_execute_jsvmp with these instructions for high-complexity VMs'
         : 'Use standard deobfuscation pipeline (js_deobfuscate_pipeline)';
   }
 

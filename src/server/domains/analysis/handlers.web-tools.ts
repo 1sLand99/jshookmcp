@@ -2,8 +2,8 @@ import { logger } from '@utils/logger';
 import { evaluateWithTimeout } from '@modules/collector/PageController';
 import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import type { ToolArgs, ToolResponse } from '@server/types';
-import { asJsonResponse, asErrorResponse } from '@server/domains/shared/response';
 import { argString, argBool, argNumber } from '@server/domains/shared/parse-args';
+import { handleSafe } from '@server/domains/shared/ResponseBuilder';
 
 const MAX_WEBPACK_MODULES = 100;
 
@@ -15,7 +15,7 @@ export async function runWebpackEnumerate(
   const forceRequireAll = argBool(args, 'forceRequireAll', !!searchKeyword);
   const maxResults = Math.min(argNumber(args, 'maxResults', 20), MAX_WEBPACK_MODULES);
 
-  try {
+  return handleSafe(async () => {
     const page = await collector.getActivePage();
     const result = await evaluateWithTimeout(
       page,
@@ -128,10 +128,8 @@ export async function runWebpackEnumerate(
     logger.info(
       `webpack_enumerate: found ${result.total} modules, ${result.matches.length} matches`,
     );
-    return asJsonResponse(result);
-  } catch (error) {
-    return asErrorResponse(error);
-  }
+    return result as Record<string, unknown>;
+  });
 }
 
 export async function runSourceMapExtract(
@@ -142,7 +140,7 @@ export async function runSourceMapExtract(
   const filterPath = argString(args, 'filterPath', '');
   const maxFiles = argNumber(args, 'maxFiles', 50);
 
-  try {
+  return handleSafe(async () => {
     const page = await collector.getActivePage();
     const result = await evaluateWithTimeout(
       page,
@@ -230,8 +228,6 @@ export async function runSourceMapExtract(
     );
 
     logger.info(`source_map_extract: recovered ${result.total} source files`);
-    return asJsonResponse(result);
-  } catch (error) {
-    return asErrorResponse(error);
-  }
+    return result as Record<string, unknown>;
+  });
 }

@@ -9,7 +9,7 @@ import {
 } from '@server/domains/shared/parse-args';
 import { type PageNavigationWaitUntil } from '@modules/browser/navigation-wait-until';
 import { parsePageNavigationWaitUntil } from '@server/domains/browser/page-navigation-wait-until';
-import { R, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
+import { handleSafe, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
 
 function extractCamoufoxConfig(args: Record<string, unknown>): CamoufoxBrowserConfig {
   const addons = argStringArray(args, 'addons');
@@ -60,15 +60,13 @@ export async function handleCamoufoxLaunchFlow(
   context: CamoufoxLaunchFlowContext,
   args: Record<string, unknown>,
 ): Promise<ToolResponse> {
-  try {
+  return handleSafe(async () => {
     const config = extractCamoufoxConfig(args);
     const mode = argString(args, 'mode', 'launch');
 
     if (mode === 'connect') {
       const wsEndpoint = argString(args, 'wsEndpoint');
-      if (!wsEndpoint) {
-        return R.fail('wsEndpoint is required for connect mode.').build();
-      }
+      if (!wsEndpoint) throw new Error('wsEndpoint is required for connect mode.');
 
       const manager = new CamoufoxBrowserManager(config);
       await manager.connectToServer(wsEndpoint);
@@ -76,12 +74,12 @@ export async function handleCamoufoxLaunchFlow(
       context.setActiveDriver('camoufox');
       context.clearCamoufoxPage();
 
-      return R.ok().build({
+      return {
         driver: 'camoufox',
         mode: 'connect',
         wsEndpoint,
         message: 'Connected to Camoufox server.',
-      });
+      };
     }
 
     const manager = new CamoufoxBrowserManager(config);
@@ -90,7 +88,7 @@ export async function handleCamoufoxLaunchFlow(
     context.setActiveDriver('camoufox');
     context.clearCamoufoxPage();
 
-    return R.ok().build({
+    return {
       driver: 'camoufox',
       mode: 'launch',
       config: {
@@ -104,10 +102,8 @@ export async function handleCamoufoxLaunchFlow(
         blockWebrtc: config.blockWebrtc,
       },
       message: 'Camoufox (Firefox) browser launched',
-    });
-  } catch (e) {
-    return R.fail(e).build();
-  }
+    };
+  });
 }
 
 export interface CamoufoxNavigateFlowContext {
@@ -119,7 +115,7 @@ export async function handleCamoufoxNavigateFlow(
   context: CamoufoxNavigateFlowContext,
   args: Record<string, unknown>,
 ): Promise<ToolResponse> {
-  try {
+  return handleSafe(async () => {
     const url = argString(args, 'url', '');
     const waitUntil = parsePageNavigationWaitUntil(args);
     const timeout = argNumber(args, 'timeout');
@@ -128,12 +124,6 @@ export async function handleCamoufoxNavigateFlow(
     await page.goto(url, { waitUntil, timeout });
     context.setConsoleMonitorPage(page);
 
-    return R.ok().build({
-      driver: 'camoufox',
-      url: page.url(),
-      title: await page.title(),
-    });
-  } catch (e) {
-    return R.fail(e).build();
-  }
+    return { driver: 'camoufox', url: page.url(), title: await page.title() };
+  });
 }

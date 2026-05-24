@@ -7,7 +7,8 @@ import {
   argString,
   argStringRequired,
 } from '@server/domains/shared/parse-args';
-import { asJsonResponse, asTextResponse, serializeError } from '@server/domains/shared/response';
+import { handleSafe } from '@server/domains/shared/ResponseBuilder';
+import { asJsonResponse, asTextResponse } from '@server/domains/shared/response';
 import type {
   AdvancedDeobfuscator,
   CodeAnalyzer,
@@ -35,6 +36,8 @@ import { buildVmAnalysisResponse } from '@server/domains/analysis/handlers/vm-an
 import { runWebpackEnumerate } from '@server/domains/analysis/handlers.web-tools';
 import type { DeobfuscateMappingRule } from '@internal-types/deobfuscator';
 import { JSVMPDeobfuscator } from '@modules/deobfuscator/JSVMPDeobfuscator';
+import { SymbolicExecutor } from '@modules/symbolic/SymbolicExecutor';
+import { JSVMPSymbolicExecutor } from '@modules/symbolic/JSVMPSymbolicExecutor';
 import { derotateStringArray } from '@modules/deobfuscator/AdvancedDeobfuscator.ast';
 import { runWebcrack } from '@modules/deobfuscator/webcrack';
 import * as parser from '@babel/parser';
@@ -542,11 +545,10 @@ export class CoreAnalysisHandlers {
   }
 
   async handleClearCollectedData(): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       await this.collector.clearAllData();
       this.scriptManager.clear();
-      return asJsonResponse({
-        success: true,
+      return {
         message: 'All collected data cleared.',
         cleared: {
           fileCache: true,
@@ -554,18 +556,14 @@ export class CoreAnalysisHandlers {
           collectedUrls: true,
           scriptManager: true,
         },
-      });
-    } catch (error) {
-      logger.error('Failed to clear collected data:', error);
-      return asJsonResponse(serializeError(error));
-    }
+      };
+    });
   }
 
   async handleGetCollectionStats(): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const stats = await this.collector.getAllStats();
-      return asJsonResponse({
-        success: true,
+      return {
         stats,
         summary: {
           totalCachedFiles: stats.cache.memoryEntries + stats.cache.diskEntries,
@@ -581,11 +579,8 @@ export class CoreAnalysisHandlers {
               : '0%',
           collectedUrls: stats.collector.collectedUrls,
         },
-      });
-    } catch (error) {
-      logger.error('Failed to get collection stats:', error);
-      return asJsonResponse(serializeError(error));
-    }
+      };
+    });
   }
 
   async handleJsDeobfuscateJsvmp(args: ToolArgs): Promise<ToolResponse> {
@@ -1172,5 +1167,55 @@ export class CoreAnalysisHandlers {
     }
 
     return null;
+  }
+
+  // ── Symbolic Execution ──
+
+  async handleJsSymbolicExecute(args: ToolArgs): Promise<ToolResponse> {
+    const code = argStringRequired(args, 'code');
+    if (!code) return asJsonResponse({ success: false, error: 'code is required' });
+
+    const maxPaths = argNumber(args, 'maxPaths');
+    const maxDepth = argNumber(args, 'maxDepth');
+    const timeout = argNumber(args, 'timeout');
+    const enableConstraintSolving = argBool(args, 'enableConstraintSolving', false);
+
+    return handleSafe(async () => {
+      const executor = new SymbolicExecutor();
+      const result = await executor.execute({
+        code,
+        ...(maxPaths !== undefined ? { maxPaths } : {}),
+        ...(maxDepth !== undefined ? { maxDepth } : {}),
+        ...(timeout !== undefined ? { timeout } : {}),
+        enableConstraintSolving,
+      });
+      return result as unknown as Record<string, unknown>;
+    });
+  }
+
+  async handleJsSymbolicExecuteJsvmp(args: ToolArgs): Promise<ToolResponse> {
+    const instructions = argObject(args, 'instructions');
+    if (!instructions || !Array.isArray(instructions)) {
+      return asJsonResponse({
+        success: false,
+        error: 'instructions array is required (from js_analyze_vm output)',
+      });
+    }
+
+    const vmType = argString(args, 'vmType') as import('@internal-types/vm').VMType | undefined;
+    const maxSteps = argNumber(args, 'maxSteps');
+    const timeout = argNumber(args, 'timeout');
+
+    return handleSafe(async () => {
+      const executor = new JSVMPSymbolicExecutor();
+      const result = await executor.executeJSVMP({
+        instructions:
+          instructions as import('@modules/symbolic/JSVMPSymbolicExecutor').JSVMPInstruction[],
+        ...(vmType ? { vmType } : {}),
+        ...(maxSteps !== undefined ? { maxSteps } : {}),
+        ...(timeout !== undefined ? { timeout } : {}),
+      });
+      return result as unknown as Record<string, unknown>;
+    });
   }
 }

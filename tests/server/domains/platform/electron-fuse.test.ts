@@ -30,7 +30,7 @@ describe('electron_check_fuses', () => {
     await writeFile(exePath, exe);
 
     const result = await handleElectronCheckFuses({ exePath });
-    const data = JSON.parse(result.content[0]!.text!);
+    const data = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
 
     expect(data.success).toBe(true);
     expect(data.fuseWireFound).toBe(true);
@@ -46,7 +46,7 @@ describe('electron_check_fuses', () => {
     await writeFile(exePath, exe);
 
     const result = await handleElectronCheckFuses({ exePath });
-    const data = JSON.parse(result.content[0]!.text!);
+    const data = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
 
     expect(data.success).toBe(true);
     expect(data.fuseWireFound).toBe(true);
@@ -63,7 +63,7 @@ describe('electron_check_fuses', () => {
     await writeFile(filePath, plainFile);
 
     const result = await handleElectronCheckFuses({ exePath: filePath });
-    const data = JSON.parse(result.content[0]!.text!);
+    const data = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
 
     expect(data.success).toBe(true);
     expect(data.fuseWireFound).toBe(false);
@@ -74,7 +74,7 @@ describe('electron_check_fuses', () => {
     const result = await handleElectronCheckFuses({
       exePath: join(tempDir, 'nonexistent.exe'),
     });
-    const data = JSON.parse(result.content[0]!.text!);
+    const data = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
     expect(data.success).toBe(false);
   });
 });

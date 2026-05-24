@@ -5,6 +5,7 @@ import {
   IDA_BRIDGE_ENDPOINT,
   NATIVE_BRIDGE_TIMEOUT_MS,
 } from '@src/constants';
+import { asJsonResponse, serializeError } from '@server/domains/shared/response';
 export * from './definitions';
 
 interface BridgeResponse {
@@ -14,19 +15,8 @@ interface BridgeResponse {
 
 // ── Helpers ──
 
-function toTextResponse(payload: Record<string, unknown>) {
-  return {
-    content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
-  };
-}
-
 function toErrorResponse(tool: string, error: unknown, extra: Record<string, unknown> = {}) {
-  return toTextResponse({
-    success: false,
-    tool,
-    error: error instanceof Error ? error.message : String(error),
-    ...extra,
-  });
+  return asJsonResponse({ ...serializeError(error), tool, ...extra });
 }
 
 async function bridgeFetch(
@@ -118,7 +108,7 @@ export class NativeBridgeHandlers {
       results.push(await checkBridgeHealth(this.getIdaEndpoint(args), 'ida'));
     }
 
-    return toTextResponse({
+    return asJsonResponse({
       success: true,
       backends: results,
       hint: 'Install bridge servers: Ghidra → ghidra_bridge (pip install ghidra_bridge), IDA → ida_bridge',
@@ -136,7 +126,7 @@ export class NativeBridgeHandlers {
     try {
       switch (action) {
         case 'status':
-          return toTextResponse(await checkBridgeHealth(endpoint, 'ghidra'));
+          return asJsonResponse(await checkBridgeHealth(endpoint, 'ghidra'));
 
         case 'open_project': {
           const binaryPath = args.binaryPath as string;
@@ -147,12 +137,12 @@ export class NativeBridgeHandlers {
             'POST',
             JSON.stringify({ binaryPath }),
           );
-          return toTextResponse({ success: status < 300, action, result: data });
+          return asJsonResponse({ success: status < 300, action, result: data });
         }
 
         case 'list_functions': {
           const { status, data } = await bridgeFetch(endpoint, '/functions');
-          return toTextResponse({ success: status < 300, action, functions: data });
+          return asJsonResponse({ success: status < 300, action, functions: data });
         }
 
         case 'decompile_function': {
@@ -162,7 +152,7 @@ export class NativeBridgeHandlers {
             endpoint,
             `/functions/${encodeURIComponent(name)}/decompile`,
           );
-          return toTextResponse({
+          return asJsonResponse({
             success: status < 300,
             action,
             functionName: name,
@@ -179,7 +169,7 @@ export class NativeBridgeHandlers {
             'POST',
             JSON.stringify({ scriptPath, args: args.scriptArgs ?? [] }),
           );
-          return toTextResponse({ success: status < 300, action, result: data });
+          return asJsonResponse({ success: status < 300, action, result: data });
         }
 
         case 'get_xrefs': {
@@ -189,7 +179,7 @@ export class NativeBridgeHandlers {
             endpoint,
             `/xrefs/${encodeURIComponent(name)}`,
           );
-          return toTextResponse({ success: status < 300, action, symbol: name, xrefs: data });
+          return asJsonResponse({ success: status < 300, action, symbol: name, xrefs: data });
         }
 
         case 'search_strings': {
@@ -200,11 +190,11 @@ export class NativeBridgeHandlers {
             'POST',
             JSON.stringify({ pattern: pattern ?? '' }),
           );
-          return toTextResponse({ success: status < 300, action, strings: data });
+          return asJsonResponse({ success: status < 300, action, strings: data });
         }
 
         default:
-          return toTextResponse({
+          return asJsonResponse({
             success: true,
             guide: {
               what: 'Ghidra is an open-source SRE framework by NSA.',
@@ -242,7 +232,7 @@ export class NativeBridgeHandlers {
     try {
       switch (action) {
         case 'status':
-          return toTextResponse(await checkBridgeHealth(endpoint, 'ida'));
+          return asJsonResponse(await checkBridgeHealth(endpoint, 'ida'));
 
         case 'open_binary': {
           const binaryPath = args.binaryPath as string;
@@ -253,12 +243,12 @@ export class NativeBridgeHandlers {
             'POST',
             JSON.stringify({ binaryPath }),
           );
-          return toTextResponse({ success: status < 300, action, result: data });
+          return asJsonResponse({ success: status < 300, action, result: data });
         }
 
         case 'list_functions': {
           const { status, data } = await bridgeFetch(endpoint, '/functions');
-          return toTextResponse({ success: status < 300, action, functions: data });
+          return asJsonResponse({ success: status < 300, action, functions: data });
         }
 
         case 'decompile_function': {
@@ -268,7 +258,7 @@ export class NativeBridgeHandlers {
             endpoint,
             `/functions/${encodeURIComponent(name)}/decompile`,
           );
-          return toTextResponse({
+          return asJsonResponse({
             success: status < 300,
             action,
             functionName: name,
@@ -285,7 +275,7 @@ export class NativeBridgeHandlers {
             'POST',
             JSON.stringify({ scriptPath, args: args.scriptArgs ?? [] }),
           );
-          return toTextResponse({ success: status < 300, action, result: data });
+          return asJsonResponse({ success: status < 300, action, result: data });
         }
 
         case 'get_xrefs': {
@@ -295,16 +285,16 @@ export class NativeBridgeHandlers {
             endpoint,
             `/xrefs/${encodeURIComponent(name)}`,
           );
-          return toTextResponse({ success: status < 300, action, symbol: name, xrefs: data });
+          return asJsonResponse({ success: status < 300, action, symbol: name, xrefs: data });
         }
 
         case 'get_strings': {
           const { status, data } = await bridgeFetch(endpoint, '/strings');
-          return toTextResponse({ success: status < 300, action, strings: data });
+          return asJsonResponse({ success: status < 300, action, strings: data });
         }
 
         default:
-          return toTextResponse({
+          return asJsonResponse({
             success: true,
             guide: {
               what: 'IDA Pro is a commercial disassembler/decompiler by Hex-Rays.',
@@ -353,7 +343,7 @@ export class NativeBridgeHandlers {
         }),
       );
 
-      return toTextResponse({
+      return asJsonResponse({
         success: status < 300,
         source,
         format: args.exportFormat ?? 'json',

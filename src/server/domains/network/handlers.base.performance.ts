@@ -15,23 +15,21 @@ import {
   toCpuProfilePayload,
   type CpuProfilePayload,
 } from './handlers.base.types';
-import { R } from '@server/domains/shared/ResponseBuilder';
+import { handleSafe, R } from '@server/domains/shared/ResponseBuilder';
 import type { ToolResponse } from '@server/types';
 
 export class NetworkHandlersPerformance extends NetworkHandlersCore {
   async handlePerformanceGetMetrics(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const includeTimeline = args.includeTimeline === true;
       const monitor = this.getPerformanceMonitor();
       const metrics = await monitor.getPerformanceMetrics();
-      const builder = R.ok().set('metrics', metrics);
+      const result: Record<string, unknown> = { metrics };
       if (includeTimeline) {
-        builder.set('timeline', await monitor.getPerformanceTimeline());
+        result.timeline = await monitor.getPerformanceTimeline();
       }
-      return builder.json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return result;
+    });
   }
 
   async handlePerformanceCoverage(args: Record<string, unknown>): Promise<ToolResponse> {
@@ -42,27 +40,23 @@ export class NetworkHandlersPerformance extends NetworkHandlersCore {
   }
 
   async handlePerformanceStartCoverage(_args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const monitor = this.getPerformanceMonitor();
       await monitor.startCoverage();
-      return R.ok().set('message', 'Code coverage collection started').json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return { message: 'Code coverage collection started' };
+    });
   }
 
   async handlePerformanceStopCoverage(_args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const monitor = this.getPerformanceMonitor();
       const coverage = await monitor.stopCoverage();
       const avgCoverage =
         coverage.length > 0
           ? coverage.reduce((sum, info) => sum + info.coveragePercentage, 0) / coverage.length
           : 0;
-      return R.ok().merge({ coverage, totalScripts: coverage.length, avgCoverage }).json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return { coverage, totalScripts: coverage.length, avgCoverage };
+    });
   }
 
   async handlePerformanceTakeHeapSnapshot(_args: Record<string, unknown>): Promise<ToolResponse> {
@@ -110,58 +104,45 @@ export class NetworkHandlersPerformance extends NetworkHandlersCore {
   }
 
   async handlePerformanceTraceStart(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const monitor = this.getPerformanceMonitor();
       const categories = asOptionalStringArray(args.categories);
       const screenshots = asOptionalBoolean(args.screenshots);
       await monitor.startTracing({ categories, screenshots });
-      return R.ok()
-        .set(
-          'message',
+      return {
+        message:
           'Performance tracing started. Call performance_trace with action="stop" to save the trace.',
-        )
-        .json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      };
+    });
   }
 
   async handlePerformanceTraceStop(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const monitor = this.getPerformanceMonitor();
       const artifactPath = asOptionalString(args.artifactPath);
       const result = await monitor.stopTracing({ artifactPath });
-      return R.ok()
-        .merge({
-          artifactPath: result.artifactPath,
-          eventCount: result.eventCount,
-          sizeBytes: result.sizeBytes,
-          sizeKB: (result.sizeBytes / 1024).toFixed(1),
-          hint: 'Open the trace file in Chrome DevTools → Performance tab → Load profile',
-        })
-        .json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return {
+        artifactPath: result.artifactPath,
+        eventCount: result.eventCount,
+        sizeBytes: result.sizeBytes,
+        sizeKB: (result.sizeBytes / 1024).toFixed(1),
+        hint: 'Open the trace file in Chrome DevTools → Performance tab → Load profile',
+      };
+    });
   }
 
   async handleProfilerCpuStart(_args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const monitor = this.getPerformanceMonitor();
       await monitor.startCPUProfiling();
-      return R.ok()
-        .set(
-          'message',
-          'CPU profiling started. Call profiler_cpu with action="stop" to save the profile.',
-        )
-        .json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return {
+        message: 'CPU profiling started. Call profiler_cpu with action="stop" to save the profile.',
+      };
+    });
   }
 
   async handleProfilerCpuStop(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const monitor = this.getPerformanceMonitor();
       const profileRaw = await monitor.stopCPUProfiling();
 
@@ -198,53 +179,41 @@ export class NetworkHandlersPerformance extends NetworkHandlersCore {
           hitCount: n.hitCount,
         }));
 
-      return R.ok()
-        .merge({
-          artifactPath: savedPath,
-          totalNodes: profile.nodes.length,
-          totalSamples: profile.samples?.length || 0,
-          durationMs: profile.endTime - profile.startTime,
-          hotFunctions,
-          hint: 'Open the .cpuprofile file in Chrome DevTools → Performance tab',
-        })
-        .json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return {
+        artifactPath: savedPath,
+        totalNodes: profile.nodes.length,
+        totalSamples: profile.samples?.length || 0,
+        durationMs: profile.endTime - profile.startTime,
+        hotFunctions,
+        hint: 'Open the .cpuprofile file in Chrome DevTools → Performance tab',
+      };
+    });
   }
 
   async handleProfilerHeapSamplingStart(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const monitor = this.getPerformanceMonitor();
       const samplingInterval = asOptionalNumber(args.samplingInterval);
       await monitor.startHeapSampling({ samplingInterval });
-      return R.ok()
-        .set(
-          'message',
+      return {
+        message:
           'Heap sampling started. Call profiler_heap_sampling with action="stop" to save the report.',
-        )
-        .json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      };
+    });
   }
 
   async handleProfilerHeapSamplingStop(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const monitor = this.getPerformanceMonitor();
       const artifactPath = asOptionalString(args.artifactPath);
       const topN = asOptionalNumber(args.topN);
       const result = await monitor.stopHeapSampling({ artifactPath, topN });
-      return R.ok()
-        .merge({
-          artifactPath: result.artifactPath,
-          sampleCount: result.sampleCount,
-          topAllocations: result.topAllocations,
-        })
-        .json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return {
+        artifactPath: result.artifactPath,
+        sampleCount: result.sampleCount,
+        topAllocations: result.topAllocations,
+      };
+    });
   }
 
   async handlePerformanceTraceDispatch(args: Record<string, unknown>): Promise<ToolResponse> {

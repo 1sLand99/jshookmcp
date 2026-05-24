@@ -5,12 +5,9 @@
  */
 
 import { readFile, writeFile, copyFile } from 'node:fs/promises';
-import {
-  toTextResponse,
-  toErrorResponse,
-  parseStringArg,
-  pathExists,
-} from '@server/domains/platform/handlers/platform-utils';
+import type { ToolResponse } from '@server/types';
+import { parseStringArg, pathExists } from '@server/domains/platform/handlers/platform-utils';
+import { handleSafe } from '@server/domains/shared/ResponseBuilder';
 
 /**
  * The Electron fuse sentinel string embedded in Electron binaries.
@@ -73,19 +70,15 @@ function parseFuses(buffer: Buffer, sentinelIndex: number): Record<string, strin
 
 export async function handleElectronCheckFuses(
   args: Record<string, unknown>,
-): Promise<ReturnType<typeof toTextResponse>> {
-  try {
+): Promise<ToolResponse> {
+  return handleSafe(async () => {
     const exePath = parseStringArg(args, 'exePath', true);
     if (!exePath) {
       throw new Error('exePath is required');
     }
 
     if (!(await pathExists(exePath))) {
-      return toTextResponse({
-        success: false,
-        tool: 'electron_check_fuses',
-        error: `File does not exist: ${exePath}`,
-      });
+      return { success: false, error: `File does not exist: ${exePath}` };
     }
 
     // Read the binary
@@ -94,45 +87,31 @@ export async function handleElectronCheckFuses(
     const sentinelIndex = buffer.indexOf(sentinelBuffer);
 
     if (sentinelIndex === -1) {
-      return toTextResponse({
-        success: true,
-        tool: 'electron_check_fuses',
+      return {
         exePath,
         fuseWireFound: false,
         fuses: {},
         note: 'No fuse sentinel found. This may not be an Electron binary, or fuses are not configured.',
-      });
+      };
     }
 
     const fuses = parseFuses(buffer, sentinelIndex);
 
-    return toTextResponse({
-      success: true,
-      tool: 'electron_check_fuses',
-      exePath,
-      fuseWireFound: true,
-      fuses,
-    });
-  } catch (error) {
-    return toErrorResponse('electron_check_fuses', error);
-  }
+    return { exePath, fuseWireFound: true, fuses };
+  });
 }
 
 export async function handleElectronPatchFuses(
   args: Record<string, unknown>,
-): Promise<ReturnType<typeof toTextResponse>> {
-  try {
+): Promise<ToolResponse> {
+  return handleSafe(async () => {
     const exePath = parseStringArg(args, 'exePath', true);
     if (!exePath) {
       throw new Error('exePath is required');
     }
 
     if (!(await pathExists(exePath))) {
-      return toTextResponse({
-        success: false,
-        tool: 'electron_patch_fuses',
-        error: `File does not exist: ${exePath}`,
-      });
+      return { success: false, error: `File does not exist: ${exePath}` };
     }
 
     const profile = parseStringArg(args, 'profile') ?? 'debug';
@@ -170,12 +149,11 @@ export async function handleElectronPatchFuses(
     const sentinelIndex = buffer.indexOf(sentinelBuffer);
 
     if (sentinelIndex === -1) {
-      return toTextResponse({
+      return {
         success: false,
-        tool: 'electron_patch_fuses',
         error: 'No fuse sentinel found. This may not be an Electron binary.',
         exePath,
-      });
+      };
     }
 
     // Read current state
@@ -211,13 +189,11 @@ export async function handleElectronPatchFuses(
     }
 
     if (changes.length === 0) {
-      return toTextResponse({
-        success: true,
-        tool: 'electron_patch_fuses',
+      return {
         exePath,
         message: 'All target fuses are already in the desired state. No changes needed.',
         fuses: fusesBefore,
-      });
+      };
     }
 
     // Create backup
@@ -233,9 +209,7 @@ export async function handleElectronPatchFuses(
     // Read new state for verification
     const fusesAfter = parseFuses(buffer, sentinelIndex);
 
-    return toTextResponse({
-      success: true,
-      tool: 'electron_patch_fuses',
+    return {
       exePath,
       backupPath,
       profile,
@@ -245,8 +219,6 @@ export async function handleElectronPatchFuses(
       note: backupPath
         ? `Backup created at ${backupPath}. Restore with: copy "${backupPath}" "${exePath}"`
         : 'No backup created (createBackup=false).',
-    });
-  } catch (error) {
-    return toErrorResponse('electron_patch_fuses', error);
-  }
+    };
+  });
 }

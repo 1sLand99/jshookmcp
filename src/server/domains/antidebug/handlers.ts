@@ -6,6 +6,7 @@ import {
   evaluateOnNewDocumentWithTimeout,
 } from '@modules/collector/PageController';
 import { ANTI_DEBUG_SCRIPTS } from '@server/domains/antidebug/scripts';
+import { handleSafe } from '@server/domains/shared/ResponseBuilder';
 
 type DebuggerBypassMode = 'remove' | 'noop';
 
@@ -36,17 +37,6 @@ export class AntiDebugToolHandlers {
   ] as const;
 
   constructor(private collector: CodeCollector) {}
-
-  private toTextResponse(payload: Record<string, unknown>) {
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: JSON.stringify(payload, null, 2),
-        },
-      ],
-    };
-  }
 
   private parseDebuggerMode(value: unknown): DebuggerBypassMode {
     if (value === 'remove' || value === 'noop') {
@@ -112,7 +102,7 @@ export class AntiDebugToolHandlers {
   }
 
   async handleAntiDebugBypassAll(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const persistent = argBool(args, 'persistent', true);
       const page = await this.getPage();
 
@@ -125,8 +115,7 @@ export class AntiDebugToolHandlers {
 
       await this.injectScripts(page, scripts, persistent);
 
-      return this.toTextResponse({
-        success: true,
+      return {
         tool: 'antidebug_bypass_all',
         persistent,
         injectedCount: scripts.length,
@@ -136,41 +125,28 @@ export class AntiDebugToolHandlers {
           'bypassStackTrace',
           'bypassConsoleDetect',
         ],
-      });
-    } catch (error) {
-      return this.toTextResponse({
-        success: false,
-        tool: 'antidebug_bypass_all',
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+      };
+    });
   }
 
   async handleAntiDebugBypassDebuggerStatement(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const mode = this.parseDebuggerMode(args.mode);
       const page = await this.getPage();
       const script = this.buildDebuggerBypassScript(mode);
 
       await this.injectScripts(page, [script], true);
 
-      return this.toTextResponse({
-        success: true,
+      return {
         tool: 'antidebug_bypass_debugger_statement',
         mode,
         persistent: true,
-      });
-    } catch (error) {
-      return this.toTextResponse({
-        success: false,
-        tool: 'antidebug_bypass_debugger_statement',
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+      };
+    });
   }
 
   async handleAntiDebugBypassTiming(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const maxDrift =
         argNumber(args, 'maxDrift', AntiDebugToolHandlers.DEFAULT_MAX_DRIFT) ??
         AntiDebugToolHandlers.DEFAULT_MAX_DRIFT;
@@ -180,23 +156,16 @@ export class AntiDebugToolHandlers {
 
       await this.injectScripts(page, [script], true);
 
-      return this.toTextResponse({
-        success: true,
+      return {
         tool: 'antidebug_bypass_timing',
         maxDrift,
         persistent: true,
-      });
-    } catch (error) {
-      return this.toTextResponse({
-        success: false,
-        tool: 'antidebug_bypass_timing',
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+      };
+    });
   }
 
   async handleAntiDebugBypassStackTrace(args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const userPatterns = argStringArray(args, 'filterPatterns');
       const mergedPatterns = this.mergeStackFilterPatterns(userPatterns);
 
@@ -205,64 +174,43 @@ export class AntiDebugToolHandlers {
 
       await this.injectScripts(page, [script], true);
 
-      return this.toTextResponse({
-        success: true,
+      return {
         tool: 'antidebug_bypass_stack_trace',
         filterPatterns: mergedPatterns,
         persistent: true,
-      });
-    } catch (error) {
-      return this.toTextResponse({
-        success: false,
-        tool: 'antidebug_bypass_stack_trace',
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+      };
+    });
   }
 
   async handleAntiDebugBypassConsoleDetect(_args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const page = await this.getPage();
       await this.injectScripts(page, [ANTI_DEBUG_SCRIPTS.bypassConsoleDetect], true);
 
-      return this.toTextResponse({
-        success: true,
+      return {
         tool: 'antidebug_bypass_console_detect',
         persistent: true,
-      });
-    } catch (error) {
-      return this.toTextResponse({
-        success: false,
-        tool: 'antidebug_bypass_console_detect',
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+      };
+    });
   }
 
   async handleAntiDebugDetectProtections(_args: Record<string, unknown>) {
-    try {
+    return handleSafe(async () => {
       const page = await this.getPage();
       const result = (await evaluateWithTimeout(
         page,
         ANTI_DEBUG_SCRIPTS.detectProtections,
       )) as DetectProtectionsResult | null;
 
-      return this.toTextResponse({
-        success: result?.success ?? true,
+      return {
         tool: 'antidebug_detect_protections',
         detected: result?.detected ?? false,
         count: result?.count ?? 0,
         protections: result?.protections ?? [],
         recommendations: result?.recommendations ?? [],
         evidence: result?.evidence ?? {},
-      });
-    } catch (error) {
-      return this.toTextResponse({
-        success: false,
-        tool: 'antidebug_detect_protections',
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+      };
+    });
   }
 
   async handleAntidebugBypass(args: Record<string, unknown>) {
@@ -270,7 +218,6 @@ export class AntiDebugToolHandlers {
     const typesArr: string[] = Array.isArray(rawTypes) ? (rawTypes as string[]) : ['all'];
     const types = typesArr.length === 0 ? ['all'] : typesArr;
 
-    // If 'all' is in the list, delegate to the all-in-one handler
     if (types.includes('all')) {
       return this.handleAntiDebugBypassAll(args);
     }
@@ -282,9 +229,9 @@ export class AntiDebugToolHandlers {
       AntiDebugToolHandlers.DEFAULT_MAX_DRIFT;
     const userPatterns = argStringArray(args, 'filterPatterns');
 
-    const applied: string[] = [];
-    try {
+    return handleSafe(async () => {
       const page = await this.getPage();
+      const applied: string[] = [];
 
       if (types.includes('debugger_statement')) {
         const script = this.buildDebuggerBypassScript(mode);
@@ -307,18 +254,7 @@ export class AntiDebugToolHandlers {
         applied.push('console_detect');
       }
 
-      return this.toTextResponse({
-        success: true,
-        tool: 'antidebug_bypass',
-        applied,
-        persistent,
-      });
-    } catch (error) {
-      return this.toTextResponse({
-        success: false,
-        tool: 'antidebug_bypass',
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+      return { tool: 'antidebug_bypass', applied, persistent };
+    });
   }
 }

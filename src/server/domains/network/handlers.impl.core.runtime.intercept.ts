@@ -1,6 +1,6 @@
 import { AdvancedToolHandlersRaw as AdvancedToolHandlersReplay } from '@server/domains/network/handlers.impl.core.runtime.raw';
 import type { FetchInterceptAction } from '@modules/monitor/FetchInterceptor';
-import { R } from '@server/domains/shared/ResponseBuilder';
+import { handleSafe, R } from '@server/domains/shared/ResponseBuilder';
 
 interface InterceptRuleInput {
   urlPattern: string;
@@ -154,30 +154,24 @@ export class AdvancedToolHandlersIntercept extends AdvancedToolHandlersReplay {
       ).json();
     }
 
-    try {
+    return handleSafe(async () => {
       if (all) {
         const result = await this.consoleMonitor.disableFetchIntercept();
-        return R.ok()
-          .merge({
-            message: `Disabled all interception. Removed ${result.removedRules} rule(s).`,
-            removedRules: result.removedRules,
-          })
-          .json();
+        return {
+          message: `Disabled all interception. Removed ${result.removedRules} rule(s).`,
+          removedRules: result.removedRules,
+        };
       }
 
       const removed = await this.consoleMonitor.removeFetchInterceptRule(ruleId!);
       const status = this.consoleMonitor.getFetchInterceptStatus();
 
-      return R.ok()
-        .merge({
-          success: removed,
-          message: removed ? `Rule ${ruleId} removed.` : `Rule ${ruleId} not found.`,
-          remainingRules: status.rules.length,
-        })
-        .json();
-    } catch (error) {
-      return R.fail(error instanceof Error ? error.message : String(error)).json();
-    }
+      return {
+        success: removed,
+        message: removed ? `Rule ${ruleId} removed.` : `Rule ${ruleId} not found.`,
+        remainingRules: status.rules.length,
+      };
+    });
   }
 
   private toInterceptAction(value: unknown): FetchInterceptAction {

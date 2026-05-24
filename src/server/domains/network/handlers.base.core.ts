@@ -24,7 +24,7 @@ import {
   type NetworkRequestPayload,
 } from './handlers.base.types';
 import { getMergedNetworkRequestsFromMonitor } from './request-merge';
-import { R } from '@server/domains/shared/ResponseBuilder';
+import { handleSafe, R } from '@server/domains/shared/ResponseBuilder';
 import type { ToolResponse } from '@server/types';
 
 export class NetworkHandlersCore {
@@ -110,7 +110,7 @@ export class NetworkHandlersCore {
   // ── Network enable/disable/status ──
 
   async handleNetworkEnable(args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       const enableExceptions = this.parseBooleanArg(args.enableExceptions, true);
 
       await this.consoleMonitor.enable({
@@ -120,33 +120,27 @@ export class NetworkHandlersCore {
 
       const status = this.consoleMonitor.getNetworkStatus();
 
-      return R.ok()
-        .merge({
-          message: ' Network monitoring enabled successfully',
-          enabled: status.enabled,
-          cdpSessionActive: status.cdpSessionActive,
-          listenerCount: status.listenerCount,
-          usage: {
-            step1: 'Network monitoring is now active',
-            step2: 'Navigate to a page using page_navigate tool',
-            step3: 'Use network_get_requests to retrieve captured requests',
-            step4: 'Use network_get_response_body to get response content',
-          },
-          important: 'Network monitoring must be enabled BEFORE navigating to capture requests',
-        })
-        .json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return {
+        message: ' Network monitoring enabled successfully',
+        enabled: status.enabled,
+        cdpSessionActive: status.cdpSessionActive,
+        listenerCount: status.listenerCount,
+        usage: {
+          step1: 'Network monitoring is now active',
+          step2: 'Navigate to a page using page_navigate tool',
+          step3: 'Use network_get_requests to retrieve captured requests',
+          step4: 'Use network_get_response_body to get response content',
+        },
+        important: 'Network monitoring must be enabled BEFORE navigating to capture requests',
+      };
+    });
   }
 
   async handleNetworkDisable(_args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
+    return handleSafe(async () => {
       await this.consoleMonitor.disable();
-      return R.ok().set('message', 'Network monitoring disabled').json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+      return { message: 'Network monitoring disabled' };
+    });
   }
 
   async handleNetworkGetStatus(_args: Record<string, unknown>): Promise<ToolResponse> {
@@ -551,13 +545,16 @@ export class NetworkHandlersCore {
   }
 
   async handleNetworkGetStats(_args: Record<string, unknown>): Promise<ToolResponse> {
-    try {
-      if (!this.consoleMonitor.isNetworkEnabled()) {
-        return R.fail('Network monitoring is not enabled')
-          .set('hint', 'Use network_enable tool first')
-          .json();
-      }
+    if (!this.consoleMonitor.isNetworkEnabled()) {
+      return R.fail('Network monitoring is not enabled. Use network_enable tool first')
+        .set(
+          'hint',
+          'Use network_enable to start monitoring, then page_navigate to capture traffic',
+        )
+        .json();
+    }
 
+    return handleSafe(async () => {
       const requests = this.consoleMonitor
         .getNetworkRequests()
         .filter((req: unknown): req is NetworkRequestPayload => isNetworkRequestPayload(req));
@@ -591,8 +588,8 @@ export class NetworkHandlersCore {
             }
           : null;
 
-      return R.ok()
-        .set('stats', {
+      return {
+        stats: {
           totalRequests: requests.length,
           totalResponses: responses.length,
           byMethod,
@@ -600,11 +597,9 @@ export class NetworkHandlersCore {
           byType,
           timeStats,
           monitoringEnabled: true,
-        })
-        .json();
-    } catch (error) {
-      return R.fail(error).json();
-    }
+        },
+      };
+    });
   }
 
   async cleanup() {

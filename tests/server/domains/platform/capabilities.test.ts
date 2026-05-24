@@ -32,7 +32,7 @@ describe('handlePlatformCapabilities', () => {
     };
 
     const result = await handlePlatformCapabilities(runner as any);
-    const parsed = JSON.parse(result.content[0]!.text!);
+    const parsed = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
     const capabilityNames = parsed.capabilities.map(
       (entry: { capability: string }) => entry.capability,
     );
