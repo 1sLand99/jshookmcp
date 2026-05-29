@@ -132,6 +132,18 @@ describe('CpuEngine extended ISA — multiply / divide', () => {
     const engine = runProgram([0x12800120, 0x528000a1, 0x1ac10c00]);
     expect(engine.readRegister('x0')).toBe(0xfffffffe);
   });
+
+  it('SMADDL widens 32-bit operands into a 64-bit accumulate (3*4 + 5 = 17)', () => {
+    // movz w1,#3 ; movz w2,#4 ; movz x3,#5 ; smaddl x0,w1,w2,x3
+    const engine = runProgram([0x52800061, 0x52800082, 0xd28000a3, 0x9b220c20]);
+    expect(engine.readRegister('x0')).toBe(17);
+  });
+
+  it('UMADDL widens unsigned 32-bit operands (3*4 + 5 = 17)', () => {
+    // movz w1,#3 ; movz w2,#4 ; movz x3,#5 ; umaddl x0,w1,w2,x3
+    const engine = runProgram([0x52800061, 0x52800082, 0xd28000a3, 0x9ba20c20]);
+    expect(engine.readRegister('x0')).toBe(17);
+  });
 });
 
 describe('CpuEngine extended ISA — variable shifts', () => {
@@ -159,6 +171,14 @@ describe('CpuEngine extended ISA — conditional select', () => {
     // movz x1,#11 ; movz x2,#22 ; cmp x1,x2 (subs xzr,x1,x2=0xeb02003f) ; csinc x0,x1,x2,eq
     const engine = runProgram([0xd2800161, 0xd28002c2, 0xeb02003f, 0x9a820420]);
     expect(engine.readRegister('x0')).toBe(23);
+  });
+
+  it('CCMP (immediate) compares when cond holds (5==5 → EQ → ccmp sets Z)', () => {
+    // movz x0,#5 ; movz x1,#5 ; subs xzr,x0,x1 (EQ true, 0xeb01001f) ;
+    // ccmp x0,#5,#0,eq (0xfa450800) → since EQ holds, compare x0-5 → Z=1 ;
+    // cset x0,eq (0x9a9f17e0) materializes Z into x0.
+    const engine = runProgram([0xd28000a0, 0xd28000a1, 0xeb01001f, 0xfa450800, 0x9a9f17e0]);
+    expect(engine.readRegister('x0')).toBe(1);
   });
 });
 

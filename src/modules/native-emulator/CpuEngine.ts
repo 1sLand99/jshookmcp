@@ -959,6 +959,24 @@ export class CpuEngine {
         this.writeGpr(rd, ((a * b) >> 64n) & MASK64);
         return true;
       }
+      if (op31 === 0b001) {
+        // SMADDL/SMSUBL: Xd = Xa ± (SignExtend(Wn) * SignExtend(Wm)).
+        const a = BigInt.asIntN(32, this.readGpr(rn) & MASK32);
+        const b = BigInt.asIntN(32, this.readGpr(rm) & MASK32);
+        const acc = BigInt.asIntN(64, this.readGpr(ra));
+        const value = o0 === 0 ? acc + a * b : acc - a * b;
+        this.writeGpr(rd, BigInt.asUintN(64, value));
+        return true;
+      }
+      if (op31 === 0b101) {
+        // UMADDL/UMSUBL: Xd = Xa ± (ZeroExtend(Wn) * ZeroExtend(Wm)).
+        const a = this.readGpr(rn) & MASK32;
+        const b = this.readGpr(rm) & MASK32;
+        const acc = this.readGpr(ra) & MASK64;
+        const value = o0 === 0 ? acc + a * b : acc - a * b;
+        this.writeGpr(rd, BigInt.asUintN(64, value));
+        return true;
+      }
     }
 
     // Data-processing (2 source): sf | 0 | S | 11010110 | Rm | opcode(6) | Rn | Rd
@@ -1053,6 +1071,32 @@ export class CpuEngine {
       if (this.conditionHolds(cond)) {
         if (op === 1) this.subWithFlags(this.readGpr(rn), this.readGpr(rm), sf);
         else this.addWithFlags(this.readGpr(rn), this.readGpr(rm), sf);
+      } else {
+        this.flagN = ((nzcv >> 3) & 1) === 1;
+        this.flagZ = ((nzcv >> 2) & 1) === 1;
+        this.flagC = ((nzcv >> 1) & 1) === 1;
+        this.flagV = (nzcv & 1) === 1;
+      }
+      return true;
+    }
+
+    // Conditional compare (immediate): sf | op | 1 | 11010010 | imm5 | cond | 1 | Rn | 0 | nzcv
+    //   Same as the register form but the second operand is a 5-bit zero-extended
+    //   immediate. Distinguished from the register form by bit11 = 1.
+    if (
+      ((insn >>> 21) & 0xff) === 0b11010010 &&
+      ((insn >>> 11) & 1) === 1 &&
+      ((insn >>> 4) & 1) === 0
+    ) {
+      const sf = insn >>> 31;
+      const op = (insn >>> 30) & 1;
+      const imm5 = BigInt((insn >>> 16) & 0b11111);
+      const cond = (insn >>> 12) & 0b1111;
+      const rn = (insn >>> 5) & 0b11111;
+      const nzcv = insn & 0b1111;
+      if (this.conditionHolds(cond)) {
+        if (op === 1) this.subWithFlags(this.readGpr(rn), imm5, sf);
+        else this.addWithFlags(this.readGpr(rn), imm5, sf);
       } else {
         this.flagN = ((nzcv >> 3) & 1) === 1;
         this.flagZ = ((nzcv >> 2) & 1) === 1;
