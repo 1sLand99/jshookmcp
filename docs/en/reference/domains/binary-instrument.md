@@ -19,7 +19,7 @@ Binary instrumentation domain providing binary analysis and runtime instrumentat
 - binary-instrument + memory
 - binary-instrument + process
 
-## Full tool list (23)
+## Full tool list (24)
 
 | Tool | Description |
 | --- | --- |
@@ -37,6 +37,7 @@ Binary instrumentation domain providing binary analysis and runtime instrumentat
 | `ghidra_decompile` | Decompile a function using Ghidra. |
 | `ida_decompile` | Decompile a function using IDA Pro. |
 | `jadx_decompile` | Decompile an APK class or method with JADX CLI, auto-resolving likely class matches when possible, or use the legacy plugin bridge when available. |
+| `jadx_search_code` | Read-only ripgrep-backed search over an existing jadx decompile directory. ReDoS-guarded; Node fallback. Run jadx_decompile first to produce sources. |
 | `apktool_decode` | Decode an APK using apktool to inspect resources, manifest, and smali output. |
 | `apk_manifest_dump` | Extract AndroidManifest.xml from an APK for quick inspection; return readable XML when possible, using JADX CLI as a cross-platform decode fallback for binary AXML, otherwise return base64. |
 | `apk_native_libs_list` | List packaged native shared libraries (.so) inside an APK. |

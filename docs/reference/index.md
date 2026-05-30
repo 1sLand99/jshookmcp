@@ -31,11 +31,11 @@
 | `graphql` | GraphQL | workflow, full | GraphQL 发现、提取、重放与 introspection 能力。 |
 | `hooks` | Hooks | full | AI Hook 生成、注入、数据导出，以及内置/自定义 preset 管理。 |
 | `instrumentation` | Instrumentation | full | 统一仪器化会话域，将 Hook、拦截、Trace 与产物记录收束到可查询的 session 中。 |
-| `jadx-search` | JADX Search | full | 通过 JADX 对 APK 进行反编译后的代码搜索域，支持类名、方法名、字符串的全文检索。 |
 | `macro` | Macro | full | 子代理宏编排域，将多步工具调用组合为可复用的宏流程。 |
 | `maintenance` | Maintenance | workflow, full | 运维与维护域，覆盖缓存、token 预算、环境诊断、产物清理与扩展管理。 |
 | `memory` | Memory | full | 面向原生内存扫描、指针链分析、结构体推断与断点观测的内存分析域。 |
 | `mojo-ipc` | Mojo IPC | full | Mojo IPC 监控域，用于 Chromium 内部进程间通信分析。 |
+| `native-emulator` | Native Emulator | full | 进程内、零外部依赖的自研 ARM64 解释器，用于仿真执行 Android `.so`：加载共享库、注册模拟 Java 方法、调用导出函数或 `Java_*` JNI 入口，以还原签名/加密算法。无需真机、JVM 或 Frida。会话隔离且显式管理（create→…→destroy），空闲自动过期防泄漏。libapp.so（Flutter Dart AOT）不在此执行，应交给 Dart 层。 |
 | `network` | Network | workflow, full | 请求捕获、响应体读取、HAR 导出、请求重放与性能追踪。 |
 | `platform` | Platform | full | 宿主平台与包格式分析域，覆盖 miniapp、asar、Electron。 |
 | `process` | Process | full | 进程、模块、内存诊断与受控注入域，适合宿主级分析、故障排查与 Windows 进程实验场景。 |

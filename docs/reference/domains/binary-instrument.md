@@ -19,7 +19,7 @@
 - binary-instrument + memory
 - binary-instrument + process
 
-## 工具清单（23）
+## 工具清单（24）
 
 | 工具 | 说明 |
 | --- | --- |
@@ -37,6 +37,7 @@
 | `ghidra_decompile` | 使用 Ghidra headless 分析反编译指定函数。 |
 | `ida_decompile` | 通过插件桥接使用 IDA Pro 反编译指定函数。 |
 | `jadx_decompile` | 优先使用 JADX CLI 反编译 APK 类或方法，并尽可能自动解析可能的类名匹配；CLI 不可用时回退到插件桥接。 |
+| `jadx_search_code` | 对已有的 jadx 反编译输出目录执行只读 ripgrep 搜索（带 Node 纯回退引擎）。内置 ReDoS 双重防护。 |
 | `apktool_decode` | 使用 apktool 解包 APK，便于检查资源、Manifest 和 smali 输出。 |
 | `apk_manifest_dump` | 从 APK 中提取 AndroidManifest.xml；优先返回可读 XML，二进制 AXML 会尝试通过跨平台的 JADX CLI 解码，失败时再返回原始 Base64 载荷。 |
 | `apk_native_libs_list` | 列出 APK 内打包的原生共享库（.so）及其 ABI 目录。 |

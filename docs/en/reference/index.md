@@ -31,11 +31,11 @@ The following tool domains are available:
 | `graphql` | GraphQL | workflow, full | GraphQL discovery, extraction, replay, and introspection tooling. |
 | `hooks` | Hooks | full | AI hook generation, injection, export, and built-in/custom preset management. |
 | `instrumentation` | Instrumentation | full | Unified instrumentation-session domain that groups hooks, intercepts, traces, and artifacts into a queryable session. |
-| `jadx-search` | JADX Search | full | Search decompiled APK source via JADX — full-text search across class names, method names, and string constants. |
 | `macro` | Macro | full | Sub-agent macro orchestration domain that chains multiple tool calls into reusable macro workflows. |
 | `maintenance` | Maintenance | workflow, full | Operations and maintenance domain covering cache hygiene, token budget, environment diagnostics, artifact cleanup, and extension management. |
 | `memory` | Memory | full | Memory analysis domain for native scans, pointer-chain discovery, structure inference, and breakpoint-based observation. |
 | `mojo-ipc` | Mojo IPC | full | Mojo IPC monitoring domain for Chromium inter-process communication analysis. |
+| `native-emulator` | Native Emulator | full | In-process, dependency-free self-built ARM64 interpreter for emulating Android `.so` libraries: load a shared object, register mock Java methods, and invoke exported or `Java_*` JNI functions to recover signing/crypto algorithms — no device, JVM, or Frida. Sessions are isolated and explicitly managed (create → … → destroy) with idle auto-expiry. libapp.so (Flutter Dart AOT) is not executable here and routes to the Dart layer. |
 | `network` | Network | workflow, full | Request capture, response extraction, HAR export, safe replay, and performance tracing. |
 | `platform` | Platform | full | Platform and package analysis domain covering miniapps, ASAR archives, and Electron apps. |
 | `process` | Process | full | Process, module, memory diagnostics, and controlled injection domain for host-level inspection, troubleshooting, and Windows process experimentation workflows. |

@@ -18,8 +18,8 @@ import type { BoringsslInspectorHandlers } from '@server/domains/boringssl-inspe
 import type { CrossDomainHandlers } from '@server/domains/cross-domain/handlers';
 import type { DartInspectorHandlers } from '@server/domains/dart-inspector/handlers';
 import type { ExtensionRegistryHandlers } from '@server/domains/extension-registry/handlers';
-import type { JadxSearchHandlers } from '@server/domains/jadx-search/handlers';
 import type { MojoIPCHandlers } from '@server/domains/mojo-ipc/handlers';
+import type { NativeEmulatorHandlers } from '@server/domains/native-emulator/handlers';
 import type { ProtocolAnalysisHandlers } from '@server/domains/protocol-analysis/handlers';
 import type { SkiaCaptureHandlers } from '@server/domains/skia-capture/handlers';
 import type { SyscallHookHandlers } from '@server/domains/syscall-hook/handlers';
@@ -134,10 +134,10 @@ export interface DomainInstances {
   boringsslInspectorHandlers?: BoringsslInspectorHandlers;
   skiaCaptureHandlers?: SkiaCaptureHandlers;
   binaryInstrumentHandlers?: BinaryInstrumentHandlers;
+  nativeEmulatorHandlers?: NativeEmulatorHandlers;
   binarySecretsHandlers?: BinarySecretsHandlers;
   adbBridgeHandlers?: ADBBridgeHandlers;
   apkPackerHandlers?: ApkPackerHandlers;
-  jadxSearchHandlers?: JadxSearchHandlers;
   mojoIpcHandlers?: MojoIPCHandlers;
   syscallHookHandlers?: SyscallHookHandlers;
   protocolAnalysisHandlers?: ProtocolAnalysisHandlers;

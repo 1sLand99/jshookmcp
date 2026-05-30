@@ -12,7 +12,10 @@ import {
   type ZipFile as YauzlZipFile,
 } from 'yauzl';
 import { GhidraAnalyzer, HookGenerator, getAvailablePlugins } from '@modules/binary-instrument';
+import { JadxSearchEngine } from '@modules/jadx-search';
+import type { JadxSearchOptions } from '@modules/jadx-search';
 import { probeCommand } from '@modules/external/ToolProbe';
+import { ToolError } from '@errors/ToolError';
 import { UNIDBG_TIMEOUT_MS } from '@src/constants';
 import type { BinaryInstrumentState } from './shared';
 import {
@@ -82,6 +85,69 @@ export class AnalysisHandlers {
     }
 
     return invokeLegacyPlugin(this.state.context, 'plugin_jadx_bridge', 'jadx_decompile', args);
+  }
+
+  /**
+   * Read-only ripgrep-backed search over an *existing* jadx decompile directory.
+   * Does NOT decompile — callers run jadx_decompile first, then pass decompileDir.
+   * (Merged from the former standalone jadx-search domain.)
+   */
+  async handleJadxSearchCode(args: Record<string, unknown>): Promise<unknown> {
+    const decompileDir = readRequiredString(args, 'decompileDir');
+    const query = readRequiredString(args, 'query');
+
+    // Reject apkPath even though the schema omits it — this tool intentionally
+    // does not trigger a new decompilation.
+    if (typeof args['apkPath'] === 'string' && args['apkPath'].length > 0) {
+      throw new ToolError(
+        'VALIDATION',
+        'apkPath is not supported by jadx_search_code (read-only). ' +
+          'Run jadx_decompile first, then pass decompileDir.',
+      );
+    }
+
+    const opts: JadxSearchOptions = { decompileDir, query };
+    const literal = readOptionalBoolean(args, 'literal');
+    if (literal !== undefined) opts.literal = literal;
+    const caseInsensitive = readOptionalBoolean(args, 'caseInsensitive');
+    if (caseInsensitive !== undefined) opts.caseInsensitive = caseInsensitive;
+    const contextLines = readOptionalNumber(args, 'contextLines');
+    if (contextLines !== undefined) opts.contextLines = contextLines;
+    const maxMatchesPerFile = readOptionalNumber(args, 'maxMatchesPerFile');
+    if (maxMatchesPerFile !== undefined) opts.maxMatchesPerFile = maxMatchesPerFile;
+    const maxResults = readOptionalNumber(args, 'maxResults');
+    if (maxResults !== undefined) opts.maxResults = maxResults;
+
+    const rawGlobs = args['globs'];
+    if (rawGlobs !== undefined) {
+      if (!Array.isArray(rawGlobs)) {
+        throw new ToolError('VALIDATION', 'globs must be an array of strings');
+      }
+      const globs = readStringArray(args, 'globs');
+      if (globs.length !== rawGlobs.length) {
+        throw new ToolError('VALIDATION', 'globs contains non-string entries');
+      }
+      if (globs.length > 0) opts.globs = globs;
+    }
+
+    const result = await this.getJadxSearchEngine().search(opts);
+    return jsonResponse({
+      success: true,
+      matches: result.matches,
+      filesMatched: result.filesMatched,
+      totalMatches: result.totalMatches,
+      engine: result.engine,
+      durationMs: result.durationMs,
+      decompileDir: result.decompileDir,
+      ...(result.truncated ? { truncated: true } : {}),
+    });
+  }
+
+  private getJadxSearchEngine(): JadxSearchEngine {
+    if (!this.state.jadxSearchEngine) {
+      this.state.jadxSearchEngine = new JadxSearchEngine();
+    }
+    return this.state.jadxSearchEngine;
   }
 
   async handleApktoolDecode(args: Record<string, unknown>): Promise<unknown> {

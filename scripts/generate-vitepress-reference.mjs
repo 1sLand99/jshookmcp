@@ -467,6 +467,28 @@ const META = {
     ],
     enCombos: ['dart-inspector + binary-instrument', 'dart-inspector + adb-bridge'],
   },
+  'native-emulator': {
+    zhTitle: 'Native Emulator',
+    zhSummary:
+      '进程内、零外部依赖的自研 ARM64 解释器，用于仿真执行 Android `.so`：加载共享库、注册模拟 Java 方法、调用导出函数或 `Java_*` JNI 入口，以还原签名/加密算法。无需真机、JVM 或 Frida。会话隔离且显式管理（create→…→destroy），空闲自动过期防泄漏。libapp.so（Flutter Dart AOT）不在此执行，应交给 Dart 层。',
+    zhScenarios: [
+      'native/JNI 签名与加密算法还原',
+      '从 APK 抽取并加载 arm64-v8a .so',
+      '逐指令跟踪混淆 native 函数',
+      '模拟 Java 世界回调（声明式常量）',
+    ],
+    zhCombos: ['native-emulator + binary-instrument', 'native-emulator + dart-inspector'],
+    enTitle: 'Native Emulator',
+    enSummary:
+      'In-process, dependency-free self-built ARM64 interpreter for emulating Android `.so` libraries: load a shared object, register mock Java methods, and invoke exported or `Java_*` JNI functions to recover signing/crypto algorithms — no device, JVM, or Frida. Sessions are isolated and explicitly managed (create → … → destroy) with idle auto-expiry. libapp.so (Flutter Dart AOT) is not executable here and routes to the Dart layer.',
+    enScenarios: [
+      'Recover native/JNI signing and crypto algorithms',
+      'Extract and load arm64-v8a .so from an APK',
+      'Instruction-trace an obfuscated native function',
+      'Mock the Java world via declarative callbacks',
+    ],
+    enCombos: ['native-emulator + binary-instrument', 'native-emulator + dart-inspector'],
+  },
   'apk-packer': {
     zhTitle: 'APK Packer',
     zhSummary:
@@ -499,21 +521,6 @@ const META = {
       'Extract Base64/hex encoded keys',
     ],
     enCombos: ['binary-secrets + apk-packer', 'binary-secrets + binary-instrument'],
-  },
-  'jadx-search': {
-    zhTitle: 'JADX Search',
-    zhSummary: '通过 JADX 对 APK 进行反编译后的代码搜索域，支持类名、方法名、字符串的全文检索。',
-    zhScenarios: ['反编译代码全文搜索', '类名/方法名定位', '字符串常量检索'],
-    zhCombos: ['jadx-search + apk-packer', 'jadx-search + binary-secrets'],
-    enTitle: 'JADX Search',
-    enSummary:
-      'Search decompiled APK source via JADX — full-text search across class names, method names, and string constants.',
-    enScenarios: [
-      'Full-text search in decompiled code',
-      'Locate classes and methods by name',
-      'Search string constants',
-    ],
-    enCombos: ['jadx-search + apk-packer', 'jadx-search + binary-secrets'],
   },
   'extension-registry': {
     zhTitle: 'Extension Registry',

@@ -26,6 +26,7 @@ const registrations = defineMethodRegistrations<H, (typeof binaryInstrumentTools
     { tool: 'ghidra_decompile', method: 'handleGhidraDecompile' },
     { tool: 'ida_decompile', method: 'handleIdaDecompile' },
     { tool: 'jadx_decompile', method: 'handleJadxDecompile' },
+    { tool: 'jadx_search_code', method: 'handleJadxSearchCode' },
     { tool: 'apktool_decode', method: 'handleApktoolDecode' },
     { tool: 'apk_manifest_dump', method: 'handleApkManifestDump' },
     { tool: 'apk_native_libs_list', method: 'handleApkNativeLibsList' },

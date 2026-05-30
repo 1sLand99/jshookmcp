@@ -40,6 +40,7 @@ export interface BinaryInstrumentState {
   hookGen?: HookGenerator;
   hookCodeGenerator: HookCodeGenerator;
   unidbgRunner: UnidbgRunner;
+  jadxSearchEngine?: import('@modules/jadx-search').JadxSearchEngine;
   context?: MCPServerContext;
 }
 
