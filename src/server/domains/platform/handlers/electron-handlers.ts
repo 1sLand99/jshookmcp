@@ -427,6 +427,8 @@ export class ElectronHandlers {
       let totalMatches = 0;
       let filesScanned = 0;
 
+      const CONTEXT_RADIUS = 80;
+
       for (const entry of matchingFiles) {
         if (totalMatches >= maxResults) break;
 
@@ -434,30 +436,50 @@ export class ElectronHandlers {
         const end = start + entry.size;
         if (start < 0 || end > searchAsarBuf.length || end < start) continue;
 
-        // Skip very large files (>512KB)
-        if (entry.size > 512_000) continue;
-
         const content = searchAsarBuf.subarray(start, end).toString('utf-8');
         filesScanned++;
 
-        // Reset regex state
         regex.lastIndex = 0;
 
-        const lines = content.split('\n');
+        // Pre-compute newline positions for line-number lookup
+        const newlineOffsets: number[] = [];
+        for (let i = 0; i < content.length; i++) {
+          if (content[i] === '\n') newlineOffsets.push(i);
+        }
+
+        function offsetToLine(offset: number): number {
+          let lo = 0;
+          let hi = newlineOffsets.length;
+          while (lo < hi) {
+            const mid = (lo + hi) >>> 1;
+            if (newlineOffsets[mid]! < offset) lo = mid + 1;
+            else hi = mid;
+          }
+          return lo + 1;
+        }
+
         const fileMatches: Array<{ lineNumber: number; text: string }> = [];
 
-        for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-          if (totalMatches >= maxResults) break;
-          const line = lines[lineIdx];
-          if (!line) continue;
-          regex.lastIndex = 0;
-          if (regex.test(line)) {
-            fileMatches.push({
-              lineNumber: lineIdx + 1,
-              text: line.slice(0, 200),
-            });
-            totalMatches++;
-          }
+        let execResult: RegExpExecArray | null;
+        while ((execResult = regex.exec(content)) !== null && totalMatches < maxResults) {
+          const matchStart = execResult.index;
+          const matchEnd = matchStart + execResult[0].length;
+
+          // Extract context around match instead of the full line (handles single-line minified)
+          const ctxStart = Math.max(0, matchStart - CONTEXT_RADIUS);
+          const ctxEnd = Math.min(content.length, matchEnd + CONTEXT_RADIUS);
+          let snippet = content.slice(ctxStart, ctxEnd);
+          if (ctxStart > 0) snippet = `…${snippet}`;
+          if (ctxEnd < content.length) snippet = `${snippet}…`;
+
+          fileMatches.push({
+            lineNumber: offsetToLine(matchStart),
+            text: snippet,
+          });
+          totalMatches++;
+
+          // Prevent zero-length match infinite loop
+          if (execResult[0].length === 0) regex.lastIndex++;
         }
 
         if (fileMatches.length > 0) {
