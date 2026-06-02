@@ -2,12 +2,21 @@ import { execFile } from 'node:child_process';
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
 import { probeCommand, type ProbeResult } from '@modules/external/ToolProbe';
 import { logger } from '@utils/logger';
 import { GHIDRA_TIMEOUT_MS } from '@src/constants';
 import { PrerequisiteError } from '@errors/PrerequisiteError';
 
 const GHIDRA_MAX_BUFFER_BYTES = 16 * 1024 * 1024;
+
+/** Cache entry for incremental analysis results. */
+interface AnalysisCache {
+  hash: string; // SHA-256 of the binary
+  fileSize: number;
+  analyzedAt: number; // Unix timestamp
+  result: GhidraAnalysisResult;
+}
 
 export interface DecompiledFunction {
   name: string;
@@ -31,8 +40,14 @@ interface CommandResult {
 export class GhidraAnalyzer {
   private ghidraProbe?: ProbeResult;
   private probePromise?: Promise<ProbeResult>;
+  /** In-memory cache: binaryPath → AnalysisCache */
+  private analysisCache = new Map<string, AnalysisCache>();
+  private static readonly CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
 
-  async analyze(binaryPath: string, options?: { timeout?: number }): Promise<GhidraAnalysisResult> {
+  async analyze(
+    binaryPath: string,
+    options?: { timeout?: number; forceRefresh?: boolean },
+  ): Promise<GhidraAnalysisResult> {
     await access(binaryPath);
     const fileBuffer = await readFile(binaryPath);
     const strings = this.extractPrintableStrings(fileBuffer);
@@ -41,12 +56,22 @@ export class GhidraAnalyzer {
 
     const availability = await this.getAvailability();
     if (!availability.available) {
-      return {
-        functions: [],
-        imports,
-        exports,
-        strings,
-      };
+      throw new PrerequisiteError(
+        [
+          `Ghidra analyzeHeadless is not available: ${availability.reason || 'not found on PATH'}`,
+          'Install Ghidra and add analyzeHeadless to your PATH.',
+          'Windows: add <ghidra>/support to PATH. Linux/macOS: add <ghidra_install_dir>/support to PATH.',
+        ].join(' '),
+      );
+    }
+
+    // Incremental analysis: return cached result if binary unchanged
+    if (!options?.forceRefresh) {
+      const cached = this.getCachedResult(binaryPath, fileBuffer);
+      if (cached) {
+        logger.info(`[binary-instrument] Returning cached Ghidra analysis for ${binaryPath}`);
+        return { ...cached, strings, imports, exports };
+      }
     }
 
     const timeoutMs =
@@ -61,12 +86,17 @@ export class GhidraAnalyzer {
       await writeFile(scriptPath, this.buildDefaultScript(), 'utf8');
       const output = await this.headlessAnalyze(scriptPath, binaryPath, timeoutMs);
       const functions = this.parseDecompiledOutput(output);
-      return {
+      const result: GhidraAnalysisResult = {
         functions,
         imports,
         exports,
         strings,
       };
+
+      // Cache the result for incremental analysis
+      this.cacheResult(binaryPath, fileBuffer, result);
+
+      return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.warn('[binary-instrument] Ghidra analyze fallback', { binaryPath, message });
@@ -76,6 +106,65 @@ export class GhidraAnalyzer {
         exports,
         strings,
       };
+    } finally {
+      await rm(scriptDirectory, { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * Batch-analyze multiple binaries in sequence.
+   * Returns a map of binaryPath → GhidraAnalysisResult.
+   * Failed analyses get an empty result (not an exception).
+   */
+  async analyzeBatch(
+    binaryPaths: string[],
+    options?: { timeout?: number; forceRefresh?: boolean },
+  ): Promise<Map<string, GhidraAnalysisResult>> {
+    const results = new Map<string, GhidraAnalysisResult>();
+    for (const path of binaryPaths) {
+      try {
+        const result = await this.analyze(path, options);
+        results.set(path, result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn(`[binary-instrument] Batch analysis failed for ${path}`, { message });
+        results.set(path, { functions: [], imports: [], exports: [], strings: [] });
+      }
+    }
+    return results;
+  }
+
+  /**
+   * Run a custom Ghidra Python script against a binary.
+   * The script receives no arguments but can use `currentProgram` and `monitor`.
+   * Returns raw stdout+stderr from Ghidra.
+   */
+  async runCustomScript(
+    binaryPath: string,
+    scriptContent: string,
+    options?: { timeout?: number },
+  ): Promise<string> {
+    const availability = await this.getAvailability();
+    if (!availability.available) {
+      throw new PrerequisiteError(
+        [
+          `Ghidra analyzeHeadless is not available: ${availability.reason || 'not found on PATH'}`,
+          'Install Ghidra and add analyzeHeadless to your PATH.',
+        ].join(' '),
+      );
+    }
+
+    await access(binaryPath);
+    const scriptDirectory = await mkdtemp(join(tmpdir(), 'jshook-ghidra-custom-'));
+    const scriptPath = join(scriptDirectory, 'custom_script.py');
+
+    try {
+      await writeFile(scriptPath, scriptContent, 'utf8');
+      return await this.headlessAnalyze(
+        scriptPath,
+        binaryPath,
+        options?.timeout ?? GHIDRA_TIMEOUT_MS,
+      );
     } finally {
       await rm(scriptDirectory, { recursive: true, force: true });
     }
@@ -247,6 +336,55 @@ export class GhidraAnalyzer {
   private normalizeHex(value: string): string {
     return value.startsWith('0x') ? value : `0x${value}`;
   }
+
+  // ─── Incremental Analysis Cache ─────────────────────────────────
+
+  private getCachedResult(binaryPath: string, fileBuffer: Buffer): GhidraAnalysisResult | null {
+    const cached = this.analysisCache.get(binaryPath);
+    if (!cached) return null;
+
+    const now = Date.now();
+    if (now - cached.analyzedAt > GhidraAnalyzer.CACHE_TTL_MS) {
+      this.analysisCache.delete(binaryPath);
+      return null;
+    }
+
+    const currentHash = this.computeHash(fileBuffer);
+    if (currentHash !== cached.hash) {
+      this.analysisCache.delete(binaryPath);
+      return null;
+    }
+
+    return { ...cached.result };
+  }
+
+  private cacheResult(binaryPath: string, fileBuffer: Buffer, result: GhidraAnalysisResult): void {
+    this.analysisCache.set(binaryPath, {
+      hash: this.computeHash(fileBuffer),
+      fileSize: fileBuffer.length,
+      analyzedAt: Date.now(),
+      result,
+    });
+
+    // Evict oldest entries if cache grows too large
+    if (this.analysisCache.size > 20) {
+      let oldest = '';
+      let oldestTime = Infinity;
+      for (const [path, entry] of this.analysisCache.entries()) {
+        if (entry.analyzedAt < oldestTime) {
+          oldestTime = entry.analyzedAt;
+          oldest = path;
+        }
+      }
+      if (oldest) this.analysisCache.delete(oldest);
+    }
+  }
+
+  private computeHash(buffer: Buffer): string {
+    return createHash('sha256').update(buffer).digest('hex').substring(0, 32);
+  }
+
+  // ─── Command Execution ──────────────────────────────────────────
 
   private execFileUtf8(file: string, args: string[], timeoutMs: number): Promise<CommandResult> {
     return new Promise((resolve, reject) => {

@@ -47,22 +47,29 @@ export class AnalysisHandlers {
     const timeout = readOptionalNumber(args, 'timeout');
     const ghidra = this.getGhidraAnalyzer();
     const availability = await ghidra.getAvailability();
-    const analysis = await ghidra.analyze(
-      binaryPath,
-      timeout !== undefined ? { timeout } : undefined,
-    );
 
+    // Check availability BEFORE calling analyze() — avoids PrerequisiteError
+    // escaping to the MCP transport layer where it becomes an opaque "no output".
     if (!availability.available) {
+      const binaryBuffer = await readFile(binaryPath).catch(() => Buffer.alloc(0));
+      const strings = this.extractPrintableStringsStatic(binaryBuffer);
       return {
         available: false,
         capability: 'ghidra_headless',
         fix: 'Install Ghidra and ensure analyzeHeadless is on PATH.',
         binaryPath,
         reason: availability.reason ?? 'Ghidra analyzeHeadless is not available',
-        analysis,
+        functions: [] as string[],
+        imports: [] as string[],
+        exports: [] as string[],
+        strings,
       };
     }
 
+    const analysis = await ghidra.analyze(
+      binaryPath,
+      timeout !== undefined ? { timeout } : undefined,
+    );
     return { available: true, binaryPath, analysis };
   }
 
@@ -866,5 +873,25 @@ export class AnalysisHandlers {
       }
     }
     return source.slice(matchStart, index + 1);
+  }
+
+  /**
+   * Lightweight printable-string extraction used when Ghidra is unavailable.
+   * Duplicated from GhidraAnalyzer to avoid coupling the handler to the analyzer
+   * when we explicitly skip creating one.
+   */
+  private extractPrintableStringsStatic(buffer: Buffer): string[] {
+    const results: string[] = [];
+    let current = '';
+    for (const byte of buffer.values()) {
+      if (byte >= 0x20 && byte <= 0x7e) {
+        current += String.fromCharCode(byte);
+        continue;
+      }
+      if (current.length >= 4) results.push(current);
+      current = '';
+    }
+    if (current.length >= 4) results.push(current);
+    return Array.from(new Set(results)).slice(0, 500);
   }
 }
