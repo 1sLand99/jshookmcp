@@ -5,6 +5,19 @@ import {
   DETAILED_DATA_MAX_TTL_MS,
   DETAILED_DATA_SMART_THRESHOLD_BYTES,
 } from '@src/constants';
+import { readFileSync } from 'node:fs';
+import { promises as fs } from 'node:fs';
+import { join } from 'node:path';
+import { getArtifactDir } from '@utils/artifacts';
+import { gzip, gunzipSync } from 'node:zlib';
+import { promisify } from 'node:util';
+
+const gzipAsync = promisify(gzip);
+
+/** Whether to compress persisted entries with gzip (saves ~70-90% disk). */
+const ENABLE_GZIP = true;
+/** Compress entries larger than this many bytes. */
+const GZIP_THRESHOLD_BYTES = 1024;
 
 export interface DataSummary {
   type: string;
@@ -33,16 +46,46 @@ interface CacheEntry {
   lastAccessedAt: number;
   accessCount: number;
   size: number;
+  persistPath?: string; // Disk path for persisted entries
+  compressed?: boolean; // Whether the persisted file is gzip-compressed
+}
+
+interface PersistedMetadata {
+  detailId: string;
+  expiresAt: number;
+  createdAt: number;
+  size: number;
+  compressed?: boolean;
+}
+
+/** Monitoring counters emitted via getStats(). */
+interface PersistenceMetrics {
+  diskWriteCount: number;
+  diskWriteFailCount: number;
+  diskReadCount: number;
+  diskReadFailCount: number;
+  diskReadLazyCount: number;
+  gzipCompressCount: number;
+  gzipDecompressCount: number;
+  evictedBySizeCount: number;
+  evictedByLRUCount: number;
+  totalBytesWritten: number;
+  totalBytesRead: number;
 }
 
 export class DetailedDataManager {
   private static instance: DetailedDataManager | undefined;
   private cache = new Map<string, CacheEntry>();
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
+  private persistDir: string;
+  private metadataPath: string;
+  private persistenceEnabled = true;
 
   private readonly DEFAULT_TTL = DETAILED_DATA_DEFAULT_TTL_MS;
   private readonly MAX_TTL = DETAILED_DATA_MAX_TTL_MS;
   private readonly MAX_CACHE_SIZE = 100;
+  /** Soft limit on total in-memory data (bytes). Triggers LRU eviction when exceeded. */
+  private readonly MAX_TOTAL_MEMORY_BYTES = 50 * 1024 * 1024; // 50 MB
 
   private readonly AUTO_EXTEND_ON_ACCESS = true;
   private readonly EXTEND_DURATION = 15 * 60 * 1000;
@@ -50,11 +93,29 @@ export class DetailedDataManager {
   /** Memo cache to avoid re-serializing the same object within a single call chain */
   private serializationMemo = new WeakMap<object, { json: string; size: number }>();
 
+  /** Monitoring metrics for observability. */
+  private metrics: PersistenceMetrics = {
+    diskWriteCount: 0,
+    diskWriteFailCount: 0,
+    diskReadCount: 0,
+    diskReadFailCount: 0,
+    diskReadLazyCount: 0,
+    gzipCompressCount: 0,
+    gzipDecompressCount: 0,
+    evictedBySizeCount: 0,
+    evictedByLRUCount: 0,
+    totalBytesWritten: 0,
+    totalBytesRead: 0,
+  };
+
   constructor() {
+    this.persistDir = join(getArtifactDir('tmp'), 'detailed-data');
+    this.metadataPath = join(this.persistDir, '.metadata.jsonl');
     this.cleanupInterval = setInterval(() => this.cleanup(), 5 * 60 * 1000);
     if (typeof this.cleanupInterval === 'object' && 'unref' in this.cleanupInterval) {
       this.cleanupInterval.unref();
     }
+    void this.init();
   }
 
   /** @deprecated Use constructor injection. Kept for backward compatibility. */
@@ -74,6 +135,90 @@ export class DetailedDataManager {
     // Reset singleton so next getInstance() creates a fresh instance with interval
     DetailedDataManager.instance = undefined;
     logger.info('DetailedDataManager shut down');
+  }
+
+  private async init(): Promise<void> {
+    try {
+      await fs.mkdir(this.persistDir, { recursive: true });
+      await this.loadPersistedEntries();
+      await this.cleanupExpired();
+    } catch (error) {
+      logger.warn('Failed to initialize persistence, falling back to memory-only', error);
+      this.persistenceEnabled = false;
+    }
+  }
+
+  private async loadPersistedEntries(): Promise<void> {
+    try {
+      const content = await fs.readFile(this.metadataPath, 'utf-8');
+      const lines = content.trim().split('\n').filter(Boolean);
+      const now = Date.now();
+
+      for (const line of lines) {
+        const meta: PersistedMetadata = JSON.parse(line);
+        if (meta.expiresAt > now) {
+          this.cache.set(meta.detailId, {
+            data: null, // Lazy load on retrieve
+            expiresAt: meta.expiresAt,
+            createdAt: meta.createdAt,
+            lastAccessedAt: now,
+            accessCount: 0,
+            size: meta.size,
+            persistPath: join(
+              this.persistDir,
+              `${meta.detailId}${meta.compressed ? '.gz' : '.json'}`,
+            ),
+            compressed: meta.compressed,
+          });
+        }
+      }
+      logger.info(`Loaded ${this.cache.size} persisted detail entries`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        logger.warn('Failed to load persisted metadata', error);
+      }
+    }
+  }
+
+  private async cleanupExpired(): Promise<void> {
+    if (!this.persistenceEnabled) return;
+
+    const now = Date.now();
+    const expired: string[] = [];
+
+    for (const [detailId, entry] of this.cache.entries()) {
+      if (entry.expiresAt <= now) {
+        expired.push(detailId);
+        if (entry.persistPath) {
+          await fs.unlink(entry.persistPath).catch(() => {});
+        }
+      }
+    }
+
+    if (expired.length > 0) {
+      expired.forEach((id) => this.cache.delete(id));
+      await this.rebuildMetadata();
+      logger.info(`Cleaned up ${expired.length} expired detail entries`);
+    }
+  }
+
+  private async rebuildMetadata(): Promise<void> {
+    if (!this.persistenceEnabled) return;
+
+    const lines: string[] = [];
+    for (const [detailId, entry] of this.cache.entries()) {
+      if (entry.persistPath) {
+        const meta: PersistedMetadata = {
+          detailId,
+          expiresAt: entry.expiresAt,
+          createdAt: entry.createdAt,
+          size: entry.size,
+        };
+        lines.push(JSON.stringify(meta));
+      }
+    }
+
+    await fs.writeFile(this.metadataPath, lines.join('\n') + '\n').catch(() => {});
   }
 
   /**
@@ -169,6 +314,11 @@ export class DetailedDataManager {
     const ttl = customTTL || this.DEFAULT_TTL;
     const expiresAt = now + ttl;
 
+    const shouldCompress = ENABLE_GZIP && effectiveSize > GZIP_THRESHOLD_BYTES;
+    const persistPath = this.persistenceEnabled
+      ? join(this.persistDir, `${detailId}${shouldCompress ? '.gz' : '.json'}`)
+      : undefined;
+
     const entry: CacheEntry = {
       data: sanitized,
       expiresAt,
@@ -176,14 +326,45 @@ export class DetailedDataManager {
       lastAccessedAt: now,
       accessCount: 0,
       size: effectiveSize,
+      persistPath,
+      compressed: shouldCompress,
     };
 
     this.cache.set(detailId, entry);
+
+    // Persist to disk asynchronously (with optional gzip compression)
+    if (persistPath) {
+      void this.persistToDisk(persistPath, sanitized, shouldCompress)
+        .then((bytesWritten) => {
+          this.metrics.diskWriteCount++;
+          this.metrics.totalBytesWritten += bytesWritten;
+          return this.appendMetadata({
+            detailId,
+            expiresAt,
+            createdAt: now,
+            size: effectiveSize,
+            compressed: shouldCompress,
+          });
+        })
+        .catch((err) => {
+          this.metrics.diskWriteFailCount++;
+          logger.warn(`Failed to persist ${detailId}`, err);
+        });
+    }
+
     logger.debug(
       `Stored detailed data: ${detailId}, size: ${(effectiveSize / 1024).toFixed(1)}KB, expires in ${ttl / 1000}s`,
     );
 
     return detailId;
+  }
+
+  private async appendMetadata(meta: PersistedMetadata): Promise<void> {
+    try {
+      await fs.appendFile(this.metadataPath, JSON.stringify(meta) + '\n');
+    } catch (error) {
+      logger.warn('Failed to append metadata', error);
+    }
   }
 
   retrieve<T = unknown>(detailId: string, path?: string): T {
@@ -197,7 +378,32 @@ export class DetailedDataManager {
 
     if (now > cached.expiresAt) {
       this.cache.delete(detailId);
+      if (cached.persistPath) {
+        void fs.unlink(cached.persistPath).catch(() => {});
+      }
       throw new Error(`DetailId expired: ${detailId}`);
+    }
+
+    // Lazy load from disk if data is null
+    if (cached.data === null && cached.persistPath) {
+      try {
+        const raw = readFileSync(cached.persistPath);
+        if (cached.compressed) {
+          const decompressed = gunzipSync(raw);
+          cached.data = JSON.parse(decompressed.toString('utf-8'));
+          this.metrics.gzipDecompressCount++;
+          this.metrics.totalBytesRead += decompressed.length;
+        } else {
+          cached.data = JSON.parse(raw.toString('utf-8'));
+          this.metrics.totalBytesRead += raw.length;
+        }
+        this.metrics.diskReadCount++;
+        this.metrics.diskReadLazyCount++;
+      } catch (error) {
+        this.metrics.diskReadFailCount++;
+        logger.warn(`Failed to load persisted data for ${detailId}`, error);
+        throw new Error(`DetailId not found or expired: ${detailId}`, { cause: error });
+      }
     }
 
     cached.lastAccessedAt = now;
@@ -283,6 +489,14 @@ export class DetailedDataManager {
   private evictLRU(): void {
     if (this.cache.size === 0) return;
 
+    // Size-aware eviction: if total memory exceeds soft limit, evict largest LRU entries
+    const totalMemory = this.computeTotalMemory();
+    if (totalMemory > this.MAX_TOTAL_MEMORY_BYTES) {
+      this.evictBySize(totalMemory - this.MAX_TOTAL_MEMORY_BYTES);
+      return;
+    }
+
+    // Standard LRU eviction by count
     let oldestId: string | null = null;
     let oldestAccessTime = Infinity;
 
@@ -296,11 +510,53 @@ export class DetailedDataManager {
     if (oldestId) {
       const entry = this.cache.get(oldestId)!;
       this.cache.delete(oldestId);
+      this.metrics.evictedByLRUCount++;
       logger.info(
         `Evicted LRU entry: ${oldestId}, last accessed: ${new Date(entry.lastAccessedAt).toISOString()}, access ` +
           `count: ${entry.accessCount}`,
       );
     }
+  }
+
+  /** Evict entries (starting with least-recently-used) until `bytesToFree` bytes are freed. */
+  private evictBySize(bytesToFree: number): void {
+    const sorted = Array.from(this.cache.entries()).toSorted(
+      (a, b) => a[1].lastAccessedAt - b[1].lastAccessedAt,
+    );
+
+    let freed = 0;
+    for (const [id, entry] of sorted) {
+      if (freed >= bytesToFree) break;
+      this.cache.delete(id);
+      freed += entry.size;
+      this.metrics.evictedBySizeCount++;
+      logger.info(`Evicted oversized entry: ${id}, freed: ${(entry.size / 1024).toFixed(1)}KB`);
+    }
+  }
+
+  /** Compute total in-memory data size across all cache entries. */
+  private computeTotalMemory(): number {
+    let total = 0;
+    for (const entry of this.cache.values()) {
+      total += entry.size;
+    }
+    return total;
+  }
+
+  /**
+   * Persist data to disk, optionally gzip-compressed.
+   * Returns the number of bytes written.
+   */
+  private async persistToDisk(filePath: string, data: unknown, compress: boolean): Promise<number> {
+    const json = JSON.stringify(data);
+    if (compress) {
+      const compressed = (await gzipAsync(Buffer.from(json, 'utf-8'))) as Buffer;
+      await fs.writeFile(filePath, compressed);
+      this.metrics.gzipCompressCount++;
+      return compressed.length;
+    }
+    await fs.writeFile(filePath, json, 'utf-8');
+    return json.length;
   }
 
   extend(detailId: string, additionalTime?: number): void {
@@ -327,22 +583,37 @@ export class DetailedDataManager {
   getStats() {
     let totalSize = 0;
     let totalAccessCount = 0;
+    let persistedCount = 0;
+    let compressedCount = 0;
     const entries = Array.from(this.cache.values());
 
     for (const entry of entries) {
       totalSize += entry.size;
       totalAccessCount += entry.accessCount;
+      if (entry.persistPath) persistedCount++;
+      if (entry.compressed) compressedCount++;
     }
 
     return {
       cacheSize: this.cache.size,
       maxCacheSize: this.MAX_CACHE_SIZE,
+      totalMemoryMB: (totalSize / (1024 * 1024)).toFixed(2),
+      maxMemoryMB: (this.MAX_TOTAL_MEMORY_BYTES / (1024 * 1024)).toFixed(0),
+      memoryUtilization: ((totalSize / this.MAX_TOTAL_MEMORY_BYTES) * 100).toFixed(1) + '%',
       defaultTTLSeconds: this.DEFAULT_TTL / 1000,
       maxTTLSeconds: this.MAX_TTL / 1000,
       totalSizeKB: (totalSize / 1024).toFixed(1),
       avgAccessCount: entries.length > 0 ? (totalAccessCount / entries.length).toFixed(1) : '0',
       autoExtendEnabled: this.AUTO_EXTEND_ON_ACCESS,
       extendDurationSeconds: this.EXTEND_DURATION / 1000,
+      persistence: {
+        enabled: this.persistenceEnabled,
+        persistedCount,
+        compressedCount,
+        gzipEnabled: ENABLE_GZIP,
+        gzipThresholdKB: (GZIP_THRESHOLD_BYTES / 1024).toFixed(1),
+      },
+      metrics: { ...this.metrics },
     };
   }
 
