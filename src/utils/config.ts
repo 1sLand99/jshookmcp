@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { config as dotenvConfig } from 'dotenv';
 import { z } from 'zod';
 import { DEFAULT_SEARCH_CONFIG } from '@src/config/search-defaults';
+import { getPackageVersion } from './packageVersion';
 import type {
   Config,
   SearchCjkQueryAliasConfig,
@@ -24,7 +25,7 @@ const CONFIG_DEFAULTS = {
   },
   mcp: {
     name: 'jshookmcp',
-    version: '0.1.8',
+    version: getPackageVersion(import.meta.url),
   },
   cache: {
     enabled: false,
