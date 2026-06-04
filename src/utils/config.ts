@@ -80,8 +80,8 @@ function loadEnvIfNeeded(): void {
     if (errorCode !== 'ENOENT') {
       console.error(`[Config] Warning: Failed to load .env from "${envPath}"`);
       console.error(`[Config] Error: ${result.error.message}`);
+      console.error('[Config] Will use environment variables or defaults');
     }
-    console.error('[Config] Will use environment variables or defaults');
   } else if (process.env.DEBUG === 'true') {
     console.info(`[Config] .env file loaded from "${envPath}" (debug mode)`);
   }
