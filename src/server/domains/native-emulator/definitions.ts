@@ -1,15 +1,15 @@
 /**
  * native-emulator tool definitions (nemu_*).
  *
- * In-process, dependency-free ARM64 emulation of Android `.so` libraries:
- * load a shared object, register a mock "Java world", and invoke exported or
- * Java_* JNI functions to recover signing/crypto algorithms — without a device,
- * a JVM, or a Frida bridge. Sessions are isolated and explicitly managed
+ * In-process, dependency-free ARM64 emulation of native shared libraries:
+ * load a shared object, register a declarative managed-world callback surface,
+ * and invoke exported or JNI-style functions to recover native algorithms —
+ * without a device, managed VM, or external instrumentation bridge. Sessions are isolated and explicitly managed
  * (create → … → destroy), with idle auto-expiry as a leak backstop.
  *
  * Binary inputs are passed by filesystem path (soPath / apkPath), matching the
  * project-wide convention used by binary-instrument; byte payloads to/from
- * guest memory (jbyteArray) cross the tool boundary as base64.
+ * JNI byte arrays and raw guest memory cross the tool boundary as base64.
  */
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { tool } from '@server/registry/tool-builder';
@@ -18,7 +18,7 @@ export const nativeEmulatorTools: Tool[] = [
   tool('nemu_capabilities', (t) =>
     t
       .desc(
-        'Report native-emulator backend availability and supported features (self-built ARM64 interpreter, no external dependencies). Emulates the integer AArch64 ISA + SIMD/FP load-store + AES/SHA/PMULL crypto-extension (bit-exact vs FIPS-197/180-4/180-1) + scalar IEEE-754 floating-point + NEON integer-lane SIMD (three-same arithmetic/logical/compare/min-max, misc, DUP, MOVI, shift-by-immediate, across-lanes, permute, EXT, TBL) + ELF relocations + DT_INIT_ARRAY constructor execution + auto-wired bionic libc + JNI; long/widening and saturating NEON variants are not yet supported (declared in the response).',
+        'Report native-emulator backend availability, supported features, and explicit ISA/SIMD gaps. Unsupported opcodes fail loudly instead of being reported as emulated.',
       )
       .query(),
   ),
@@ -49,6 +49,15 @@ export const nativeEmulatorTools: Tool[] = [
       .string('sessionId', 'Session id returned by nemu_create_session')
       .string('soPath', 'Filesystem path to the .so library')
       .required('sessionId', 'soPath'),
+  ),
+  tool('nemu_inspect_imports', (t) =>
+    t
+      .desc(
+        'Inspect an AArch64 ELF .so before emulation and list imported symbols from dynamic relocations, including GOT offsets and whether each import is backed by the built-in bionic stubs. Use this to diagnose PLT/GOT NULL indirect-call failures without writing ad-hoc readelf/Capstone scripts.',
+      )
+      .string('soPath', 'Filesystem path to the .so library')
+      .required('soPath')
+      .query(),
   ),
   tool('nemu_extract_apk_libs', (t) =>
     t
@@ -160,6 +169,15 @@ export const nativeEmulatorTools: Tool[] = [
         'Register names to snapshot each step, e.g. ["x0","x1","sp"] (default: none)',
       )
       .number('maxSteps', 'Maximum trace events to return (default: 1000)', { default: 1000 })
+      .boolean(
+        'persistArtifact',
+        'When true, write the full trace JSON to artifacts/traces and return traceArtifact metadata',
+        { default: false },
+      )
+      .number(
+        'traceInlineLimit',
+        'Maximum number of trace rows to include inline in the MCP response; the artifact still contains the full captured trace',
+      )
       .required('sessionId', 'symbol'),
   ),
   tool('nemu_disassemble', (t) =>
@@ -183,5 +201,41 @@ export const nativeEmulatorTools: Tool[] = [
       })
       .required('architecture', 'opcode')
       .query(),
+  ),
+  tool('nemu_alloc_memory', (t) =>
+    t
+      .desc(
+        'Allocate raw guest memory (NOT a JNI handle — a real char* address). Optionally fill with initial data via fillBytes (base64). Returns the guest address to pass as an integer arg to call_symbol. Use at the start of a session to stage encrypted blobs for a native decrypt/signing routine, then read the output with nemu_read_memory.',
+      )
+      .string('sessionId', 'Session id to allocate in')
+      .number('size', 'Number of bytes to allocate (rounded up to 4 KB pages)')
+      .string('fillBytes', 'Optional base64 data to write at the start of the region')
+      .number('maxBytes', 'Optional per-call cap, bounded by server configuration.')
+      .required('sessionId', 'size'),
+  ),
+  tool('nemu_read_memory', (t) =>
+    t
+      .desc(
+        'Read raw bytes from guest memory at a given address. Returns a bounded preview by default; set includeDataBase64=true for full base64 within the configured cap.',
+      )
+      .string('sessionId', 'Session id to read from')
+      .number('address', 'Guest address to read from')
+      .number('length', 'Number of bytes to read')
+      .number('previewBytes', 'Number of bytes to include in previewBase64.')
+      .number('maxBytes', 'Optional per-call cap, bounded by server configuration.')
+      .boolean('includeDataBase64', 'Include full base64 bytes when true.', { default: false })
+      .required('sessionId', 'address', 'length')
+      .query(),
+  ),
+  tool('nemu_write_memory', (t) =>
+    t
+      .desc(
+        'Write raw bytes into guest memory at a given address via base64 data. Use to update an input buffer between call_symbol invocations without re-allocating, or to patch code/data in place.',
+      )
+      .string('sessionId', 'Session id to write to')
+      .number('address', 'Guest address to write to')
+      .string('dataBase64', 'Data to write as a base64 string')
+      .number('maxBytes', 'Optional per-call cap, bounded by server configuration.')
+      .required('sessionId', 'address', 'dataBase64'),
   ),
 ];

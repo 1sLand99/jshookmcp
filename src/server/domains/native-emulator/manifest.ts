@@ -17,6 +17,7 @@ const registrations = defineMethodRegistrations<H, (typeof nativeEmulatorTools)[
     { tool: 'nemu_destroy_session', method: 'handleDestroySession' },
     { tool: 'nemu_list_sessions', method: 'handleListSessions' },
     { tool: 'nemu_load_library', method: 'handleLoadLibrary' },
+    { tool: 'nemu_inspect_imports', method: 'handleInspectImports' },
     { tool: 'nemu_extract_apk_libs', method: 'handleExtractApkLibs' },
     { tool: 'nemu_load_apk_library', method: 'handleLoadApkLibrary' },
     { tool: 'nemu_list_symbols', method: 'handleListSymbols' },
@@ -28,6 +29,9 @@ const registrations = defineMethodRegistrations<H, (typeof nativeEmulatorTools)[
     { tool: 'nemu_read_byte_array', method: 'handleReadByteArray' },
     { tool: 'nemu_trace', method: 'handleTrace' },
     { tool: 'nemu_disassemble', method: 'handleDisassemble' },
+    { tool: 'nemu_alloc_memory', method: 'handleAllocMemory' },
+    { tool: 'nemu_read_memory', method: 'handleReadMemory' },
+    { tool: 'nemu_write_memory', method: 'handleWriteMemory' },
   ],
 });
 
@@ -62,6 +66,7 @@ const manifest = {
       'nemu_capabilities',
       'nemu_create_session',
       'nemu_extract_apk_libs',
+      'nemu_inspect_imports',
       'nemu_load_library',
       'nemu_list_symbols',
       'nemu_setup_java_mock',
@@ -69,7 +74,7 @@ const manifest = {
       'nemu_trace',
       'nemu_disassemble',
     ],
-    hint: 'In-process ARM64 emulation: create a session → load a .so (or extract one from an APK) → register mock Java methods → call exported / Java_* JNI functions → optionally trace instructions. Destroy the session when done.',
+    hint: 'In-process ARM64 emulation: inspect imports → create a session → load a .so (or extract one from an APK) → alloc_memory → call_symbol/call_jni_export → read_memory, or mock Java → call JNI functions → trace. Destroy the session when done.',
   },
   prerequisites: {
     nemu_load_library: [

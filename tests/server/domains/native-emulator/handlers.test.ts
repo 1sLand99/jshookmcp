@@ -7,7 +7,7 @@
  * written to a temp file because handlers read libraries by filesystem path.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -116,13 +116,18 @@ function payload(res: {
 
 let tmpDir: string;
 let soPath: string;
+let nullCallSoPath: string;
 // add_two: add x0, x0, x1 ; ret
 const ADD_TWO = [0x00, 0x00, 0x01, 0x8b, 0xc0, 0x03, 0x5f, 0xd6];
+// call_null: movz x8,#0 ; blr x8
+const CALL_NULL = [0x08, 0x00, 0x80, 0xd2, 0x00, 0x01, 0x3f, 0xd6];
 
 beforeAll(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), 'nemu-handlers-'));
   soPath = join(tmpDir, 'libadd.so');
+  nullCallSoPath = join(tmpDir, 'lib-null-call.so');
   await writeFile(soPath, buildSo(ADD_TWO, [{ name: 'add_two', codeOffset: 0 }]));
+  await writeFile(nullCallSoPath, buildSo(CALL_NULL, [{ name: 'call_null', codeOffset: 0 }]));
 });
 
 afterAll(async () => {
@@ -171,12 +176,14 @@ describe('NativeEmulatorHandlers — happy path', () => {
     const features = data.features as string[];
     // Phase 2-5 capabilities are surfaced for an AI to discover.
     expect(features).toContain('elf-relocations');
+    expect(features).toContain('elf-import-inspection');
     // DT_INIT_ARRAY constructors run after relocation (a real .so with C++ static
     // constructors needs this to initialize its globals before its API is called).
     expect(features).toContain('init-array-constructors');
     expect(features).toContain('auto-wire-bionic-libc');
-    // Bionic stdio VFS lets anti-tamper file probes (RootBeer exists()) be evaluated.
+    // Bionic stdio VFS lets file-existence probes be evaluated.
     expect(features).toContain('bionic-stdio-vfs');
+    expect(features).toContain('raw-guest-memory');
     // JNI object-array iteration (GetArrayLength on String[]) drives native loops.
     expect(features).toContain('jni-object-array-iteration');
     expect(features).toContain('java-mock-field');
@@ -199,7 +206,23 @@ describe('NativeEmulatorHandlers — happy path', () => {
     // rather than masquerading as a clean return (the failure mode that hid STUR).
     expect(features).toContain('null-indirect-call-detection');
     expect(data.isa).toBe('aarch64-integer+neon+crypto+fp');
-    // The remaining gap (LD2/3/4 + long/widening + saturating NEON) is declared, not hidden.
+    const simd = data.simd as { supported: string[]; unsupported: string[] };
+    expect(simd.supported).toEqual(
+      expect.arrayContaining(['contiguous-ld1-st1', 'aes-sha-pmull', 'scalar-fp']),
+    );
+    // The remaining gaps are declared, not hidden.
+    expect(simd.unsupported).toEqual(
+      expect.arrayContaining([
+        'ld2-ld3-ld4-deinterleaving',
+        'long-widening-neon',
+        'saturating-neon',
+        'bit-bif',
+        'integer-pmul',
+        'ins',
+        'vector-fmov-immediate',
+        'fp16',
+      ]),
+    );
     expect(String(data.note)).toMatch(/NEON/);
     expect(String(data.note)).toMatch(/saturating|widening/);
     // The NULL indirect-call guard is advertised in the note for AI/agent callers.
@@ -218,6 +241,8 @@ describe('NativeEmulatorHandlers — happy path', () => {
     const loaded = payload(await handlers.handleLoadLibrary({ sessionId, soPath }));
     expect(loaded.success).toBe(true);
     expect(loaded.symbols).toEqual(['add_two']);
+    expect(loaded.unresolvedImports).toEqual([]);
+    expect(loaded.constructorFaults).toEqual([]);
     const syms = payload(await handlers.handleListSymbols({ sessionId }));
     expect(syms.symbols).toEqual(['add_two']);
   });
@@ -240,6 +265,82 @@ describe('NativeEmulatorHandlers — happy path', () => {
     const read = payload(await handlers.handleReadByteArray({ sessionId, handle }));
     expect(read.dataBase64).toBe(data);
     expect(read.length).toBe(4);
+  });
+
+  it('allocates, reads, and writes raw guest memory through MCP handlers', async () => {
+    const sessionId = await freshSession();
+    const initial = Buffer.from([0x41, 0x42, 0x43]).toString('base64');
+    const allocated = payload(
+      await handlers.handleAllocMemory({ sessionId, size: 3, fillBytes: initial }),
+    );
+    const address = allocated.address as number;
+    expect(address).toBeGreaterThan(0);
+
+    const firstRead = payload(
+      await handlers.handleReadMemory({ sessionId, address, length: 3, includeDataBase64: true }),
+    );
+    expect(firstRead.dataBase64).toBe(initial);
+
+    const patch = Buffer.from([0x78, 0x79]).toString('base64');
+    const written = payload(
+      await handlers.handleWriteMemory({ sessionId, address: address + 1, dataBase64: patch }),
+    );
+    expect(written.bytesWritten).toBe(2);
+
+    const secondRead = payload(
+      await handlers.handleReadMemory({ sessionId, address, length: 3, includeDataBase64: true }),
+    );
+    expect(secondRead.dataBase64).toBe(Buffer.from([0x41, 0x78, 0x79]).toString('base64'));
+  });
+
+  it('bounds raw guest memory allocation, reads, and writes', async () => {
+    const sessionId = await freshSession();
+    const tooLargeAlloc = payload(
+      await handlers.handleAllocMemory({ sessionId, size: 8, maxBytes: 4 }),
+    );
+    expect(tooLargeAlloc.success).toBe(false);
+    expect(tooLargeAlloc.error).toContain('exceeds');
+
+    const allocated = payload(await handlers.handleAllocMemory({ sessionId, size: 4 }));
+    const address = allocated.address as number;
+    const tooLargeRead = payload(
+      await handlers.handleReadMemory({ sessionId, address, length: 4, maxBytes: 2 }),
+    );
+    expect(tooLargeRead.success).toBe(false);
+    expect(tooLargeRead.error).toContain('exceeds');
+
+    const tooLargeWrite = payload(
+      await handlers.handleWriteMemory({
+        sessionId,
+        address,
+        dataBase64: Buffer.from([1, 2, 3]).toString('base64'),
+        maxBytes: 2,
+      }),
+    );
+    expect(tooLargeWrite.success).toBe(false);
+    expect(tooLargeWrite.error).toContain('exceeds');
+  });
+
+  it('omits full raw memory base64 unless explicitly requested', async () => {
+    const sessionId = await freshSession();
+    const allocated = payload(
+      await handlers.handleAllocMemory({
+        sessionId,
+        size: 3,
+        fillBytes: Buffer.from([0x41, 0x42, 0x43]).toString('base64'),
+      }),
+    );
+    const address = allocated.address as number;
+
+    const preview = payload(await handlers.handleReadMemory({ sessionId, address, length: 3 }));
+    expect(preview.dataBase64).toBeUndefined();
+    expect(preview.dataBase64Omitted).toBe(true);
+    expect(preview.previewBase64).toBe(Buffer.from([0x41, 0x42, 0x43]).toString('base64'));
+
+    const full = payload(
+      await handlers.handleReadMemory({ sessionId, address, length: 3, includeDataBase64: true }),
+    );
+    expect(full.dataBase64).toBe(Buffer.from([0x41, 0x42, 0x43]).toString('base64'));
   });
 
   it('registers a declarative Java mock (no code eval)', async () => {
@@ -311,6 +412,38 @@ describe('NativeEmulatorHandlers — happy path', () => {
     expect(Array.isArray(res.trace)).toBe(true);
   });
 
+  it('persists trace artifacts and limits inline trace rows when requested', async () => {
+    const sessionId = await freshSession();
+    await handlers.handleLoadLibrary({ sessionId, soPath });
+    const res = payload(
+      await handlers.handleTrace({
+        sessionId,
+        symbol: 'add_two',
+        args: [5, 6],
+        captureRegisters: ['x0'],
+        persistArtifact: true,
+        traceInlineLimit: 1,
+      }),
+    );
+    expect(res.success).toBe(true);
+    expect(res.result).toBe(11);
+    expect((res.trace as unknown[]).length).toBe(1);
+    expect(res.traceInlineLimit).toBe(1);
+    expect(res.traceArtifact).toEqual(
+      expect.objectContaining({
+        category: 'traces',
+        eventCount: res.steps,
+      }),
+    );
+    const artifact = res.traceArtifact as Record<string, unknown>;
+    const artifactJson = JSON.parse(await readFile(String(artifact.path), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(artifactJson.symbol).toBe('add_two');
+    expect(artifactJson.trace).toEqual(expect.any(Array));
+  });
+
   it('destroys a session', async () => {
     const sessionId = await freshSession();
     const res = payload(await handlers.handleDestroySession({ sessionId }));
@@ -359,6 +492,32 @@ describe('NativeEmulatorHandlers — isolation & errors', () => {
       .sessionId as string;
     const res = payload(await handlers.handleReadByteArray({ sessionId, handle: 0xdeadbeef }));
     expect(res.success).toBe(false);
+  });
+
+  it('returns structured native runtime fault details for NULL indirect calls', async () => {
+    handlers = new NativeEmulatorHandlers(
+      new SessionManager({ emulatorOptions: { syscalls: false } }),
+    );
+    const sessionId = payload(await handlers.handleCreateSession({ installSyscalls: false }))
+      .sessionId as string;
+    await handlers.handleLoadLibrary({ sessionId, soPath: nullCallSoPath });
+
+    const res = payload(await handlers.handleCallSymbol({ sessionId, symbol: 'call_null' }));
+    expect(res.success).toBe(false);
+    expect(res.symbol).toBe('call_null');
+    expect(res.fault).toEqual(
+      expect.objectContaining({
+        kind: 'null-indirect-call',
+        phase: 'call_symbol',
+      }),
+    );
+    expect(String((res.fault as Record<string, unknown>).message)).toMatch(/NULL indirect call/i);
+    expect(res.diagnostics).toEqual(
+      expect.objectContaining({
+        unresolvedImports: [],
+        constructorFaults: [],
+      }),
+    );
   });
 
   it('reports destroyed:false when destroying an unknown session', async () => {

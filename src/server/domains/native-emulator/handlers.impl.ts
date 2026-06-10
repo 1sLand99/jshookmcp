@@ -15,14 +15,12 @@ import { readFile } from 'node:fs/promises';
 
 import { SessionManager, type EmulatorSession } from '@modules/native-emulator/SessionManager';
 import { extractArm64Libs } from '@modules/native-emulator/apk';
-import type { JavaMethodCall } from '@modules/native-emulator/jni';
-import type { TraceEvent } from '@modules/native-emulator/CpuEngine';
-import { handleSafe } from '@server/domains/shared/ResponseBuilder';
+import { inspectElfImports } from '@modules/native-emulator/import-inspector';
+import { handleSafe, R } from '@server/domains/shared/ResponseBuilder';
 import {
   disassembleInstruction,
   normalizeDisasmArchitecture,
   SUPPORTED_DISASSEMBLY_ARCHITECTURES,
-  type OpcodeInput,
 } from '@modules/native-emulator/disasm';
 import {
   argBool,
@@ -34,6 +32,12 @@ import {
   argStringRequired,
 } from '@server/domains/shared/parse-args';
 import type { ToolArgs, ToolResponse } from '@server/types';
+import { getReverseEngineeringConfig } from '@utils/reverseEngineeringConfig';
+import { nativeCallFailure, nativeDiagnostics } from './handler-call';
+import { formatOpcodeInput, parseOpcodeInput, parseProgramCounter } from './handler-disasm';
+import { buildJavaFieldValue, buildJavaMockImpl } from './handler-java';
+import { ensureRawMemorySize, rawMemoryLimit, toUint8 } from './handler-memory';
+import { persistTraceArtifact, traceRow } from './handler-trace';
 
 /** Cap on instruction-trace events returned, regardless of requested maxSteps. */
 const TRACE_HARD_CAP = 100_000;
@@ -56,8 +60,10 @@ export class NativeEmulatorHandlers {
         'elf-relocations',
         'init-array-constructors',
         'pt-dynamic-symbols',
+        'elf-import-inspection',
         'auto-wire-bionic-libc',
         'bionic-stdio-vfs',
+        'raw-guest-memory',
         'android-syscalls',
         'getrandom',
         'system-register-read',
@@ -81,8 +87,35 @@ export class NativeEmulatorHandlers {
         'instruction-trace',
       ],
       isa: 'aarch64-integer+neon+crypto+fp',
+      simd: {
+        supported: [
+          'simd-fp-load-store',
+          'contiguous-ld1-st1',
+          'aes-sha-pmull',
+          'scalar-fp',
+          'neon-three-same',
+          'neon-two-register-misc',
+          'neon-dup',
+          'neon-movi-mvni',
+          'neon-shift-immediate',
+          'neon-reductions',
+          'neon-zip-uzp-trn',
+          'neon-ext',
+          'neon-tbl-tbx',
+        ],
+        unsupported: [
+          'ld2-ld3-ld4-deinterleaving',
+          'long-widening-neon',
+          'saturating-neon',
+          'bit-bif',
+          'integer-pmul',
+          'ins',
+          'vector-fmov-immediate',
+          'fp16',
+        ],
+      },
       activeSessions: this.sessions.count(),
-      note: 'In-process AArch64 interpreter: integer ISA (incl. DMB/DSB/ISB barriers as no-ops) + SIMD/FP load-store incl. contiguous LD1/ST1 of multiple registers + AES/SHA/PMULL crypto-extension (bit-exact vs FIPS-197/180-4/180-1) + scalar IEEE-754 floating-point (FADD/FMUL/FDIV/FSQRT/FCVT/FCMP/FCSEL, float32 via fround) + NEON integer-lane SIMD (three-same ADD/SUB/MUL/logical/compare/min-max, two-register-misc, DUP, MOVI/MVNI, shift-by-immediate, across-lanes reductions, ZIP/UZP/TRN, EXT, TBL/TBX). On load, DT_INIT + DT_INIT_ARRAY constructors run after relocation (like a real linker), so a `.so` with C++ static constructors initializes its globals before its API is called; a constructor that hits a NULL indirect call is tolerated (logged, load continues). A BR/BLR through a register holding 0 (a call/jump via an uninitialised function pointer — a real-hardware SIGSEGV) throws "NULL indirect call" from call_symbol/call_jni_export rather than silently halting as a fake return, so a failed emulation surfaces honestly instead of masquerading as success. Not yet emulated: the de-interleaving LD2/LD3/LD4 structures and the long/widening + saturating NEON variants (e.g. SQADD, SADDL); a `.so` relying on those hits an unsupported opcode (reported with the raw opcode). libapp.so (Flutter Dart AOT) is not executable here.',
+      note: 'In-process AArch64 interpreter: integer ISA (incl. DMB/DSB/ISB barriers as no-ops) + a declared SIMD/FP subset + NEON integer-lane subset including saturating add/sub + crypto extension primitives + scalar IEEE-754 floating-point. SIMD support is reported as supported/unsupported lists; unsupported opcodes fail loudly with the raw opcode instead of being treated as success. On load, DT_INIT + DT_INIT_ARRAY constructors run after relocation; constructor NULL indirect calls are tolerated and logged, while direct call_symbol/call_jni_export NULL indirect calls throw "NULL indirect call". Raw guest memory tools are bounded by configured byte caps and return previews unless full base64 output is explicitly requested. Managed runtime snapshot payloads are outside this emulator boundary.',
     }));
   }
 
@@ -122,11 +155,13 @@ export class NativeEmulatorHandlers {
       const session = this.requireSession(args);
       const soPath = argStringRequired(args, 'soPath');
       const bytes = await readFile(soPath);
-      const { entry } = session.emulator.loadLibrary(toUint8(bytes));
+      const loaded = session.emulator.loadLibrary(toUint8(bytes));
       return {
         sessionId: session.id,
         soPath,
-        entry,
+        entry: loaded.entry,
+        unresolvedImports: loaded.unresolvedImports,
+        constructorFaults: loaded.constructorFaults,
         symbols: session.emulator.engine.exportedSymbolNames(),
       };
     });
@@ -145,6 +180,17 @@ export class NativeEmulatorHandlers {
     });
   }
 
+  handleInspectImports(args: ToolArgs): Promise<ToolResponse> {
+    return handleSafe(async () => {
+      const soPath = argStringRequired(args, 'soPath');
+      const bytes = await readFile(soPath);
+      return {
+        soPath,
+        ...inspectElfImports(toUint8(bytes)),
+      };
+    });
+  }
+
   handleLoadApkLibrary(args: ToolArgs): Promise<ToolResponse> {
     return handleSafe(async () => {
       const session = this.requireSession(args);
@@ -157,12 +203,14 @@ export class NativeEmulatorHandlers {
           `Library "${libName}" not found in ${apkPath} (available: ${libs.map((l) => l.name).join(', ') || 'none'})`,
         );
       }
-      const { entry } = session.emulator.loadLibrary(lib.bytes);
+      const loaded = session.emulator.loadLibrary(lib.bytes);
       return {
         sessionId: session.id,
         apkPath,
         libName,
-        entry,
+        entry: loaded.entry,
+        unresolvedImports: loaded.unresolvedImports,
+        constructorFaults: loaded.constructorFaults,
         symbols: session.emulator.engine.exportedSymbolNames(),
       };
     });
@@ -177,24 +225,42 @@ export class NativeEmulatorHandlers {
   }
 
   handleCallSymbol(args: ToolArgs): Promise<ToolResponse> {
-    return handleSafe(async () => {
-      const session = this.requireSession(args);
-      const symbol = argStringRequired(args, 'symbol');
+    return this.handleNativeCall(args, 'call_symbol', (session, symbol) => {
       const callArgs = argNumberArray(args, 'args');
-      const result = session.emulator.call(symbol, callArgs);
-      return { sessionId: session.id, symbol, result };
+      return session.emulator.call(symbol, callArgs);
     });
   }
 
   handleCallJniExport(args: ToolArgs): Promise<ToolResponse> {
-    return handleSafe(async () => {
-      const session = this.requireSession(args);
-      const symbol = argStringRequired(args, 'symbol');
+    return this.handleNativeCall(args, 'call_jni_export', (session, symbol) => {
       const javaArgs = argNumberArray(args, 'javaArgs');
       const thiz = argNumber(args, 'thiz', 0);
-      const result = session.emulator.callJniExport(symbol, javaArgs, thiz);
-      return { sessionId: session.id, symbol, result };
+      return session.emulator.callJniExport(symbol, javaArgs, thiz);
     });
+  }
+
+  private async handleNativeCall(
+    args: ToolArgs,
+    phase: 'call_symbol' | 'call_jni_export',
+    invoke: (session: EmulatorSession, symbol: string) => number,
+  ): Promise<ToolResponse> {
+    let session: EmulatorSession | undefined;
+    let symbol = '';
+    try {
+      session = this.requireSession(args);
+      symbol = argStringRequired(args, 'symbol');
+      const result = invoke(session, symbol);
+      return R.ok()
+        .merge({
+          sessionId: session.id,
+          symbol,
+          result,
+          diagnostics: nativeDiagnostics(session),
+        })
+        .json();
+    } catch (error) {
+      return nativeCallFailure(error, session, symbol, phase);
+    }
   }
 
   handleSetupJavaMock(args: ToolArgs): Promise<ToolResponse> {
@@ -270,10 +336,12 @@ export class NativeEmulatorHandlers {
       const callArgs = argNumberArray(args, 'args');
       const captureRegisters = argStringArray(args, 'captureRegisters');
       const maxSteps = Math.min(argNumber(args, 'maxSteps', 1000), TRACE_HARD_CAP);
+      const persistArtifact = argBool(args, 'persistArtifact', false);
+      const inlineLimitArg = argNumber(args, 'traceInlineLimit');
 
       const events: Array<Record<string, unknown>> = [];
       let truncated = false;
-      const unsubscribe = session.emulator.engine.addInstructionHook((ev: TraceEvent) => {
+      const unsubscribe = session.emulator.engine.addInstructionHook((ev) => {
         if (events.length >= maxSteps) {
           truncated = true;
           return;
@@ -282,13 +350,22 @@ export class NativeEmulatorHandlers {
       });
       try {
         const result = session.emulator.call(symbol, callArgs);
+        const traceInlineLimit =
+          inlineLimitArg === undefined
+            ? events.length
+            : Math.max(0, Math.min(Math.trunc(inlineLimitArg), events.length));
+        const traceArtifact = persistArtifact
+          ? await persistTraceArtifact(session.id, symbol, result, events, truncated)
+          : undefined;
         return {
           sessionId: session.id,
           symbol,
           result,
           steps: events.length,
           truncated,
-          trace: events,
+          traceInlineLimit,
+          ...(traceArtifact ? { traceArtifact } : {}),
+          trace: events.slice(0, traceInlineLimit),
         };
       } finally {
         unsubscribe();
@@ -317,138 +394,79 @@ export class NativeEmulatorHandlers {
     this.sessions.dispose();
   }
 
+  // ── Guest memory management ──────────────────────────────────────────
+
+  handleAllocMemory(args: ToolArgs): Promise<ToolResponse> {
+    return handleSafe(async () => {
+      const session = this.requireSession(args);
+      const size = argNumber(args, 'size');
+      if (size === undefined || size <= 0) {
+        throw new Error('Missing or invalid "size": must be a positive number');
+      }
+      const maxBytes = rawMemoryLimit(args);
+      ensureRawMemorySize(size, maxBytes, 'allocation');
+      const fillB64 = argString(args, 'fillBytes', '');
+      const fillBytes = fillB64 ? toUint8(Buffer.from(fillB64, 'base64')) : undefined;
+      if (fillBytes && fillBytes.length > size) {
+        throw new Error(`fillBytes exceeds allocation size: ${fillBytes.length} > ${size} bytes`);
+      }
+      if (fillBytes) ensureRawMemorySize(fillBytes.length, maxBytes, 'fillBytes');
+      const address = session.emulator.allocGuestMemory(size, fillBytes);
+      return { sessionId: session.id, address, size };
+    });
+  }
+
+  handleReadMemory(args: ToolArgs): Promise<ToolResponse> {
+    return handleSafe(async () => {
+      const session = this.requireSession(args);
+      const address = argNumber(args, 'address');
+      const length = argNumber(args, 'length');
+      if (address === undefined || length === undefined || length <= 0) {
+        throw new Error('Missing or invalid "address" or "length"');
+      }
+      const maxBytes = rawMemoryLimit(args);
+      ensureRawMemorySize(length, maxBytes, 'read');
+      const bytes = session.emulator.readGuestMemory(address, length);
+      const includeDataBase64 = argBool(args, 'includeDataBase64', false);
+      const previewBytes = Math.max(
+        0,
+        Math.min(
+          argNumber(
+            args,
+            'previewBytes',
+            getReverseEngineeringConfig().nativeEmulator.rawMemoryPreviewBytes,
+          ),
+          bytes.length,
+        ),
+      );
+      return {
+        sessionId: session.id,
+        address,
+        length: bytes.length,
+        previewBase64: Buffer.from(bytes.subarray(0, previewBytes)).toString('base64'),
+        ...(includeDataBase64
+          ? { dataBase64: Buffer.from(bytes).toString('base64') }
+          : { dataBase64Omitted: true }),
+      };
+    });
+  }
+
+  handleWriteMemory(args: ToolArgs): Promise<ToolResponse> {
+    return handleSafe(async () => {
+      const session = this.requireSession(args);
+      const address = argNumber(args, 'address');
+      if (address === undefined) {
+        throw new Error('Missing required number argument: "address"');
+      }
+      const dataBase64 = argStringRequired(args, 'dataBase64');
+      const data = toUint8(Buffer.from(dataBase64, 'base64'));
+      ensureRawMemorySize(data.length, rawMemoryLimit(args), 'write');
+      session.emulator.writeGuestMemory(address, data);
+      return { sessionId: session.id, address, bytesWritten: data.length };
+    });
+  }
+
   private requireSession(args: ToolArgs): EmulatorSession {
     return this.sessions.requireSession(argStringRequired(args, 'sessionId'));
   }
-}
-
-/** Convert a Node Buffer/Uint8Array view to a tight Uint8Array. */
-function toUint8(buf: Uint8Array): Uint8Array {
-  return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
-}
-
-function parseOpcodeInput(value: unknown): OpcodeInput {
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value) || value < 0) {
-      throw new Error('opcode number must be a finite unsigned integer');
-    }
-    return Math.trunc(value) >>> 0;
-  }
-
-  if (typeof value !== 'string') {
-    throw new Error('Missing required opcode argument');
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed) throw new Error('opcode must not be empty');
-
-  if (/^(?:0x)?[0-9a-f]+$/i.test(trimmed) && trimmed.replace(/^0x/i, '').length > 2) {
-    return Number.parseInt(trimmed.replace(/^0x/i, ''), 16) >>> 0;
-  }
-
-  const parts = trimmed.replace(/,/g, ' ').split(/\s+/).filter(Boolean);
-  const bytes = parts.map((part) => {
-    const hex = part.replace(/^0x/i, '');
-    if (!/^[0-9a-f]{1,2}$/i.test(hex)) {
-      throw new Error(`Invalid opcode byte: ${part}`);
-    }
-    return Number.parseInt(hex, 16);
-  });
-  if (bytes.length === 0) throw new Error('opcode must include at least one byte');
-  return bytes;
-}
-
-function parseProgramCounter(value: string): bigint {
-  const trimmed = value.trim();
-  if (!trimmed) return 0n;
-  if (/^0x[0-9a-f]+$/i.test(trimmed)) return BigInt(trimmed);
-  if (/^\d+$/.test(trimmed)) return BigInt(trimmed);
-  throw new Error(`Invalid pc: ${value}`);
-}
-
-function formatOpcodeInput(opcode: OpcodeInput): string {
-  if (typeof opcode === 'number') return `0x${opcode.toString(16)}`;
-  return Array.from(opcode, (byte) => byte.toString(16).padStart(2, '0')).join(' ');
-}
-
-/** Build a trace row: pc/opcode/step, plus any requested register snapshots. */
-function traceRow(ev: TraceEvent, captureRegisters: string[]): Record<string, unknown> {
-  const row: Record<string, unknown> = {
-    step: ev.step,
-    pc: `0x${ev.pc.toString(16)}`,
-    insn: `0x${ev.insn.toString(16).padStart(8, '0')}`,
-    asm: disassembleInstruction('arm64', ev.insn, BigInt(ev.pc)),
-  };
-  if (captureRegisters.length > 0) {
-    const regs: Record<string, number> = {};
-    for (const name of captureRegisters) regs[name] = ev.reg(name);
-    row.registers = regs;
-  }
-  return row;
-}
-
-/** Declarative Java-mock return — never evaluates caller code. */
-interface JavaMockImpl {
-  kind: 'int' | 'string' | 'bytes' | 'void';
-  fn: (call: JavaMethodCall) => bigint | number | void;
-}
-
-/**
- * Resolve a declarative return spec into a JavaMethodImpl. Exactly one of
- * returnInt/returnString/returnBytes selects the value the mock hands back; with
- * none set the method returns void (0/null on the JNI side).
- */
-function buildJavaMockImpl(args: ToolArgs): JavaMockImpl {
-  const returnInt = argNumber(args, 'returnInt');
-  const returnString = argString(args, 'returnString');
-  const returnBytes = argString(args, 'returnBytes');
-
-  if (returnInt !== undefined) {
-    return { kind: 'int', fn: () => BigInt(Math.trunc(returnInt)) };
-  }
-  if (returnString !== undefined) {
-    return {
-      kind: 'string',
-      fn: (call) => BigInt(call.jni.allocHandle({ kind: 'string', value: returnString })),
-    };
-  }
-  if (returnBytes !== undefined) {
-    const bytes = toUint8(Buffer.from(returnBytes, 'base64'));
-    return {
-      kind: 'bytes',
-      fn: (call) => BigInt(call.jni.allocHandle({ kind: 'bytes', value: bytes })),
-    };
-  }
-  return { kind: 'void', fn: () => undefined };
-}
-
-/** A resolved mock-field value: a primitive int, or a handle to a string/bytes object. */
-interface JavaFieldValue {
-  kind: 'int' | 'string' | 'bytes';
-  value: bigint;
-}
-
-/**
- * Resolve a declarative field spec into the bigint the JNI Get<Type>Field returns.
- * valueInt is the primitive; valueString/valueBytes are allocated as handles in
- * the session's JNI object table (so Get*Field returns a jstring/jbyteArray).
- */
-function buildJavaFieldValue(session: EmulatorSession, args: ToolArgs): JavaFieldValue {
-  const valueInt = argNumber(args, 'valueInt');
-  const valueString = argString(args, 'valueString');
-  const valueBytes = argString(args, 'valueBytes');
-
-  if (valueInt !== undefined) {
-    return { kind: 'int', value: BigInt(Math.trunc(valueInt)) };
-  }
-  if (valueString !== undefined) {
-    const handle = session.emulator.jni.allocHandle({ kind: 'string', value: valueString });
-    return { kind: 'string', value: BigInt(handle) };
-  }
-  if (valueBytes !== undefined) {
-    const bytes = toUint8(Buffer.from(valueBytes, 'base64'));
-    const handle = session.emulator.newByteArray(bytes);
-    return { kind: 'bytes', value: BigInt(handle) };
-  }
-  return { kind: 'int', value: 0n };
 }
