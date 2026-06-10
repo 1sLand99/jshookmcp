@@ -7,6 +7,7 @@ import { dirname } from 'node:path';
 
 vi.mock('node:child_process', () => ({
   execFile: vi.fn(),
+  spawn: vi.fn(),
 }));
 
 vi.mock('@modules/external/ToolProbe', () => ({

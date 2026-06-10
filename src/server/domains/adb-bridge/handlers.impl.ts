@@ -32,6 +32,7 @@ import {
 } from '@server/domains/shared/parse-args';
 import { asJsonResponse } from '@server/domains/shared/response';
 import type { ToolResponse } from '@server/types';
+import { captureAdbLogcat } from './logcat';
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -543,38 +544,29 @@ export class ADBBridgeHandlers {
         pid = await this.resolvePackagePid(serial, packageName);
       }
 
-      const { stdout, stderr, exitCode } = await execAdb(
-        adb,
-        [...serialArgs(serial), 'shell', `logcat -d -t ${tail}`],
-        {
-          allowNonZero: true,
-          timeoutMs: ADB_SHELL_TIMEOUT_MS,
-          maxBufferBytes: ADB_LARGE_OUTPUT_MAX_BUFFER_BYTES,
-        },
-      );
       const regex = pattern ? new RegExp(pattern, 'i') : undefined;
-      const lines = stdout
-        .split(/\r?\n/)
-        .filter((line) => {
-          if (!line.trim()) return false;
-          if (pid && !line.includes(` ${pid} `)) return false;
-          if (packageName && !pid && !line.includes(packageName)) return false;
-          if (regex && !regex.test(line)) return false;
-          return true;
-        })
-        .slice(-maxLines);
+      const logcat = await captureAdbLogcat({
+        adb,
+        args: [...serialArgs(serial), 'shell', `logcat -d -t ${tail}`],
+        timeoutMs: ADB_SHELL_TIMEOUT_MS,
+        pid,
+        packageName,
+        pattern: regex,
+        maxLines,
+      });
 
       return {
-        success: exitCode === 0,
+        success: logcat.exitCode === 0,
         serial,
         packageName,
         pid,
         pattern,
         tail,
-        count: lines.length,
-        lines,
-        stderr,
-        exitCode,
+        count: logcat.lines.length,
+        lines: logcat.lines,
+        stderr: logcat.stderr,
+        exitCode: logcat.exitCode,
+        ...(logcat.signal ? { signal: logcat.signal } : {}),
       };
     });
   }
@@ -635,15 +627,6 @@ export class ADBBridgeHandlers {
       }
 
       const pid = await this.resolvePackagePid(serial, packageName);
-      const logcatResult = await execAdb(
-        adb,
-        [...serialArgs(serial), 'shell', `logcat -d -t ${logcatTail}`],
-        {
-          allowNonZero: true,
-          timeoutMs: ADB_SHELL_TIMEOUT_MS,
-          maxBufferBytes: ADB_LARGE_OUTPUT_MAX_BUFFER_BYTES,
-        },
-      );
       const builtInPattern = new RegExp(
         [
           packageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
@@ -655,22 +638,24 @@ export class ADBBridgeHandlers {
           'skipped',
           'ANR',
           'bindApplication',
-          'DexHelper',
-          'secneo',
+          'ClassLoader',
+          'DexClassLoader',
+          'PathClassLoader',
+          'JNI',
           'dlopen',
           'permission',
           ...extraPatterns,
         ].join('|'),
         'i',
       );
-      const timeline = logcatResult.stdout
-        .split(/\r?\n/)
-        .filter((line) => {
-          if (!line.trim()) return false;
-          if (pid && line.includes(` ${pid} `)) return true;
-          return builtInPattern.test(line);
-        })
-        .slice(-ADB_COLD_START_TIMELINE_LIMIT);
+      const logcatResult = await captureAdbLogcat({
+        adb,
+        args: [...serialArgs(serial), 'shell', `logcat -d -t ${logcatTail}`],
+        timeoutMs: ADB_SHELL_TIMEOUT_MS,
+        maxLines: ADB_COLD_START_TIMELINE_LIMIT,
+        predicate: (line) => Boolean(pid && line.includes(` ${pid} `)) || builtInPattern.test(line),
+      });
+      const timeline = logcatResult.lines;
       const looperEvents = timeline
         .map((line) => {
           const latency = line.match(/\blatency=(\d+)ms/)?.[1];
