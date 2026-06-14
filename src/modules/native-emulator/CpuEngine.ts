@@ -1558,7 +1558,7 @@ export class CpuEngine {
       if (form === 0b01) {
         // Unsigned offset: imm12 scaled by access size.
         const imm12 = (insn >>> 10) & 0xfff;
-        const addr = Number(this.readGprSp(rn)) + imm12 * bytes;
+        const addr = Number(BigInt.asUintN(64, this.readGprSp(rn) + BigInt(imm12 * bytes)));
         if (isLoad) doLoad(addr);
         else this.storeValue(addr, bytes, this.readGpr(rt));
         return true;
@@ -1572,7 +1572,10 @@ export class CpuEngine {
         const s = (insn >>> 12) & 1;
         const shift = s === 1 ? size : 0;
         const offset = this.extendReg(this.readGpr(rm), option, shift, 1);
-        const addr = Number(this.readGprSp(rn)) + Number(offset);
+        // BUGFIX: Do address arithmetic in bigint space. Offset is ALREADY
+        // correctly extended by extendReg (sign or zero), so just add as-is.
+        const base = this.readGprSp(rn);
+        const addr = Number(BigInt.asUintN(64, base + offset));
         if (isLoad) doLoad(addr);
         else this.storeValue(addr, bytes, this.readGpr(rt));
         return true;
@@ -1590,12 +1593,13 @@ export class CpuEngine {
         const imm9raw = (insn >>> 12) & 0x1ff;
         const imm9 = imm9raw & 0x100 ? imm9raw - 0x200 : imm9raw;
         const idx = (insn >>> 10) & 0b11;
-        const base = Number(this.readGprSp(rn));
-        const addr = idx === 0b01 ? base : base + imm9; // post-index accesses base; unscaled/pre add imm9
+        const base = this.readGprSp(rn);
+        // BUGFIX: Do address arithmetic in bigint space
+        const addr = idx === 0b01 ? Number(base) : Number(BigInt.asUintN(64, base + BigInt(imm9)));
         if (isLoad) doLoad(addr);
         else this.storeValue(addr, bytes, this.readGpr(rt));
         if (idx === 0b11 || idx === 0b01) {
-          this.writeGprSp(rn, BigInt.asUintN(64, BigInt(base + imm9))); // writeback (pre/post only)
+          this.writeGprSp(rn, BigInt.asUintN(64, base + BigInt(imm9))); // writeback (pre/post only)
         }
         return true;
       }
@@ -1628,8 +1632,9 @@ export class CpuEngine {
       const rt2 = (insn >>> 10) & 0b11111;
       const rn = (insn >>> 5) & 0b11111;
       const rt = insn & 0b11111;
-      const base = Number(this.readGprSp(rn));
-      const addr = idx === 0b01 ? base : base + imm7; // post-index reads at base
+      const base = this.readGprSp(rn);
+      // BUGFIX: Do address arithmetic in bigint space
+      const addr = idx === 0b01 ? Number(base) : Number(BigInt.asUintN(64, base + BigInt(imm7)));
       if (isLoad) {
         this.writeGpr(rt, this.loadValue(addr, bytes));
         this.writeGpr(rt2, this.loadValue(addr + bytes, bytes));
@@ -1639,7 +1644,7 @@ export class CpuEngine {
       }
       if (idx !== 0b10) {
         // pre/post-index write the updated base back; signed-offset (0b10) does not.
-        this.writeGprSp(rn, BigInt.asUintN(64, BigInt(base + imm7)));
+        this.writeGprSp(rn, BigInt.asUintN(64, base + BigInt(imm7)));
       }
       return true;
     }

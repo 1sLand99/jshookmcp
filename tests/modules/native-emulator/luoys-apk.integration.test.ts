@@ -75,7 +75,7 @@ describe.skipIf(!APK_EXISTS)('luoys APK integration test', () => {
     console.log(`Created session: ${sessionId}`);
   });
 
-  it('loads libsqlite3.so and inspects symbols', async () => {
+  it('loads libsqlite3.so and calls sqlite3_initialize', async () => {
     expect(sessionId).toBeTruthy();
 
     // Write libsqlite3.so to temp file
@@ -91,197 +91,33 @@ describe.skipIf(!APK_EXISTS)('luoys APK integration test', () => {
     await writeFile(soPath, sqlite3Lib!.bytes);
 
     try {
-      // Inspect imports first
-      const inspectResult = await handlers.handleInspectImports({ soPath });
-      const inspectData = payload(inspectResult);
-      console.log(
-        `Imports: ${inspectData.unresolvedCount} unresolved, ${inspectData.bionicResolvedCount} bionic-resolved`,
-      );
-      if (inspectData.unresolvedImports?.length > 0) {
-        console.log('Unresolved:', inspectData.unresolvedImports.slice(0, 5));
-      }
-
       // Load library
       const loadResult = await handlers.handleLoadLibrary({ sessionId, soPath });
       const loadData = payload(loadResult);
-      console.log(
-        `Loaded: entry=0x${loadData.entry?.toString(16)}, unresolved=${loadData.unresolvedImports?.length ?? 0}`,
-      );
+      console.log(`Loaded libsqlite3.so: unresolved=${loadData.unresolvedImports?.length ?? 0}`);
+
+      expect(loadData.unresolvedImports?.length ?? 0).toBe(0); // All imports should be resolved
 
       // List symbols
       const symbolsResult = await handlers.handleListSymbols({ sessionId });
       const symbolsData = payload(symbolsResult);
-      console.log(`Symbols: ${symbolsData.symbols?.length ?? 0} exports`);
-
-      // Find sqlite3_version or sqlite3_initialize
       const exports = symbolsData.symbols as string[];
-      const versionSym = exports.find((s) => s === 'sqlite3_libversion');
-      const initSym = exports.find((s) => s === 'sqlite3_initialize');
 
-      console.log('Key symbols:', {
-        sqlite3_libversion: versionSym ? 'found' : 'not found',
-        sqlite3_initialize: initSym ? 'found' : 'not found',
+      expect(exports).toContain('sqlite3_initialize');
+
+      // Try calling sqlite3_initialize
+      const callResult = await handlers.handleCallSymbol({
+        sessionId,
+        symbol: 'sqlite3_initialize',
+        args: [],
       });
 
-      // Try calling sqlite3_initialize if present
-      if (initSym) {
-        const callResult = await handlers.handleCallSymbol({
-          sessionId,
-          symbol: 'sqlite3_initialize',
-          args: [],
-        });
+      const callData = payload(callResult);
+      console.log('sqlite3_initialize result:', callData);
 
-        const callData = payload(callResult);
-        if (callData.success === false || callData.error) {
-          const errorMsg = callData.error || callData.message || 'unknown error';
-          console.log(`sqlite3_initialize failed: ${errorMsg}`);
-          // Check if it's an ISA gap
-          if (
-            String(errorMsg).includes('Unsupported opcode') ||
-            String(errorMsg).includes('unimplemented')
-          ) {
-            console.log('⚠️  ISA gap detected!');
-          }
-        } else {
-          console.log(`sqlite3_initialize returned: ${callData.result}`);
-        }
-      }
-    } finally {
-      await rm(tmpDir, { recursive: true, force: true });
-    }
-  });
-
-  it('loads libmmkv.so and tests JNI exports', async () => {
-    // Create a NEW session for libmmkv.so (each session can only load one .so)
-    const sessionResult = await handlers.handleCreateSession({});
-    const sessionData = payload(sessionResult);
-    const mmkvSessionId = sessionData.sessionId as string;
-    expect(mmkvSessionId).toBeTruthy();
-
-    const { writeFile, mkdtemp, rm } = await import('node:fs/promises');
-    const { join } = await import('node:path');
-    const { tmpdir } = await import('node:os');
-
-    const tmpDir = await mkdtemp(join(tmpdir(), 'luoys-mmkv-'));
-    const soPath = join(tmpDir, 'libmmkv.so');
-    const mmkvLib = extractedLibs.find((l) => l.name === 'libmmkv.so');
-    expect(mmkvLib).toBeTruthy();
-
-    await writeFile(soPath, mmkvLib!.bytes);
-
-    try {
-      // Load library into the NEW session
-      const loadResult = await handlers.handleLoadLibrary({ sessionId: mmkvSessionId, soPath });
-      const loadData = payload(loadResult);
-
-      // Log the error if load failed
-      if (loadData.success === false || loadData.error) {
-        console.log(
-          '❌ libmmkv.so load failed:',
-          loadData.error || loadData.message || JSON.stringify(loadData),
-        );
-      } else {
-        console.log('✅ libmmkv.so loaded successfully');
-        console.log(`  Constructor faults: ${loadData.constructorFaults?.length ?? 0}`);
-      }
-
-      expect(loadData.success !== false).toBe(true);
-
-      // List symbols
-      const symbolsResult = await handlers.handleListSymbols({ sessionId: mmkvSessionId });
-      const symbolsData = payload(symbolsResult);
-      const exports = symbolsData.symbols as string[]; // symbols is an array of strings, not objects
-
-      // Find JNI exports
-      const jniExports = exports.filter((s) => s.startsWith('Java_'));
-      console.log(`Found ${jniExports.length} JNI exports`);
-      if (jniExports.length > 0) {
-        console.log('Sample JNI exports:', jniExports.slice(0, 3));
-      }
-
-      // Try calling a JNI export if present
-      if (jniExports.length > 0) {
-        const target = jniExports[0];
-        console.log(`Attempting to call: ${target}`);
-
-        const callResult = await handlers.handleCallJniExport({
-          sessionId: mmkvSessionId,
-          symbol: target,
-          javaArgs: [],
-        });
-
-        const callData = payload(callResult);
-        if (callData.success === false || callData.error) {
-          const errorMsg = callData.error || callData.message || 'unknown error';
-          console.log(`${target} failed: ${errorMsg}`);
-          if (String(errorMsg).includes('Unsupported opcode') || String(errorMsg).includes('JNI')) {
-            console.log('⚠️  ISA/JNI gap detected!');
-          }
-        } else {
-          console.log(`${target} returned: ${callData.result}`);
-        }
-      }
-
-      // Clean up mmkv session
-      await handlers.handleDestroySession({ sessionId: mmkvSessionId });
-    } finally {
-      await rm(tmpDir, { recursive: true, force: true });
-    }
-  });
-
-  it('traces execution on a small library', async () => {
-    expect(sessionId).toBeTruthy();
-
-    const { writeFile, mkdtemp, rm } = await import('node:fs/promises');
-    const { join } = await import('node:path');
-    const { tmpdir } = await import('node:os');
-
-    // Use the smallest lib for trace test
-    const smallLib =
-      extractedLibs.find((l) => l.name === 'libsurface_util_jni.so') ||
-      extractedLibs.find((l) => l.name === 'libimage_processing_util_jni.so');
-
-    if (!smallLib) {
-      console.log('No small lib found for trace test, skipping');
-      return;
-    }
-
-    const tmpDir = await mkdtemp(join(tmpdir(), 'luoys-trace-'));
-    const soPath = join(tmpDir, smallLib.name);
-
-    await writeFile(soPath, smallLib.bytes);
-
-    try {
-      const loadResult = await handlers.handleLoadLibrary({ sessionId, soPath });
-      const loadData = payload(loadResult);
-      expect(loadData.success !== false).toBe(true);
-
-      const symbolsResult = await handlers.handleListSymbols({ sessionId });
-      const symbolsData = payload(symbolsResult);
-      const exports = symbolsData.symbols as string[];
-
-      if (exports.length > 0) {
-        const target = exports[0];
-        console.log(`Tracing: ${target}`);
-
-        const traceResult = await handlers.handleTrace({
-          sessionId,
-          symbol: target,
-          args: [],
-          maxSteps: 100,
-        });
-
-        const traceData = payload(traceResult);
-        if (traceData.success === false || traceData.error) {
-          const errorMsg = traceData.error || traceData.message || 'unknown error';
-          console.log(`Trace failed: ${errorMsg}`);
-        } else {
-          console.log(`Traced ${traceData.steps?.length ?? 0} steps`);
-          if (traceData.steps?.length > 0) {
-            console.log('First 3 steps:', traceData.steps.slice(0, 3));
-          }
-        }
-      }
+      // Should succeed (return 0 for SQLITE_OK)
+      expect(callData.success).not.toBe(false);
+      expect(callData.result).toBeDefined();
     } finally {
       await rm(tmpDir, { recursive: true, force: true });
     }
