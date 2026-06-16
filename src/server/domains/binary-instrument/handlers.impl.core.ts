@@ -1,8 +1,7 @@
 /**
  * BinaryInstrument domain — composition facade.
  *
- * Frida operations in ./handlers/frida-handlers.ts.
- * Analysis/unidbg/hook operations in ./handlers/analysis-handlers.ts.
+ * Delegates to specialized handler classes organized by functionality.
  */
 
 import {
@@ -15,15 +14,35 @@ import {
 import type { MCPServerContext } from '@server/MCPServer.context';
 import type { BinaryInstrumentState } from './handlers/shared';
 import { isServerContext } from './handlers/shared';
-import { FridaHandlers } from './handlers/frida-handlers';
-import { AnalysisHandlers } from './handlers/analysis-handlers';
 import { CapabilityHandlers } from './handlers/capability-handlers';
+import { FridaHandlers as FridaSessionHandlers } from './handlers/frida-handlers';
+import { JadxHandlers } from './handlers/jadx';
+import { UnidbgHandlers } from './handlers/unidbg';
+import { GhidraHandlers } from './handlers/ghidra';
+import { BinaryScanHandlers } from './handlers/binary-scan';
+import { HooksGenerationHandlers } from './handlers/hooks-generation';
+import { FridaHandlers as FridaDexDumpHandlers } from './handlers/frida';
+import { ApktoolHandlers } from './handlers/apktool';
+import { NativeLibsHandlers } from './handlers/native-libs';
+import { RuntimeDumpHandlers } from './handlers/runtime-dump';
+import { PluginBridgeHandlers } from './handlers/plugin-bridge';
+import { IdaHandlers } from './handlers/ida';
 
 export class BinaryInstrumentHandlers {
   private state: BinaryInstrumentState;
-  private frida: FridaHandlers;
-  private analysis: AnalysisHandlers;
   private capabilities: CapabilityHandlers;
+  private fridaSession: FridaSessionHandlers;
+  private jadx: JadxHandlers;
+  private unidbg: UnidbgHandlers;
+  private ghidra: GhidraHandlers;
+  private binaryScan: BinaryScanHandlers;
+  private hooksGeneration: HooksGenerationHandlers;
+  private fridaDexDump: FridaDexDumpHandlers;
+  private apktool: ApktoolHandlers;
+  private nativeLibs: NativeLibsHandlers;
+  private runtimeDump: RuntimeDumpHandlers;
+  private pluginBridge: PluginBridgeHandlers;
+  private ida: IdaHandlers;
 
   constructor(
     first?: FridaSession | MCPServerContext,
@@ -44,105 +63,115 @@ export class BinaryInstrumentHandlers {
     if (second) this.state.ghidra = second;
     if (third) this.state.hookGen = third;
 
-    this.frida = new FridaHandlers(this.state);
-    this.analysis = new AnalysisHandlers(this.state);
     this.capabilities = new CapabilityHandlers(this.state);
+    this.fridaSession = new FridaSessionHandlers(this.state);
+    this.jadx = new JadxHandlers(this.state);
+    this.unidbg = new UnidbgHandlers(this.state);
+    this.ghidra = new GhidraHandlers(this.state);
+    this.binaryScan = new BinaryScanHandlers(this.state);
+    this.hooksGeneration = new HooksGenerationHandlers(this.state);
+    this.fridaDexDump = new FridaDexDumpHandlers(this.state);
+    this.apktool = new ApktoolHandlers(this.state);
+    this.nativeLibs = new NativeLibsHandlers(this.state);
+    this.runtimeDump = new RuntimeDumpHandlers(this.state);
+    this.pluginBridge = new PluginBridgeHandlers(this.state);
+    this.ida = new IdaHandlers(this.state);
   }
 
   handleBinaryInstrumentCapabilities() {
     return this.capabilities.handleBinaryInstrumentCapabilities();
   }
+  handleGetAvailablePlugins(args: Record<string, unknown>) {
+    return this.pluginBridge.handleGetAvailablePlugins(args);
+  }
   handleFridaAttach(args: Record<string, unknown>) {
-    return this.frida.handleFridaAttach(args);
+    return this.fridaSession.handleFridaAttach(args);
   }
   handleFridaEnumerateModules(args: Record<string, unknown>) {
-    return this.frida.handleFridaEnumerateModules(args);
+    return this.fridaSession.handleFridaEnumerateModules(args);
   }
   handleFridaRunScript(args: Record<string, unknown>) {
-    return this.frida.handleFridaRunScript(args);
+    return this.fridaSession.handleFridaRunScript(args);
   }
   handleFridaDetach(args: Record<string, unknown>) {
-    return this.frida.handleFridaDetach(args);
+    return this.fridaSession.handleFridaDetach(args);
   }
   handleFridaListSessions(args: Record<string, unknown>) {
-    return this.frida.handleFridaListSessions(args);
-  }
-  handleFridaDexDump(args: Record<string, unknown>) {
-    return this.analysis.handleFridaDexDump(args);
-  }
-  handleAndroidRuntimeDumpSession(args: Record<string, unknown>) {
-    return this.analysis.handleAndroidRuntimeDumpSession(args);
+    return this.fridaSession.handleFridaListSessions(args);
   }
   handleFridaGenerateScript(args: Record<string, unknown>) {
-    return this.frida.handleFridaGenerateScript(args);
+    return this.fridaSession.handleFridaGenerateScript(args);
   }
   handleFridaEnumerateFunctions(args: Record<string, unknown>) {
-    return this.frida.handleFridaEnumerateFunctions(args);
+    return this.fridaSession.handleFridaEnumerateFunctions(args);
   }
   handleFridaFindSymbols(args: Record<string, unknown>) {
-    return this.frida.handleFridaFindSymbols(args);
+    return this.fridaSession.handleFridaFindSymbols(args);
   }
-  handleGhidraAnalyze(args: Record<string, unknown>) {
-    return this.analysis.handleGhidraAnalyze(args);
-  }
-  handleGhidraDecompile(args: Record<string, unknown>) {
-    return this.analysis.handleGhidraDecompile(args);
-  }
-  handleIdaDecompile(args: Record<string, unknown>) {
-    return this.analysis.handleIdaDecompile(args);
+  handleFridaDexDump(args: Record<string, unknown>) {
+    return this.fridaDexDump.handleFridaDexDump(args);
   }
   handleJadxDecompile(args: Record<string, unknown>) {
-    return this.analysis.handleJadxDecompile(args);
+    return this.jadx.handleJadxDecompile(args);
   }
   handleJadxDecompileApk(args: Record<string, unknown>) {
-    return this.analysis.handleJadxDecompileApk(args);
+    return this.jadx.handleJadxDecompileApk(args);
   }
   handleJadxSearchCode(args: Record<string, unknown>) {
-    return this.analysis.handleJadxSearchCode(args);
-  }
-  handleApktoolDecode(args: Record<string, unknown>) {
-    return this.analysis.handleApktoolDecode(args);
+    return this.jadx.handleJadxSearchCode(args);
   }
   handleApkManifestDump(args: Record<string, unknown>) {
-    return this.analysis.handleApkManifestDump(args);
+    return this.jadx.handleApkManifestDump(args);
   }
   handleApkManifestQuery(args: Record<string, unknown>) {
-    return this.analysis.handleApkManifestQuery(args);
+    return this.jadx.handleApkManifestQuery(args);
   }
   handleApkStaticTriage(args: Record<string, unknown>) {
-    return this.analysis.handleApkStaticTriage(args);
+    return this.jadx.handleApkStaticTriage(args);
   }
   handleApkDexIntake(args: Record<string, unknown>) {
-    return this.analysis.handleApkDexIntake(args);
+    return this.jadx.handleApkDexIntake(args);
   }
-  handleDexScanFile(args: Record<string, unknown>) {
-    return this.analysis.handleDexScanFile(args);
-  }
-  handleBinaryStringsExtract(args: Record<string, unknown>) {
-    return this.analysis.handleBinaryStringsExtract(args);
+  handleApktoolDecode(args: Record<string, unknown>) {
+    return this.apktool.handleApktoolDecode(args);
   }
   handleApkNativeLibsList(args: Record<string, unknown>) {
-    return this.analysis.handleApkNativeLibsList(args);
+    return this.nativeLibs.handleApkNativeLibsList(args);
+  }
+  handleDexScanFile(args: Record<string, unknown>) {
+    return this.binaryScan.handleDexScanFile(args);
+  }
+  handleBinaryStringsExtract(args: Record<string, unknown>) {
+    return this.binaryScan.handleBinaryStringsExtract(args);
   }
   handleGenerateHooks(args: Record<string, unknown>) {
-    return this.analysis.handleGenerateHooks(args);
+    return this.hooksGeneration.handleGenerateHooks(args);
   }
   handleExportHookScript(args: Record<string, unknown>) {
-    return this.analysis.handleExportHookScript(args);
+    return this.hooksGeneration.handleExportHookScript(args);
   }
   handleUnidbgEmulate(args: Record<string, unknown>) {
-    return this.analysis.handleUnidbgEmulate(args);
+    return this.unidbg.handleUnidbgEmulate(args);
   }
   handleUnidbgLaunch(args: Record<string, unknown>) {
-    return this.analysis.handleUnidbgLaunch(args);
+    return this.unidbg.handleUnidbgLaunch(args);
   }
   handleUnidbgCall(args: Record<string, unknown>) {
-    return this.analysis.handleUnidbgCall(args);
+    return this.unidbg.handleUnidbgCall(args);
   }
   handleUnidbgTrace(args: Record<string, unknown>) {
-    return this.analysis.handleUnidbgTrace(args);
+    return this.unidbg.handleUnidbgTrace(args);
   }
-  handleGetAvailablePlugins(args: Record<string, unknown>) {
-    return this.analysis.handleGetAvailablePlugins(args);
+  handleGhidraAnalyze(args: Record<string, unknown>) {
+    return this.ghidra.handleGhidraAnalyze(args);
+  }
+  handleGhidraDecompile(args: Record<string, unknown>) {
+    return this.ghidra.handleGhidraDecompile(args);
+  }
+  handleIdaDecompile(args: Record<string, unknown>) {
+    return this.ida.handleIdaDecompile(args);
+  }
+  handleAndroidRuntimeDumpSession(args: Record<string, unknown>) {
+    return this.runtimeDump.handleAndroidRuntimeDumpSession(args);
   }
 }

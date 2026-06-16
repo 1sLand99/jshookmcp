@@ -38,6 +38,7 @@ import {
   buildXHRInterceptorCode,
 } from '@modules/monitor/NetworkMonitor.interceptors';
 import { logger } from '@utils/logger';
+import { ManagedSessionRegistry } from '@modules/browser/BrowserTargetSessionManager.ManagedSessionRegistry';
 
 export class BrowserTargetSessionManager implements NetworkMonitorLike {
   private browserSession: CDPSession | null = null;
@@ -47,8 +48,7 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
   private autoAttachEnabled = false;
   private targetListenersBound = false;
   private aggregatedNetworkEnabled = false;
-  private readonly managedSessions = new Map<string, ManagedTargetSessionEntry>();
-  private readonly targetIdToSessionId = new Map<string, string>();
+  private readonly registry = new ManagedSessionRegistry();
   private readonly persistentScripts = new Map<string, PersistentScriptEntry>();
   private persistentScriptCounter = 0;
   private browserSessionListeners: {
@@ -69,7 +69,9 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
       targetInfos?: Array<Record<string, unknown>>;
     };
 
-    const managedTargetIds = new Set(this.targetIdToSessionId.keys());
+    const managedTargetIds = new Set(
+      Array.from(this.registry.all()).map((entry) => entry.targetInfo.targetId),
+    );
     if (this.attachedTargetInfo?.targetId) {
       managedTargetIds.add(this.attachedTargetInfo.targetId);
     }
@@ -101,7 +103,7 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
 
     await this.detach();
 
-    const managedSession = this.getManagedSessionByTargetId(targetId);
+    const managedSession = this.registry.getByTargetId(targetId);
     if (managedSession) {
       this.attachedTargetSession = managedSession.session;
       this.attachedTargetInfo = managedSession.targetInfo;
@@ -119,19 +121,19 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
 
     const attachedSessionId = this.attachedTargetSession.id?.();
     if (attachedSessionId) {
-      this.managedSessions.set(attachedSessionId, {
+      const entry: ManagedTargetSessionEntry = {
         sessionId: attachedSessionId,
         session: this.attachedTargetSession,
         targetInfo: target,
         networkMonitor: null,
         managedByAutoAttach: false,
         appliedPersistentScripts: new Map(),
-      });
-      this.targetIdToSessionId.set(target.targetId, attachedSessionId);
+      };
+      this.registry.add(attachedSessionId, entry);
       if (this.aggregatedNetworkEnabled && this.shouldManageTargetType(target.type)) {
-        await this.ensureSessionNetworkMonitor(this.managedSessions.get(attachedSessionId)!);
+        await this.ensureSessionNetworkMonitor(this.registry.get(attachedSessionId)!);
       }
-      await this.applyPersistentScriptsToEntry(this.managedSessions.get(attachedSessionId)!);
+      await this.applyPersistentScriptsToEntry(this.registry.get(attachedSessionId)!);
     }
 
     return target;
@@ -167,18 +169,16 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
 
     const sessionId =
       session.id?.() ??
-      (attachedInfo?.targetId
-        ? (this.targetIdToSessionId.get(attachedInfo.targetId) ?? null)
-        : null);
+      (attachedInfo?.targetId ? this.registry.getPriorSessionId(attachedInfo.targetId) : null);
     if (sessionId) {
-      const entry = this.managedSessions.get(sessionId);
+      const entry = this.registry.get(sessionId);
       if (entry && !entry.managedByAutoAttach) {
         await this.disableEntryNetworkMonitor(entry);
-        this.managedSessions.delete(sessionId);
+        this.registry.remove(sessionId);
       }
     }
     if (attachedInfo?.targetId) {
-      this.targetIdToSessionId.delete(attachedInfo.targetId);
+      this.registry.unmapTargetId(attachedInfo.targetId);
     }
 
     return true;
@@ -293,7 +293,7 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
     });
 
     let appliedTargets = 0;
-    for (const entry of this.managedSessions.values()) {
+    for (const entry of this.registry.all()) {
       if (!this.matchesScriptTarget(entry.targetInfo, scriptEntry)) {
         continue;
       }
@@ -321,7 +321,7 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
     await this.ensureAutoAttachEnabled(session);
 
     let evaluatedTargets = 0;
-    for (const entry of this.managedSessions.values()) {
+    for (const entry of this.registry.all()) {
       if (!this.matchesTargetTypes(entry.targetInfo.type, options?.targetTypes)) {
         continue;
       }
@@ -343,7 +343,7 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
     await this.bootstrapManagedTargets();
     this.aggregatedNetworkEnabled = true;
 
-    for (const entry of this.managedSessions.values()) {
+    for (const entry of this.registry.all()) {
       if (!this.shouldManageTargetType(entry.targetInfo.type)) {
         continue;
       }
@@ -353,7 +353,7 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
 
   async disable(): Promise<void> {
     this.aggregatedNetworkEnabled = false;
-    for (const entry of this.managedSessions.values()) {
+    for (const entry of this.registry.all()) {
       await this.disableEntryNetworkMonitor(entry);
     }
   }
@@ -367,7 +367,7 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
     let responseCount = 0;
     let listenerCount = this.targetListenersBound ? 3 : 0;
 
-    for (const entry of this.managedSessions.values()) {
+    for (const entry of this.registry.all()) {
       if (!entry.networkMonitor) {
         continue;
       }
@@ -387,7 +387,7 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
   }
 
   getRequests(filter?: { url?: string; method?: string; limit?: number }): NetworkRequest[] {
-    let requests = Array.from(this.managedSessions.values()).flatMap(
+    let requests = Array.from(this.registry.all()).flatMap(
       (entry) => entry.networkMonitor?.getRequests() ?? [],
     );
     requests.sort((left, right) => (left.timestamp ?? 0) - (right.timestamp ?? 0));
@@ -408,7 +408,7 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
   }
 
   getResponses(filter?: { url?: string; status?: number; limit?: number }): NetworkResponse[] {
-    let responses = Array.from(this.managedSessions.values()).flatMap(
+    let responses = Array.from(this.registry.all()).flatMap(
       (entry) => entry.networkMonitor?.getResponses() ?? [],
     );
     responses.sort((left, right) => (left.timestamp ?? 0) - (right.timestamp ?? 0));
@@ -428,7 +428,7 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
   }
 
   getActivity(requestId: string): NetworkActivity {
-    for (const entry of this.managedSessions.values()) {
+    for (const entry of this.registry.all()) {
       if (!entry.networkMonitor) {
         continue;
       }
@@ -441,7 +441,7 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
   }
 
   async getResponseBody(requestId: string): Promise<NetworkResponseBody | null> {
-    for (const entry of this.managedSessions.values()) {
+    for (const entry of this.registry.all()) {
       if (!entry.networkMonitor) {
         continue;
       }
@@ -465,7 +465,7 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
     }>
   > {
     const results = await Promise.all(
-      Array.from(this.managedSessions.values()).map(async (entry) =>
+      Array.from(this.registry.all()).map(async (entry) =>
         entry.networkMonitor ? await entry.networkMonitor.getAllJavaScriptResponses() : [],
       ),
     );
@@ -473,7 +473,7 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
   }
 
   clearRecords(): void {
-    for (const entry of this.managedSessions.values()) {
+    for (const entry of this.registry.all()) {
       entry.networkMonitor?.clearRecords();
     }
   }
@@ -482,7 +482,7 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
     let xhrCleared = 0;
     let fetchCleared = 0;
 
-    for (const entry of this.managedSessions.values()) {
+    for (const entry of this.registry.all()) {
       if (!entry.networkMonitor) {
         continue;
       }
@@ -498,7 +498,7 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
     let xhrReset = false;
     let fetchReset = false;
 
-    for (const entry of this.managedSessions.values()) {
+    for (const entry of this.registry.all()) {
       if (!entry.networkMonitor) {
         continue;
       }
@@ -518,7 +518,7 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
     let totalRequests = 0;
     let totalResponses = 0;
 
-    for (const entry of this.managedSessions.values()) {
+    for (const entry of this.registry.all()) {
       const stats = entry.networkMonitor?.getStats();
       if (!stats) {
         continue;
@@ -585,18 +585,14 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
 
   async getXHRRequests(): Promise<Record<string, unknown>[]> {
     const results = await Promise.all(
-      Array.from(this.managedSessions.values()).map((entry) =>
-        this.getEntryInjectedRequests(entry, 'xhr'),
-      ),
+      Array.from(this.registry.all()).map((entry) => this.getEntryInjectedRequests(entry, 'xhr')),
     );
     return results.flat();
   }
 
   async getFetchRequests(): Promise<Record<string, unknown>[]> {
     const results = await Promise.all(
-      Array.from(this.managedSessions.values()).map((entry) =>
-        this.getEntryInjectedRequests(entry, 'fetch'),
-      ),
+      Array.from(this.registry.all()).map((entry) => this.getEntryInjectedRequests(entry, 'fetch')),
     );
     return results.flat();
   }
@@ -620,8 +616,8 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
         }
       }
     } finally {
-      this.managedSessions.clear();
-      this.targetIdToSessionId.clear();
+      this.registry.clear();
+      this.registry.clear();
       this.browserSession = null;
       this.autoAttachEnabled = false;
       this.targetListenersBound = false;
@@ -730,10 +726,10 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
       return;
     }
 
-    const existing = this.managedSessions.get(sessionId);
+    const existing = this.registry.get(sessionId);
     if (existing) {
       existing.targetInfo = targetInfo;
-      this.targetIdToSessionId.set(targetInfo.targetId, sessionId);
+      this.registry.mapTargetIdToSession(targetInfo.targetId, sessionId);
       if (
         this.attachedTargetInfo?.targetId === targetInfo.targetId &&
         this.attachedTargetBorrowedFromManaged
@@ -743,12 +739,12 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
       return;
     }
 
-    const priorSessionId = this.targetIdToSessionId.get(targetInfo.targetId);
+    const priorSessionId = this.registry.getPriorSessionId(targetInfo.targetId);
     if (priorSessionId && priorSessionId !== sessionId) {
-      const priorEntry = this.managedSessions.get(priorSessionId);
+      const priorEntry = this.registry.get(priorSessionId);
       if (priorEntry && !priorEntry.managedByAutoAttach) {
         await this.disableEntryNetworkMonitor(priorEntry);
-        this.managedSessions.delete(priorSessionId);
+        this.registry.remove(priorSessionId);
       }
     }
 
@@ -760,8 +756,8 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
       managedByAutoAttach: true,
       appliedPersistentScripts: new Map(),
     };
-    this.managedSessions.set(sessionId, entry);
-    this.targetIdToSessionId.set(targetInfo.targetId, sessionId);
+    this.registry.add(sessionId, entry);
+    this.registry.mapTargetIdToSession(targetInfo.targetId, sessionId);
 
     if (this.aggregatedNetworkEnabled) {
       await this.ensureSessionNetworkMonitor(entry);
@@ -788,7 +784,7 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
   }
 
   private async ensureManagedTargetSession(targetInfo: BrowserTargetInfo): Promise<void> {
-    if (this.getManagedSessionByTargetId(targetInfo.targetId)) {
+    if (this.registry.getByTargetId(targetInfo.targetId)) {
       return;
     }
 
@@ -802,10 +798,10 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
       throw new Error(`Managed target session id unavailable for ${targetInfo.targetId}`);
     }
 
-    const existing = this.managedSessions.get(sessionId);
+    const existing = this.registry.get(sessionId);
     if (existing) {
       existing.targetInfo = targetInfo;
-      this.targetIdToSessionId.set(targetInfo.targetId, sessionId);
+      this.registry.mapTargetIdToSession(targetInfo.targetId, sessionId);
       return;
     }
 
@@ -817,8 +813,8 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
       managedByAutoAttach: false,
       appliedPersistentScripts: new Map(),
     };
-    this.managedSessions.set(sessionId, entry);
-    this.targetIdToSessionId.set(targetInfo.targetId, sessionId);
+    this.registry.add(sessionId, entry);
+    this.registry.mapTargetIdToSession(targetInfo.targetId, sessionId);
 
     if (this.aggregatedNetworkEnabled) {
       await this.ensureSessionNetworkMonitor(entry);
@@ -832,17 +828,17 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
       return;
     }
 
-    const entry = this.managedSessions.get(sessionId);
+    const entry = this.registry.get(sessionId);
     if (!entry) {
       return;
     }
 
     await this.disableEntryNetworkMonitor(entry);
-    this.managedSessions.delete(sessionId);
+    this.registry.remove(sessionId);
 
-    const mappedSessionId = this.targetIdToSessionId.get(entry.targetInfo.targetId);
+    const mappedSessionId = this.registry.getPriorSessionId(entry.targetInfo.targetId);
     if (mappedSessionId === sessionId) {
-      this.targetIdToSessionId.delete(entry.targetInfo.targetId);
+      this.registry.unmapTargetId(entry.targetInfo.targetId);
     }
 
     if (this.attachedTargetSession === entry.session && this.attachedTargetBorrowedFromManaged) {
@@ -859,9 +855,9 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
       return;
     }
 
-    const sessionId = this.targetIdToSessionId.get(targetInfo.targetId);
+    const sessionId = this.registry.getPriorSessionId(targetInfo.targetId);
     if (sessionId) {
-      const entry = this.managedSessions.get(sessionId);
+      const entry = this.registry.get(sessionId);
       if (entry) {
         entry.targetInfo = targetInfo;
       }
@@ -968,14 +964,6 @@ export class BrowserTargetSessionManager implements NetworkMonitorLike {
           ? request.requestId
           : `${entry.targetInfo.targetId}:${kind}-injected-${index}`,
     }));
-  }
-
-  private getManagedSessionByTargetId(targetId: string): ManagedTargetSessionEntry | null {
-    const sessionId = this.targetIdToSessionId.get(targetId);
-    if (!sessionId) {
-      return null;
-    }
-    return this.managedSessions.get(sessionId) ?? null;
   }
 
   private async lookupChildSession(

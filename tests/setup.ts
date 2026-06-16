@@ -40,6 +40,19 @@ vi.mock('@modules/collector/PageController', async (importOriginal) => {
     evaluateOnNewDocumentWithTimeout: async (page: any, pageFunction: any, ...args: any[]) => {
       return page.evaluateOnNewDocument(pageFunction, ...args);
     },
+    // Coverage wrappers for PerformanceMonitor split files
+    coverageStartJSWithTimeout: async (page: any, options: any) => {
+      return page.coverage.startJSCoverage(options);
+    },
+    coverageStartCSSWithTimeout: async (page: any, options: any) => {
+      return page.coverage.startCSSCoverage(options);
+    },
+    coverageStopJSWithTimeout: async (page: any) => {
+      return page.coverage.stopJSCoverage();
+    },
+    coverageStopCSSWithTimeout: async (page: any) => {
+      return page.coverage.stopCSSCoverage();
+    },
   };
 });
 

@@ -172,14 +172,12 @@ describe('Handler delegation (handlers.ts -> implementation)', () => {
     vi.clearAllMocks();
   });
 
-  // ── analysis: handlers.ts -> handlers.impl.ts (no .impl.core) ──
+  // ── analysis: handlers.ts (direct aggregation, no .impl chain) ──
   describe('analysis chain', () => {
-    it('handlers.ts and handlers.impl.ts export the same CoreAnalysisHandlers', async () => {
+    it('handlers.ts exports CoreAnalysisHandlers', async () => {
       const handlers = await import('@server/domains/analysis/handlers');
-      const impl = await import('@server/domains/analysis/handlers.impl');
       expect(handlers.CoreAnalysisHandlers).toBeDefined();
       expect(typeof handlers.CoreAnalysisHandlers).toBe('function');
-      expect(handlers.CoreAnalysisHandlers).toBe(impl.CoreAnalysisHandlers);
     });
   });
 

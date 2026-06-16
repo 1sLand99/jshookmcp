@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { CoreAnalysisHandlers } from '@server/domains/analysis/handlers.impl';
+import { CoreAnalysisHandlers } from '@server/domains/analysis/handlers';
 import {
   Deobfuscator,
   AdvancedDeobfuscator,

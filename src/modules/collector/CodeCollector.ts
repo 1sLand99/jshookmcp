@@ -1,4 +1,3 @@
-import { existsSync } from 'fs';
 import type { Browser, Page, CDPSession, Target } from 'rebrowser-puppeteer-core';
 import type {
   CollectCodeOptions,
@@ -15,7 +14,6 @@ import { CodeCompressor } from '@modules/collector/CodeCompressor';
 import { BrowserTargetSessionManager } from '@modules/browser/BrowserTargetSessionManager';
 import type { BrowserTargetInfo } from '@modules/browser/BrowserTargetSessionManager.shared';
 import type { CDPSessionLike } from '@modules/browser/CDPSessionLike';
-import { findBrowserExecutableAsync } from '@utils/browserExecutable';
 import { collectInnerImpl } from '@modules/collector/CodeCollectorCollectInternal';
 import {
   shouldCollectUrlImpl,
@@ -33,15 +31,11 @@ import {
   getFilesByPatternImpl,
   getTopPriorityFilesImpl,
 } from '@modules/collector/CodeCollectorFileQueryInternal';
+import type { ChromeLaunchOverrides } from '@modules/collector/CodeCollectorLaunchOptions';
 import {
-  resolveChromeLaunchOptions,
-  sameChromeLaunchOptions,
-} from '@modules/collector/CodeCollectorLaunchOptions';
-import type {
-  ChromeLaunchOverrides,
-  CodeCollectorLaunchResult,
-  ResolvedChromeLaunchOptions,
-} from '@modules/collector/CodeCollectorLaunchOptions';
+  BrowserLifecycleManager,
+  type CodeCollectorLaunchResult,
+} from '@modules/collector/BrowserLifecycleManager';
 
 interface ChromeLike {
   runtime: Record<string, unknown>;
@@ -71,7 +65,7 @@ export interface ResolvedPageDescriptor {
 
 export class CodeCollector {
   protected config: PuppeteerConfig;
-  private browser: Browser | null = null;
+  private lifecycleManager: BrowserLifecycleManager;
   protected collectedUrls: Set<string> = new Set();
   private initPromise: Promise<void> | null = null;
   private collectLock: Promise<CollectCodeResult> | null = null;
@@ -97,13 +91,7 @@ export class CodeCollector {
   /** Cached Puppeteer Page for the selected tab, to avoid repeated CDP target.page() calls
    *  which can hang on WebGL/Canvas-heavy tabs (e.g. games). */
   private cachedActivePage: Page | null = null;
-  private currentHeadless: boolean | null = null;
-  private currentLaunchOptions: ResolvedChromeLaunchOptions | null = null;
   private explicitlyClosed: boolean = false;
-  private connectedToExistingBrowser: boolean = false;
-  /** PID of the Chrome child process launched by puppeteer, used for force-kill fallback. */
-  private chromePid: number | null = null;
-  private static readonly BROWSER_CLOSE_TIMEOUT_MS = 5000;
   constructor(config: PuppeteerConfig) {
     this.config = config;
     this.MAX_COLLECTED_URLS = config.maxCollectedUrls ?? 10000;
@@ -118,6 +106,11 @@ export class CodeCollector {
     this.cache = new CodeCache();
     this.smartCollector = new SmartCodeCollector();
     this.compressor = new CodeCompressor();
+    this.lifecycleManager = new BrowserLifecycleManager(
+      this.config,
+      this.viewport,
+      this.handleBrowserDisconnected.bind(this),
+    );
     logger.info(
       ` CodeCollector limits: maxCollect=${this.MAX_FILES_PER_COLLECT} files, maxResponse=` +
         `${(this.MAX_RESPONSE_SIZE / 1024).toFixed(0)}KB, maxSingle=${(this.MAX_SINGLE_FILE_SIZE / 1024).toFixed(0)}KB`,
@@ -192,120 +185,14 @@ export class CodeCollector {
   }
 
   async launch(overrides?: ChromeLaunchOverrides): Promise<CodeCollectorLaunchResult> {
-    if (this.initPromise) {
-      await this.initPromise;
-    }
-
-    const executablePath = await this.resolveExecutablePath();
-    const launchOptions = resolveChromeLaunchOptions(
-      this.config,
-      overrides,
-      executablePath,
-      this.viewport,
-    );
-
-    // Internal callers such as collector.init() only need "a browser".
-    // If one already exists, do not silently relaunch it with default config.
-    if (this.browser && overrides === undefined) {
-      this.explicitlyClosed = false;
-      return {
-        action: 'reused',
-        launchOptions: this.currentLaunchOptions ?? launchOptions,
-      };
-    }
-
-    if (
-      this.browser &&
-      !this.connectedToExistingBrowser &&
-      sameChromeLaunchOptions(this.currentLaunchOptions, launchOptions)
-    ) {
-      this.explicitlyClosed = false;
-      return {
-        action: 'reused',
-        launchOptions,
-      };
-    }
-
-    const action: CodeCollectorLaunchResult['action'] = this.browser ? 'relaunched' : 'launched';
-    const reason = this.browser
-      ? this.connectedToExistingBrowser
-        ? 'replacing-existing-browser-connection'
-        : 'launch-options-changed'
-      : undefined;
-
     this.explicitlyClosed = false;
-    this.initPromise = this.launchInner(launchOptions);
-    try {
-      await this.initPromise;
-    } finally {
-      this.initPromise = null;
-    }
-
-    return {
-      action,
-      launchOptions,
-      ...(reason ? { reason } : {}),
-    };
+    const result = await this.lifecycleManager.launch(overrides, this.initPromise);
+    return result;
   }
 
-  private async launchInner(launchOptions: ResolvedChromeLaunchOptions): Promise<void> {
-    if (this.browser) {
-      await this.disposeCurrentBrowser(false);
-    }
-
-    const browserLaunchOptions: Parameters<typeof import('rebrowser-puppeteer-core').launch>[0] = {
-      headless: launchOptions.headless,
-      args: launchOptions.args,
-      defaultViewport: this.viewport,
-      protocolTimeout: 60000,
-    };
-    if (launchOptions.executablePath) {
-      browserLaunchOptions.executablePath = launchOptions.executablePath;
-    }
-    logger.info('Initializing browser with anti-detection...');
-    const puppeteer = await import('rebrowser-puppeteer-core');
-    const launchFn = puppeteer.default?.launch ?? puppeteer.launch;
-    this.browser = await launchFn(browserLaunchOptions);
-    this.connectedToExistingBrowser = false;
-    this.chromePid = this.browser.process()?.pid ?? null;
-    if (this.chromePid) {
-      logger.debug(`Chrome child process PID: ${this.chromePid}`);
-    }
-    this.currentHeadless = launchOptions.headless;
-    this.currentLaunchOptions = launchOptions;
-    this.browser.on('disconnected', () => {
-      this.handleBrowserDisconnected();
-    });
-    logger.success('Browser initialized with enhanced anti-detection');
-  }
-  private async resolveExecutablePath(): Promise<string | undefined> {
-    const configuredPath = this.config.executablePath?.trim();
-    if (configuredPath) {
-      if (existsSync(configuredPath)) {
-        return configuredPath;
-      }
-      throw new Error(
-        `Configured browser executable was not found: ${configuredPath}. ` +
-          'Set a valid executablePath or configure CHROME_PATH / PUPPETEER_EXECUTABLE_PATH / BROWSER_EXECUTABLE_PATH.',
-      );
-    }
-    const detectedPath = await findBrowserExecutableAsync();
-    if (detectedPath) {
-      return detectedPath;
-    }
-    logger.info(
-      'No explicit browser executable configured. Falling back to Puppeteer-managed browser resolution.',
-    );
-    return undefined;
-  }
-
-  private handleBrowserDisconnected(): void {
-    logger.warn('Browser disconnected');
-    this.browser = null;
-    this.currentHeadless = null;
-    this.currentLaunchOptions = null;
-    this.connectedToExistingBrowser = false;
-    this.chromePid = null;
+  async close(): Promise<void> {
+    await this.lifecycleManager.close(this.clearAllData.bind(this));
+    this.explicitlyClosed = true;
     this.activePageIndex = null;
     this.cachedActivePage = null;
     void this.browserTargetSessionManager?.dispose();
@@ -316,85 +203,36 @@ export class CodeCollector {
     }
   }
 
-  private async disposeCurrentBrowser(markExplicitlyClosed: boolean): Promise<void> {
-    await this.clearAllData();
-    this.explicitlyClosed = markExplicitlyClosed;
+  /** Get the tracked Chrome child process PID (null if not launched or already closed). */
+  getChromePid(): number | null {
+    return this.lifecycleManager.getChromePid();
+  }
+
+  isExistingBrowserConnection(): boolean {
+    return this.lifecycleManager.isExistingBrowserConnection();
+  }
+
+  /** Force-kill a process by PID. Safe to call with null/invalid PIDs. */
+  static forceKillPid(pid: number | null): void {
+    return BrowserLifecycleManager.forceKillPid(pid);
+  }
+
+  private handleBrowserDisconnected(): void {
     this.activePageIndex = null;
     this.cachedActivePage = null;
-
-    const browser = this.browser;
-    const disconnectOnly = this.connectedToExistingBrowser;
-    const pid = this.chromePid;
-    this.browser = null;
-    this.currentHeadless = null;
-    this.currentLaunchOptions = null;
-    this.connectedToExistingBrowser = false;
-    this.chromePid = null;
-    await this.browserTargetSessionManager?.dispose();
+    void this.browserTargetSessionManager?.dispose();
     this.browserTargetSessionManager = null;
     if (this.cdpSession) {
       this.cdpSession = null;
       this.cdpListeners = {};
     }
-
-    if (browser) {
-      if (disconnectOnly) {
-        await browser.disconnect();
-      } else {
-        await this.closeBrowserWithForceKill(browser, pid);
-      }
-    }
-  }
-
-  async close(): Promise<void> {
-    await this.disposeCurrentBrowser(true);
-    logger.info('Browser closed and all data cleared');
-  }
-
-  /**
-   * Close browser with a timeout guard. If browser.close() hangs or fails,
-   * force-kill the Chrome child process by PID to prevent zombie processes.
-   */
-  private async closeBrowserWithForceKill(browser: Browser, pid: number | null): Promise<void> {
-    try {
-      await Promise.race([
-        browser.close(),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error('browser.close() timed out')),
-            CodeCollector.BROWSER_CLOSE_TIMEOUT_MS,
-          ),
-        ),
-      ]);
-    } catch (error) {
-      logger.warn('browser.close() failed or timed out, attempting force-kill:', error);
-      CodeCollector.forceKillPid(pid);
-    }
-  }
-
-  /** Force-kill a process by PID. Safe to call with null/invalid PIDs. */
-  static forceKillPid(pid: number | null): void {
-    if (!pid) return;
-    try {
-      process.kill(pid, 'SIGKILL');
-      logger.info(`Force-killed Chrome process PID ${pid}`);
-    } catch (error) {
-      // ESRCH = process already exited, which is fine
-      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
-        logger.warn(`Failed to force-kill Chrome PID ${pid}:`, error);
-      }
-    }
-  }
-
-  /** Get the tracked Chrome child process PID (null if not launched or already closed). */
-  getChromePid(): number | null {
-    return this.chromePid;
   }
   private getPageTargets(): Target[] {
-    if (!this.browser) {
+    const browser = this.lifecycleManager.getBrowser();
+    if (!browser) {
       return [];
     }
-    return this.browser.targets().filter((target) => target.type() === 'page');
+    return browser.targets().filter((target) => target.type() === 'page');
   }
   private async resolvePageTargetHandle(target: Target, timeoutMs = 5000): Promise<Page> {
     const page = await Promise.race<Page | null>([
@@ -418,14 +256,12 @@ export class CodeCollector {
 
     return page;
   }
-  isExistingBrowserConnection(): boolean {
-    return this.connectedToExistingBrowser;
-  }
   async getActivePage(): Promise<Page> {
     if (this.cachedActivePage) {
       return this.cachedActivePage;
     }
-    if (!this.browser) {
+    const browser = this.lifecycleManager.getBrowser();
+    if (!browser) {
       if (this.explicitlyClosed) {
         throw new PrerequisiteError(
           'Browser was explicitly closed. Call browser_launch or browser_attach first.',
@@ -441,7 +277,7 @@ export class CodeCollector {
     }
     const pageTargets = this.getPageTargets();
     if (pageTargets.length === 0) {
-      return await this.browser!.newPage();
+      return await this.lifecycleManager.getBrowser()!.newPage();
     }
     if (this.activePageIndex !== null && this.activePageIndex < pageTargets.length) {
       return await this.resolvePageTargetHandle(pageTargets[this.activePageIndex]!);
@@ -465,7 +301,8 @@ export class CodeCollector {
     return urlMatch?.index ?? null;
   }
   async listPages(): Promise<Array<{ index: number; url: string; title: string }>> {
-    if (!this.browser) {
+    const browser = this.lifecycleManager.getBrowser();
+    if (!browser) {
       return [];
     }
     const targets = this.getPageTargets();
@@ -476,7 +313,8 @@ export class CodeCollector {
     }));
   }
   async listResolvedPages(timeoutMs = 1500): Promise<ResolvedPageDescriptor[]> {
-    if (!this.browser) {
+    const browser = this.lifecycleManager.getBrowser();
+    if (!browser) {
       return [];
     }
 
@@ -512,7 +350,8 @@ export class CodeCollector {
     return pages.filter((page): page is ResolvedPageDescriptor => page !== null);
   }
   async selectResolvedPageByTargetId(targetId: string): Promise<ResolvedPageDescriptor | null> {
-    if (!this.browser) return null;
+    const browser = this.lifecycleManager.getBrowser();
+    if (!browser) return null;
 
     const targets = this.getPageTargets();
     for (const target of targets) {
@@ -546,7 +385,8 @@ export class CodeCollector {
     return null;
   }
   async selectPage(index: number): Promise<void> {
-    if (!this.browser) {
+    const browser = this.lifecycleManager.getBrowser();
+    if (!browser) {
       throw new Error('Browser not connected');
     }
     const pages = await this.listPages();
@@ -579,10 +419,12 @@ export class CodeCollector {
     }
   }
   async createPage(url?: string): Promise<Page> {
-    if (!this.browser) {
+    let browser = this.lifecycleManager.getBrowser();
+    if (!browser) {
       await this.init();
+      browser = this.lifecycleManager.getBrowser();
     }
-    const page = await this.browser!.newPage();
+    const page = await browser!.newPage();
     await page.setUserAgent(this.userAgent);
     await this.applyAntiDetection(page);
     if (url) {
@@ -632,23 +474,27 @@ export class CodeCollector {
     v8NativeSyntaxEnabled?: boolean;
     launchArgs?: string[];
   }> {
-    if (!this.browser) {
+    const browser = this.lifecycleManager.getBrowser();
+    if (!browser) {
       return {
         running: false,
         pagesCount: 0,
       };
     }
     try {
-      const version = await this.browser.version();
+      const version = await browser.version();
       const pages = this.getPageTargets();
+      const currentHeadless = this.lifecycleManager.getCurrentHeadless();
+      const currentLaunchOptions = this.lifecycleManager.getCurrentLaunchOptions();
+      const connectedToExistingBrowser = this.lifecycleManager.isExistingBrowserConnection();
       return {
         running: true,
         pagesCount: pages.length,
         version,
-        effectiveHeadless: this.currentHeadless ?? undefined,
-        launchSource: this.connectedToExistingBrowser ? 'attached' : 'launched',
-        v8NativeSyntaxEnabled: this.currentLaunchOptions?.v8NativeSyntaxEnabled,
-        launchArgs: this.currentLaunchOptions?.args ? [...this.currentLaunchOptions.args] : [],
+        effectiveHeadless: currentHeadless ?? undefined,
+        launchSource: connectedToExistingBrowser ? 'attached' : 'launched',
+        v8NativeSyntaxEnabled: currentLaunchOptions?.v8NativeSyntaxEnabled,
+        launchArgs: currentLaunchOptions?.args ? [...currentLaunchOptions.args] : [],
       };
     } catch (error) {
       logger.debug('Browser not running or disconnected:', error);
@@ -726,30 +572,26 @@ export class CodeCollector {
 
   async connect(endpointOrOptions: string | ChromeConnectOptions): Promise<void> {
     this.explicitlyClosed = false;
-    if (this.browser || this.browserTargetSessionManager || this.cdpSession) {
-      await this.disposeCurrentBrowser(false);
-    }
     const connectOptions = await this.resolveConnectOptions(endpointOrOptions);
     const target =
       connectOptions.browserWSEndpoint ??
       connectOptions.browserURL ??
       'auto-detected Chrome debugging endpoint';
-    logger.info(`Connecting to existing browser: ${target}`);
-    this.browser = await this.connectWithTimeout(connectOptions, target, endpointOrOptions);
-    this.connectedToExistingBrowser = true;
-    this.currentLaunchOptions = null;
-    this.browser.on('disconnected', () => {
-      this.handleBrowserDisconnected();
-    });
-    logger.success('Connected to existing browser successfully');
+    await this.lifecycleManager.connect(
+      connectOptions,
+      (opts, tgt) => this.connectWithTimeout(opts, tgt, endpointOrOptions),
+      target,
+    );
   }
   getBrowser(): Browser | null {
-    return this.browser;
+    return this.lifecycleManager.getBrowser();
   }
 
   getBrowserTargetSessionManager(): BrowserTargetSessionManager {
     if (!this.browserTargetSessionManager) {
-      this.browserTargetSessionManager = new BrowserTargetSessionManager(() => this.browser);
+      this.browserTargetSessionManager = new BrowserTargetSessionManager(() =>
+        this.lifecycleManager.getBrowser(),
+      );
     }
     return this.browserTargetSessionManager;
   }

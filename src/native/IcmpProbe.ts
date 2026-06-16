@@ -4,814 +4,56 @@
  * Windows: IcmpSendEcho from iphlpapi.dll (no admin required).
  * Linux/macOS: Raw ICMP sockets via libc (requires root/CAP_NET_RAW).
  *
- * Uses Buffer-based struct parsing (same pattern as Win32API.ts)
- * to avoid koffi struct registration issues in test environments.
+ * @module IcmpProbe
  */
 
-import koffi, { type LibraryHandle } from 'koffi';
 import { logger } from '@utils/logger';
-import {
-  ICMP_PROBE_TIMEOUT_MS,
-  ICMP_TRACEROUTE_MAX_HOPS,
-  ICMP_DEFAULT_PACKET_SIZE,
-} from '@src/constants';
-
-// ── Exported Types ──
-
-export interface IcmpProbeResult {
-  target: string;
-  ip: string;
-  alive: boolean;
-  rtt: number | null;
-  ttl: number;
-  icmpStatus: string;
-  errorClass: string;
-  packetSize: number;
-}
-
-export interface TracerouteHop {
-  hop: number;
-  ip: string | null;
-  rtt: number | null;
-  status: string;
-  errorClass: string;
-}
-
-export interface TracerouteResult {
-  target: string;
-  ip: string;
-  hops: TracerouteHop[];
-  reached: boolean;
-  totalHops: number;
-  totalTime: number;
-}
-
-type WinIcmpSendEchoFn = ((
-  handle: bigint,
-  destAddr: number,
-  sendData: Buffer,
-  sendLength: number,
-  options: Buffer,
-  replyBuf: Buffer,
-  replySize: number,
-  timeoutMs: number,
-) => number) & {
-  async: (
-    handle: bigint,
-    destAddr: number,
-    sendData: Buffer,
-    sendLength: number,
-    options: Buffer,
-    replyBuf: Buffer,
-    replySize: number,
-    timeoutMs: number,
-    callback: (err: unknown, result: number) => void,
-  ) => void;
-};
-
-type WinIcmpFns = {
-  inetAddr: (ip: string) => number;
-  createFile: () => bigint;
-  closeHandle: (handle: bigint) => number;
-  sendEcho: WinIcmpSendEchoFn;
-};
-
-type PosixFns = {
-  socket: (domain: number, type: number, protocol: number) => number;
-  setsockopt: (
-    fd: number,
-    level: number,
-    optname: number,
-    optval: Buffer,
-    optlen: number,
-  ) => number;
-  sendto: (
-    fd: number,
-    buf: Buffer,
-    len: number,
-    flags: number,
-    addr: Buffer,
-    addrLen: number,
-  ) => number;
-  recv: (fd: number, buf: Buffer, len: number, flags: number) => number;
-  close: (fd: number) => number;
-};
-
-// ── Shared Helpers ──
-
-function ipToString(addr: number): string {
-  return `${addr & 0xff}.${(addr >>> 8) & 0xff}.${(addr >>> 16) & 0xff}.${(addr >>> 24) & 0xff}`;
-}
-
-function isValidIpv4(ip: string): boolean {
-  const parts = ip.split('.');
-  if (parts.length !== 4) return false;
-  return parts.every((p) => {
-    const n = parseInt(p, 10);
-    return !isNaN(n) && n >= 0 && n <= 255 && p === String(n);
-  });
-}
-
-// ── Platform State ──
-
-let available: boolean | null = null;
-
-// ════════════════════════════════════════════════════════════════════
-// Windows Implementation (IcmpSendEcho via iphlpapi.dll)
-// ════════════════════════════════════════════════════════════════════
-
-const IP_STATUS: Record<number, string> = {
-  0: 'SUCCESS',
-  11001: 'BUF_TOO_SMALL',
-  11002: 'DEST_NET_UNREACHABLE',
-  11003: 'DEST_HOST_UNREACHABLE',
-  11004: 'DEST_PROT_UNREACHABLE',
-  11005: 'DEST_PORT_UNREACHABLE',
-  11009: 'PACKET_TOO_BIG',
-  11010: 'REQ_TIMED_OUT',
-  11013: 'TTL_EXPIRED_TRANSIT',
-  11014: 'TTL_EXPIRED_REASSEM',
-  11015: 'PARAM_PROBLEM',
-  11016: 'SOURCE_QUENCH',
-  11050: 'GENERAL_FAILURE',
-};
-
-function winStatusLabel(s: number): string {
-  return IP_STATUS[s] ?? `UNKNOWN_${s}`;
-}
-
-function winStatusClass(s: number): string {
-  if (s === 0) return 'success';
-  if (s === 11010) return 'timeout';
-  if (s === 11013 || s === 11014) return 'time_exceeded';
-  if (s >= 11002 && s <= 11005) return 'destination_unreachable';
-  if (s === 11016) return 'source_quench';
-  if (s === 11009) return 'packet_too_big';
-  if (s === 11015) return 'parameter_problem';
-  return 'error';
-}
-
-let iphlpapi: LibraryHandle | null = null;
-let ws2_32: LibraryHandle | null = null;
-let winIcmpFns: WinIcmpFns | null = null;
-let posixFns: PosixFns | null = null;
-
-function getIphlpapi(): LibraryHandle {
-  if (!iphlpapi) {
-    iphlpapi = koffi.load('iphlpapi.dll');
-    logger.debug('Loaded iphlpapi.dll via koffi');
-  }
-  return iphlpapi;
-}
-
-function getWs2_32(): LibraryHandle {
-  if (!ws2_32) {
-    ws2_32 = koffi.load('ws2_32.dll');
-    logger.debug('Loaded ws2_32.dll via koffi');
-  }
-  return ws2_32;
-}
-
-function getWinIcmpFns() {
-  if (!winIcmpFns) {
-    const iphlpapiLib = getIphlpapi();
-    const ws2Lib = getWs2_32();
-    const sendEcho = iphlpapiLib.func(
-      'uint32 IcmpSendEcho(void *, uint32, void *, uint16, void *, void *, uint32, uint32)',
-    ) as WinIcmpSendEchoFn;
-    winIcmpFns = {
-      inetAddr: ws2Lib.func('uint32 inet_addr(char *)'),
-      createFile: iphlpapiLib.func('void * IcmpCreateFile()'),
-      closeHandle: iphlpapiLib.func('int IcmpCloseHandle(void *)'),
-      sendEcho,
-    };
-  }
-  return winIcmpFns;
-}
-
-const IP_OPT_SIZE = 16;
-const MIN_REPLY_BUF_SIZE = 256;
-const ICMP_REPLY_OVERHEAD = 64;
-
-function getReplyBufferSize(packetSize: number): number {
-  // IcmpSendEcho expects room for the reply header, options, and echoed payload.
-  return Math.max(MIN_REPLY_BUF_SIZE, packetSize + ICMP_REPLY_OVERHEAD);
-}
-
-function buildOptionBuf(ttl: number): Buffer {
-  const buf = Buffer.alloc(IP_OPT_SIZE, 0);
-  buf.writeUInt8(ttl, 0);
-  return buf;
-}
-
-function parseReply(buf: Buffer) {
-  return {
-    address: buf.readUInt32LE(0),
-    status: buf.readUInt32LE(4),
-    rtt: buf.readUInt32LE(8),
-  };
-}
-
-function win_inet_addr(ip: string): number {
-  return getWinIcmpFns().inetAddr(ip);
-}
-
-function win_IcmpCreateFile(): bigint {
-  return getWinIcmpFns().createFile();
-}
-
-function win_IcmpCloseHandle(h: bigint): boolean {
-  return getWinIcmpFns().closeHandle(h) !== 0;
-}
-
-async function win_IcmpSendEchoAsync(
-  handle: bigint,
-  destAddr: number,
-  sendData: Buffer,
-  optionBuf: Buffer,
-  timeoutMs: number,
-): Promise<{ numReplies: number; replyBuf: Buffer }> {
-  const replyBuf = Buffer.alloc(getReplyBufferSize(sendData.length));
-  const n = await new Promise<number>((resolve, reject) => {
-    getWinIcmpFns().sendEcho.async(
-      handle,
-      destAddr,
-      sendData,
-      sendData.length,
-      optionBuf,
-      replyBuf,
-      replyBuf.length,
-      timeoutMs,
-      (err, result) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        resolve(Number(result));
-      },
-    );
-  });
-  return { numReplies: n, replyBuf };
-}
-
-async function winIcmpProbe(params: {
-  target: string;
-  ttl?: number;
-  packetSize?: number;
-  timeout?: number;
-}): Promise<IcmpProbeResult> {
-  const {
-    target,
-    ttl = 128,
-    packetSize = ICMP_DEFAULT_PACKET_SIZE,
-    timeout = ICMP_PROBE_TIMEOUT_MS,
-  } = params;
-
-  const destAddr = win_inet_addr(target);
-  if (destAddr === 0xffffffff) {
-    return {
-      target,
-      ip: '',
-      alive: false,
-      rtt: null,
-      ttl,
-      icmpStatus: 'INVALID_ADDRESS',
-      errorClass: 'error',
-      packetSize,
-    };
-  }
-
-  const handle = win_IcmpCreateFile();
-  try {
-    const sendData = Buffer.alloc(packetSize, 0xaa);
-    const optionBuf = buildOptionBuf(ttl);
-    const { numReplies, replyBuf } = await win_IcmpSendEchoAsync(
-      handle,
-      destAddr,
-      sendData,
-      optionBuf,
-      timeout,
-    );
-
-    if (numReplies === 0) {
-      return {
-        target,
-        ip: ipToString(destAddr),
-        alive: false,
-        rtt: null,
-        ttl,
-        icmpStatus: 'REQ_TIMED_OUT',
-        errorClass: 'timeout',
-        packetSize,
-      };
-    }
-
-    const reply = parseReply(replyBuf);
-    return {
-      target,
-      ip: ipToString(reply.address),
-      alive: reply.status === 0,
-      rtt: reply.status === 0 ? reply.rtt : null,
-      ttl,
-      icmpStatus: winStatusLabel(reply.status),
-      errorClass: winStatusClass(reply.status),
-      packetSize,
-    };
-  } finally {
-    win_IcmpCloseHandle(handle);
-  }
-}
-
-async function winTraceroute(params: {
-  target: string;
-  maxHops?: number;
-  timeout?: number;
-  packetSize?: number;
-}): Promise<TracerouteResult> {
-  const {
-    target,
-    maxHops = ICMP_TRACEROUTE_MAX_HOPS,
-    timeout = ICMP_PROBE_TIMEOUT_MS,
-    packetSize = ICMP_DEFAULT_PACKET_SIZE,
-  } = params;
-
-  const destAddr = win_inet_addr(target);
-  if (destAddr === 0xffffffff) {
-    return { target, ip: '', hops: [], reached: false, totalHops: 0, totalTime: 0 };
-  }
-
-  const handle = win_IcmpCreateFile();
-  const hops: TracerouteHop[] = [];
-  const t0 = performance.now();
-
-  try {
-    for (let ttl = 1; ttl <= maxHops; ttl++) {
-      const sendData = Buffer.alloc(packetSize, 0xaa);
-      const optionBuf = buildOptionBuf(ttl);
-      const { numReplies, replyBuf } = await win_IcmpSendEchoAsync(
-        handle,
-        destAddr,
-        sendData,
-        optionBuf,
-        timeout,
-      );
-
-      if (numReplies === 0) {
-        hops.push({
-          hop: ttl,
-          ip: null,
-          rtt: null,
-          status: 'REQ_TIMED_OUT',
-          errorClass: 'timeout',
-        });
-        continue;
-      }
-
-      const reply = parseReply(replyBuf);
-      const hopIp = ipToString(reply.address);
-      hops.push({
-        hop: ttl,
-        ip: hopIp,
-        rtt: reply.rtt,
-        status: winStatusLabel(reply.status),
-        errorClass: winStatusClass(reply.status),
-      });
-
-      if (reply.status === 0) break;
-    }
-  } finally {
-    win_IcmpCloseHandle(handle);
-  }
-
-  const last = hops[hops.length - 1];
-  return {
-    target,
-    ip: ipToString(destAddr),
-    hops,
-    reached: last?.status === 'SUCCESS',
-    totalHops: hops.length,
-    totalTime: Math.round((performance.now() - t0) * 100) / 100,
-  };
-}
-
-// ════════════════════════════════════════════════════════════════════
-// POSIX Implementation (Linux + macOS via raw ICMP sockets)
-// ════════════════════════════════════════════════════════════════════
-
-const AF_INET = 2;
-const SOCK_RAW = 3;
-const IPPROTO_ICMP = 1;
-const IPPROTO_IP = 0;
-const IP_TTL = 2;
-const SOL_SOCKET = 1;
-const SO_RCVTIMEO = process.platform === 'darwin' ? 0x1006 : 20;
-const POSIX_LIB = process.platform === 'darwin' ? '/usr/lib/libSystem.B.dylib' : 'libc.so.6';
-
-let posixLib: LibraryHandle | null = null;
-
-function getPosixLib(): LibraryHandle {
-  if (!posixLib) {
-    posixLib = koffi.load(POSIX_LIB);
-    logger.debug(`Loaded ${POSIX_LIB} via koffi for ICMP`);
-  }
-  return posixLib;
-}
-
-function getPosixFns() {
-  if (!posixFns) {
-    const lib = getPosixLib();
-    posixFns = {
-      socket: lib.func('int socket(int, int, int)'),
-      setsockopt: lib.func('int setsockopt(int, int, int, void *, int)'),
-      sendto: lib.func('int sendto(int, void *, int, int, void *, int)'),
-      recv: lib.func('int recv(int, void *, int, int)'),
-      close: lib.func('int close(int)'),
-    };
-  }
-  return posixFns;
-}
-
-function posixSocket(domain: number, type: number, protocol: number): number {
-  return getPosixFns().socket(domain, type, protocol);
-}
-
-function posixSetsockopt(
-  fd: number,
-  level: number,
-  optname: number,
-  optval: Buffer,
-  optlen: number,
-): number {
-  return getPosixFns().setsockopt(fd, level, optname, optval, optlen);
-}
-
-function posixSendto(fd: number, buf: Buffer, addr: Buffer): number {
-  return getPosixFns().sendto(fd, buf, buf.length, 0, addr, 16);
-}
-
-function posixRecv(fd: number, buf: Buffer): number {
-  return getPosixFns().recv(fd, buf, buf.length, 0);
-}
-
-function posixClose(fd: number): number {
-  return getPosixFns().close(fd);
-}
-
-// ── ICMP Packet Helpers ──
-
-function computeChecksum(buf: Buffer): number {
-  let sum = 0;
-  for (let i = 0; i < buf.length - 1; i += 2) {
-    sum += buf.readUInt16BE(i);
-  }
-  if (buf.length & 1) {
-    sum += (buf[buf.length - 1] ?? 0) << 8;
-  }
-  while (sum > 0xffff) {
-    sum = (sum & 0xffff) + (sum >>> 16);
-  }
-  return ~sum & 0xffff;
-}
-
-function buildIcmpEcho(id: number, seq: number, payloadSize: number): Buffer {
-  const buf = Buffer.alloc(8 + payloadSize);
-  buf[0] = 8; // Type: Echo Request
-  buf[1] = 0; // Code
-  buf.writeUInt16BE(id & 0xffff, 4);
-  buf.writeUInt16BE(seq & 0xffff, 6);
-  for (let i = 8; i < buf.length; i++) {
-    buf[i] = 0xaa;
-  }
-  buf.writeUInt16BE(computeChecksum(buf), 2);
-  return buf;
-}
-
-function buildSockaddrIn(ip: string): Buffer {
-  const buf = Buffer.alloc(16, 0);
-  buf.writeUInt16LE(AF_INET, 0);
-  const parts = ip.split('.').map(Number);
-  buf[4] = parts[0] ?? 0;
-  buf[5] = parts[1] ?? 0;
-  buf[6] = parts[2] ?? 0;
-  buf[7] = parts[3] ?? 0;
-  return buf;
-}
-
-function parseIcmpPacket(
-  buf: Buffer,
-  n: number,
-  expectedId: number,
-): { type: number; code: number; fromIp: number } | null {
-  if (n < 20) return null;
-  const ihl = ((buf[0] ?? 0) & 0x0f) * 4;
-  if (n < ihl + 8) return null;
-
-  const icmpType = buf[ihl] ?? 0;
-  const icmpCode = buf[ihl + 1] ?? 0;
-  const fromIp = buf.readUInt32LE(12);
-
-  if (icmpType === 0) {
-    // Echo Reply
-    const id = buf.readUInt16BE(ihl + 4);
-    if (id !== expectedId) return null;
-    return { type: icmpType, code: icmpCode, fromIp };
-  }
-
-  if (icmpType === 11 || icmpType === 3) {
-    // Time Exceeded or Dest Unreachable
-    const origStart = ihl + 8;
-    if (n < origStart + 28) return null;
-    const origIhl = ((buf[origStart] ?? 0) & 0x0f) * 4;
-    if (n < origStart + origIhl + 8) return null;
-    const origId = buf.readUInt16BE(origStart + origIhl + 4);
-    if (origId !== expectedId) return null;
-    return { type: icmpType, code: icmpCode, fromIp };
-  }
-
-  return null;
-}
-
-function posixStatusLabel(type: number, code: number, timedOut: boolean): string {
-  if (type === 0) return 'SUCCESS';
-  if (timedOut) return 'REQ_TIMED_OUT';
-  if (type === 11 && code === 0) return 'TTL_EXPIRED_TRANSIT';
-  if (type === 11 && code === 1) return 'TTL_EXPIRED_REASSEM';
-  if (type === 3 && code === 0) return 'DEST_NET_UNREACHABLE';
-  if (type === 3 && code === 1) return 'DEST_HOST_UNREACHABLE';
-  if (type === 3 && code === 2) return 'DEST_PROT_UNREACHABLE';
-  if (type === 3 && code === 3) return 'DEST_PORT_UNREACHABLE';
-  return `UNKNOWN_${type}_${code}`;
-}
-
-function posixErrorClass(type: number, _exitCodeValue: number, timedOut: boolean): string {
-  if (type === 0) return 'success';
-  if (timedOut) return 'timeout';
-  if (type === 11) return 'time_exceeded';
-  if (type === 3) return 'destination_unreachable';
-  return 'error';
-}
-
-function posixSetTtl(fd: number, ttl: number): void {
-  const buf = Buffer.alloc(4);
-  buf.writeInt32LE(ttl);
-  posixSetsockopt(fd, IPPROTO_IP, IP_TTL, buf, 4);
-}
-
-function posixSetRecvTimeout(fd: number, timeoutMs: number): void {
-  const tv = Buffer.alloc(16, 0);
-  tv.writeInt32LE(Math.floor(timeoutMs / 1000), 0);
-  tv.writeInt32LE((timeoutMs % 1000) * 1000, 8);
-  posixSetsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, tv, 16);
-}
-
-function posixIcmpProbe(params: {
-  target: string;
-  ttl?: number;
-  packetSize?: number;
-  timeout?: number;
-}): IcmpProbeResult {
-  const {
-    target,
-    ttl = 128,
-    packetSize = ICMP_DEFAULT_PACKET_SIZE,
-    timeout = ICMP_PROBE_TIMEOUT_MS,
-  } = params;
-
-  if (!isValidIpv4(target)) {
-    return {
-      target,
-      ip: '',
-      alive: false,
-      rtt: null,
-      ttl,
-      icmpStatus: 'INVALID_ADDRESS',
-      errorClass: 'error',
-      packetSize,
-    };
-  }
-
-  const fd = posixSocket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
-  if (fd < 0) {
-    return {
-      target,
-      ip: '',
-      alive: false,
-      rtt: null,
-      ttl,
-      icmpStatus: 'SOCKET_ERROR',
-      errorClass: 'error',
-      packetSize,
-    };
-  }
-
-  try {
-    posixSetTtl(fd, ttl);
-    posixSetRecvTimeout(fd, timeout);
-
-    const id = process.pid & 0xffff;
-    const packet = buildIcmpEcho(id, 1, packetSize);
-    const destAddr = buildSockaddrIn(target);
-
-    const t0 = performance.now();
-    const sent = posixSendto(fd, packet, destAddr);
-    if (sent < 0) {
-      return {
-        target,
-        ip: target,
-        alive: false,
-        rtt: null,
-        ttl,
-        icmpStatus: 'SEND_ERROR',
-        errorClass: 'error',
-        packetSize,
-      };
-    }
-
-    const recvBuf = Buffer.alloc(512);
-    const n = posixRecv(fd, recvBuf);
-    const rtt = Math.round(performance.now() - t0);
-
-    if (n <= 0) {
-      return {
-        target,
-        ip: target,
-        alive: false,
-        rtt: null,
-        ttl,
-        icmpStatus: 'REQ_TIMED_OUT',
-        errorClass: 'timeout',
-        packetSize,
-      };
-    }
-
-    const reply = parseIcmpPacket(recvBuf, n, id);
-    if (!reply) {
-      return {
-        target,
-        ip: target,
-        alive: false,
-        rtt: null,
-        ttl,
-        icmpStatus: 'UNEXPECTED_REPLY',
-        errorClass: 'error',
-        packetSize,
-      };
-    }
-
-    const alive = reply.type === 0;
-    return {
-      target,
-      ip: ipToString(reply.fromIp),
-      alive,
-      rtt: alive ? rtt : null,
-      ttl,
-      icmpStatus: posixStatusLabel(reply.type, reply.code, false),
-      errorClass: posixErrorClass(reply.type, reply.code, false),
-      packetSize,
-    };
-  } finally {
-    posixClose(fd);
-  }
-}
-
-function posixTraceroute(params: {
-  target: string;
-  maxHops?: number;
-  timeout?: number;
-  packetSize?: number;
-}): TracerouteResult {
-  const {
-    target,
-    maxHops = ICMP_TRACEROUTE_MAX_HOPS,
-    timeout = ICMP_PROBE_TIMEOUT_MS,
-    packetSize = ICMP_DEFAULT_PACKET_SIZE,
-  } = params;
-
-  if (!isValidIpv4(target)) {
-    return { target, ip: '', hops: [], reached: false, totalHops: 0, totalTime: 0 };
-  }
-
-  const fd = posixSocket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
-  if (fd < 0) {
-    return { target, ip: '', hops: [], reached: false, totalHops: 0, totalTime: 0 };
-  }
-
-  const hops: TracerouteHop[] = [];
-  const id = process.pid & 0xffff;
-  const destAddr = buildSockaddrIn(target);
-  const t0 = performance.now();
-
-  const MAX_CONSECUTIVE_SEND_ERRORS = 5;
-  let consecutiveSendErrors = 0;
-
-  try {
-    posixSetRecvTimeout(fd, timeout);
-
-    for (let ttl = 1; ttl <= maxHops; ttl++) {
-      posixSetTtl(fd, ttl);
-      const packet = buildIcmpEcho(id, ttl, packetSize);
-      const sendT0 = performance.now();
-      const sent = posixSendto(fd, packet, destAddr);
-      if (sent < 0) {
-        consecutiveSendErrors++;
-        hops.push({
-          hop: ttl,
-          ip: null,
-          rtt: null,
-          status: 'SEND_ERROR',
-          errorClass: 'error',
-        });
-        if (consecutiveSendErrors >= MAX_CONSECUTIVE_SEND_ERRORS) break;
-        continue;
-      }
-      consecutiveSendErrors = 0;
-
-      const recvBuf = Buffer.alloc(512);
-      const n = posixRecv(fd, recvBuf);
-      const rtt = Math.round(performance.now() - sendT0);
-
-      if (n <= 0) {
-        hops.push({
-          hop: ttl,
-          ip: null,
-          rtt: null,
-          status: 'REQ_TIMED_OUT',
-          errorClass: 'timeout',
-        });
-        continue;
-      }
-
-      const reply = parseIcmpPacket(recvBuf, n, id);
-      if (!reply) {
-        hops.push({
-          hop: ttl,
-          ip: null,
-          rtt: null,
-          status: 'UNEXPECTED_REPLY',
-          errorClass: 'error',
-        });
-        continue;
-      }
-
-      const status = posixStatusLabel(reply.type, reply.code, false);
-      const errorCls = posixErrorClass(reply.type, reply.code, false);
-      hops.push({ hop: ttl, ip: ipToString(reply.fromIp), rtt, status, errorClass: errorCls });
-
-      if (reply.type === 0) break;
-    }
-  } finally {
-    posixClose(fd);
-  }
-
-  const last = hops[hops.length - 1];
-  return {
-    target,
-    ip: target,
-    hops,
-    reached: last?.status === 'SUCCESS',
-    totalHops: hops.length,
-    totalTime: Math.round((performance.now() - t0) * 100) / 100,
-  };
-}
-
-// ════════════════════════════════════════════════════════════════════
-// Platform Dispatch
-// ════════════════════════════════════════════════════════════════════
-
-const isPosix = process.platform === 'linux' || process.platform === 'darwin';
-
-export function isIcmpAvailable(): boolean {
-  if (available !== null) return available;
+import type { IcmpProvider, IcmpProbeResult, TracerouteResult } from './IcmpProvider.js';
+import { WindowsIcmpProvider } from './IcmpProvider.Windows.js';
+import { PosixIcmpProvider } from './IcmpProvider.Posix.js';
+
+// ── Re-export Types ──
+
+export type {
+  IcmpProbeResult,
+  TracerouteResult,
+  TracerouteHop,
+  IcmpProbeParams,
+  TracerouteParams,
+} from './IcmpProvider.js';
+
+// ── Platform Dispatch ──
+
+let cachedAvailable: boolean | null = null;
+let cachedProvider: IcmpProvider | null = null;
+
+function getProvider(): IcmpProvider {
+  if (cachedProvider) return cachedProvider;
 
   if (process.platform === 'win32') {
-    try {
-      const lib = koffi.load('iphlpapi.dll');
-      lib.unload();
-      available = true;
-      return true;
-    } catch {
-      available = false;
-      return false;
-    }
+    cachedProvider = WindowsIcmpProvider.instance();
+    return cachedProvider;
   }
 
-  if (isPosix) {
-    try {
-      const fd = posixSocket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
-      if (fd >= 0) {
-        posixClose(fd);
-        available = true;
-      } else {
-        available = false;
-      }
-    } catch {
-      available = false;
-    }
-    return available;
+  if (process.platform === 'linux' || process.platform === 'darwin') {
+    cachedProvider = PosixIcmpProvider.instance();
+    return cachedProvider;
   }
 
-  available = false;
-  return false;
+  throw new Error(`Platform ${process.platform} not supported for ICMP operations`);
+}
+
+export function isIcmpAvailable(): boolean {
+  if (cachedAvailable !== null) return cachedAvailable;
+
+  try {
+    const provider = getProvider();
+    cachedAvailable = provider.isAvailable();
+  } catch {
+    cachedAvailable = false;
+  }
+
+  return cachedAvailable;
 }
 
 export async function icmpProbe(params: {
@@ -820,31 +62,20 @@ export async function icmpProbe(params: {
   packetSize?: number;
   timeout?: number;
 }): Promise<IcmpProbeResult> {
-  const {
-    target,
-    ttl = 128,
-    packetSize = ICMP_DEFAULT_PACKET_SIZE,
-    timeout = ICMP_PROBE_TIMEOUT_MS,
-  } = params;
-
   if (!isIcmpAvailable()) {
     return {
-      target,
+      target: params.target,
       ip: '',
       alive: false,
       rtt: null,
-      ttl,
+      ttl: params.ttl ?? 128,
       icmpStatus: 'PLATFORM_NOT_SUPPORTED',
       errorClass: 'error',
-      packetSize,
+      packetSize: params.packetSize ?? 32,
     };
   }
 
-  if (process.platform === 'win32') {
-    return winIcmpProbe({ target, ttl, packetSize, timeout });
-  }
-
-  return posixIcmpProbe({ target, ttl, packetSize, timeout });
+  return getProvider().probe(params);
 }
 
 export async function traceroute(params: {
@@ -853,22 +84,18 @@ export async function traceroute(params: {
   timeout?: number;
   packetSize?: number;
 }): Promise<TracerouteResult> {
-  const {
-    target,
-    maxHops = ICMP_TRACEROUTE_MAX_HOPS,
-    timeout = ICMP_PROBE_TIMEOUT_MS,
-    packetSize = ICMP_DEFAULT_PACKET_SIZE,
-  } = params;
-
   if (!isIcmpAvailable()) {
-    return { target, ip: '', hops: [], reached: false, totalHops: 0, totalTime: 0 };
+    return {
+      target: params.target,
+      ip: '',
+      hops: [],
+      reached: false,
+      totalHops: 0,
+      totalTime: 0,
+    };
   }
 
-  if (process.platform === 'win32') {
-    return winTraceroute({ target, maxHops, timeout, packetSize });
-  }
-
-  return posixTraceroute({ target, maxHops, timeout, packetSize });
+  return getProvider().traceroute(params);
 }
 
 export function unloadIcmpLibraries(): {
@@ -877,24 +104,18 @@ export function unloadIcmpLibraries(): {
 } {
   let unloadedWindows = false;
   let unloadedPosix = false;
-  if (iphlpapi) {
-    iphlpapi.unload();
-    iphlpapi = null;
+
+  if (process.platform === 'win32') {
+    WindowsIcmpProvider.unloadLibraries();
     unloadedWindows = true;
-  }
-  if (ws2_32) {
-    ws2_32.unload();
-    ws2_32 = null;
-    unloadedWindows = true;
-  }
-  winIcmpFns = null;
-  if (posixLib) {
-    posixLib.unload();
-    posixLib = null;
+  } else if (process.platform === 'linux' || process.platform === 'darwin') {
+    PosixIcmpProvider.unloadLibraries();
     unloadedPosix = true;
   }
-  posixFns = null;
-  available = null;
+
+  cachedProvider = null;
+  cachedAvailable = null;
   logger.debug('Unloaded ICMP native libraries');
+
   return { unloadedWindows, unloadedPosix };
 }

@@ -66,6 +66,18 @@ function makeStruct(overrides?: Partial<InferredStruct>): InferredStruct {
 describe('StructureAnalyzer', () => {
   const analyzer = new StructureAnalyzer();
 
+  // Setup default mock provider for all tests
+  beforeEach(() => {
+    const mockProvider = {
+      openProcess: vi.fn(() => 1234),
+      closeProcess: vi.fn(),
+      readMemory: vi.fn(),
+      writeMemory: vi.fn(),
+      queryRegion: vi.fn(),
+    };
+    vi.mocked(ofactory.createPlatformProvider).mockReturnValue(mockProvider as any);
+  });
+
   // ── C Struct Export ──
 
   describe('exportToCStruct', () => {

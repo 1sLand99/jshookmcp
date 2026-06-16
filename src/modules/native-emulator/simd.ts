@@ -95,6 +95,24 @@ import {
   neonUmin,
 } from './simd-neon';
 import {
+  decodeSimdFields,
+  type SimdFields,
+  isCryptoAes,
+  isCryptoSha3Reg,
+  isCryptoSha2Reg,
+  isPmull,
+  isScalarFp,
+  isNeonThreeSame,
+  isNeonModImm,
+  isNeonShiftImm,
+  isNeonTwoRegMisc,
+  isNeonAcross,
+  isNeonCopy,
+  isNeonExt,
+  isNeonPermute,
+  isNeonTable,
+} from './simd-decode';
+import {
   advSimdExpandImm,
   neonAbs,
   neonAddv,
@@ -455,94 +473,7 @@ export function executeSimdFp(ctx: SimdContext, insn: number): boolean {
   return false;
 }
 
-/** The named bitfields shared across the SIMD/FP encoding classes (ARM ARM C4.1). */
-interface SimdFields {
-  insn: number;
-  high8: number; // bits[31:24] — class tag (0x4E/0x5E/0x0E/0x4E…)
-  q: number; // bit[30] — vector/upper-lane select
-  u: number; // bit[29]
-  base28_24: number; // bits[28:24] — the SIMD "01110" family marker
-  size: number; // bits[23:22] — element-size / variant
-  bit21: number; // bit[21]
-  field21_17: number; // bits[21:17] — fixed marker for the two-register/AES forms
-  bit15: number; // bit[15]
-  op16_12: number; // bits[16:12] — opcode (two-register + AES forms)
-  op15_12: number; // bits[15:12] — opcode (three-different / PMULL)
-  op14_12: number; // bits[14:12] — opcode (three-register SHA)
-  low11_10: number; // bits[11:10] — fixed marker
-  rm: number; // bits[20:16]
-  rn: number; // bits[9:5]
-  rd: number; // bits[4:0]
-  // Scalar FP fields (ARM ARM C4.1.8/C4.1.9): the FP-prefix is M=0,bit30=0,S=0,
-  // bits[28:24]=11110, then bit21=1; ftype picks precision and the low bits the form.
-  ftype: number; // bits[23:22] — 00=single 01=double 11=half
-  fpOp1Src: number; // bits[20:15] — one-source opcode
-  fpOp2Src: number; // bits[15:12] — two-source opcode
-  fpCond: number; // bits[15:12] — FCSEL condition
-  fpRmode: number; // bits[20:19] — int-conv rounding/direction
-  fpConvOp: number; // bits[18:16] — int-conv opcode
-  sf: number; // bit[31] — int-conv integer size (0=W/32, 1=X/64)
-  // NEON "three same" (ARM ARM C4.1.6): 0 Q U 01110 size 1 Rm opcode[15:11] 1 Rn Rd.
-  neonOpcode: number; // bits[15:11] — three-same operation selector
-  // NEON F-2 group fields.
-  base29_24: number; // bits[29:24] — distinguishes EXT (101110) from permute (001110)
-  base28_19: number; // bits[28:19] — modified-immediate marker 0111100000
-  op29: number; // bit[29] — MOVI/MVNI op bit (also U elsewhere; alias for clarity)
-  neonOp16_12: number; // bits[16:12] — two-register-misc / across opcode
-  neonOp14_12: number; // bits[14:12] — permute opcode
-  imm5: number; // bits[20:16] — copy element selector
-  imm4: number; // bits[14:11] — copy/EXT index
-  cmode: number; // bits[15:12] — modified-immediate mode
-  immh: number; // bits[22:19] — shift-immediate high
-  immb: number; // bits[18:16] — shift-immediate low
-  len: number; // bits[14:13] — TBL/TBX table length
-  tbx: number; // bit[12] — TBL(0)/TBX(1)
-}
-
-function decodeSimdFields(insn: number): SimdFields {
-  return {
-    insn,
-    high8: (insn >>> 24) & 0xff,
-    q: (insn >>> 30) & 1,
-    u: (insn >>> 29) & 1,
-    base28_24: (insn >>> 24) & 0b11111,
-    size: (insn >>> 22) & 0b11,
-    bit21: (insn >>> 21) & 1,
-    field21_17: (insn >>> 17) & 0b11111,
-    bit15: (insn >>> 15) & 1,
-    op16_12: (insn >>> 12) & 0b11111,
-    op15_12: (insn >>> 12) & 0b1111,
-    op14_12: (insn >>> 12) & 0b111,
-    low11_10: (insn >>> 10) & 0b11,
-    rm: (insn >>> 16) & 0b11111,
-    rn: (insn >>> 5) & 0b11111,
-    rd: insn & 0b11111,
-    ftype: (insn >>> 22) & 0b11,
-    fpOp1Src: (insn >>> 15) & 0b111111,
-    fpOp2Src: (insn >>> 12) & 0b1111,
-    fpCond: (insn >>> 12) & 0b1111,
-    fpRmode: (insn >>> 19) & 0b11,
-    fpConvOp: (insn >>> 16) & 0b111,
-    sf: (insn >>> 31) & 1,
-    neonOpcode: (insn >>> 11) & 0b11111,
-    base29_24: (insn >>> 24) & 0b111111,
-    base28_19: (insn >>> 19) & 0b1111111111,
-    op29: (insn >>> 29) & 1,
-    neonOp16_12: (insn >>> 12) & 0b11111,
-    neonOp14_12: (insn >>> 12) & 0b111,
-    imm5: (insn >>> 16) & 0b11111,
-    imm4: (insn >>> 11) & 0b1111,
-    cmode: (insn >>> 12) & 0b1111,
-    immh: (insn >>> 19) & 0b1111,
-    immb: (insn >>> 16) & 0b111,
-    len: (insn >>> 13) & 0b11,
-    tbx: (insn >>> 12) & 1,
-  };
-}
-
 // ── Cryptographic AES (ARM ARM C4.1: high8=0x4E, [21:17]=10100, [11:10]=10) ──
-const isCryptoAes = (f: SimdFields): boolean =>
-  f.high8 === 0x4e && f.field21_17 === 0b10100 && f.low11_10 === 0b10;
 
 /** opcode[16:12]: AESE=00100 AESD=00101 AESMC=00110 AESIMC=00111. Operates on Vd,Vn. */
 function execCryptoAes(ctx: SimdContext, f: SimdFields): boolean {
@@ -567,8 +498,6 @@ function execCryptoAes(ctx: SimdContext, f: SimdFields): boolean {
 }
 
 // ── Cryptographic three-register SHA (high8=0x5E, size=00, [21]=0, [15]=0, [11:10]=00) ──
-const isCryptoSha3Reg = (f: SimdFields): boolean =>
-  f.high8 === 0x5e && f.size === 0 && f.bit21 === 0 && f.bit15 === 0 && f.low11_10 === 0;
 
 /**
  * opcode[14:12]: 0=SHA1C 1=SHA1P 2=SHA1M 3=SHA1SU0 (bit14=0, SHA1 family);
@@ -611,8 +540,6 @@ function execCryptoSha3Reg(ctx: SimdContext, f: SimdFields): boolean {
 }
 
 // ── Cryptographic two-register SHA (high8=0x5E, [21:17]=10100, [11:10]=10) ──
-const isCryptoSha2Reg = (f: SimdFields): boolean =>
-  f.high8 === 0x5e && f.field21_17 === 0b10100 && f.low11_10 === 0b10;
 
 /** opcode[16:12]: SHA1H=00000 SHA1SU1=00001 SHA256SU0=00010. Operates on Vd,Vn. */
 function execCryptoSha2Reg(ctx: SimdContext, f: SimdFields): boolean {
@@ -641,13 +568,6 @@ function execCryptoSha2Reg(ctx: SimdContext, f: SimdFields): boolean {
 
 // ── PMULL/PMULL2 — Advanced SIMD three-different (U=0, [28:24]=01110, size=11,
 //    [21]=1, opcode[15:12]=1110, [11:10]=00); the 64→128 form needs FEAT_PMULL. ──
-const isPmull = (f: SimdFields): boolean =>
-  f.u === 0 &&
-  f.base28_24 === 0b01110 &&
-  f.size === 0b11 &&
-  f.bit21 === 1 &&
-  f.op15_12 === 0b1110 &&
-  f.low11_10 === 0b00;
 
 /** Q selects the operand lane: Q=0 → PMULL (low 64), Q=1 → PMULL2 (high 64). */
 function execPmull(ctx: SimdContext, f: SimdFields): boolean {
@@ -663,15 +583,6 @@ function execPmull(ctx: SimdContext, f: SimdFields): boolean {
 // bits[28:24]=11110, bit21=1. `ftype` (bits[23:22]) picks precision: 00=single,
 // 01=double. Within that, the low fixed bits select the sub-form, exactly as the
 // integer core dispatches on encoding-group bits rather than whole-word masks.
-
-const FP_PREFIX_28_24 = 0b11110;
-const isScalarFp = (f: SimdFields): boolean =>
-  ((f.insn >>> 31) & 1) === 0 && // M
-  ((f.insn >>> 30) & 1) === 0 &&
-  f.u === 0 && // S
-  f.base28_24 === FP_PREFIX_28_24 &&
-  f.bit21 === 1 &&
-  (f.ftype === 0b00 || f.ftype === 0b01); // single/double; half (11) not yet handled
 
 /** Decode `ftype`→precision and route to the matching FP sub-form. */
 function execScalarFp(ctx: SimdContext, f: SimdFields): boolean {
@@ -926,12 +837,6 @@ function execFpIntConv(ctx: SimdContext, f: SimdFields, isDouble: boolean): bool
 // Each lane (esize = 8<<size bytes) is processed independently; Q selects the
 // 64- or 128-bit vector. U disambiguates signed/unsigned or paired mnemonics.
 
-const isNeonThreeSame = (f: SimdFields): boolean =>
-  ((f.insn >>> 31) & 1) === 0 &&
-  f.base28_24 === 0b01110 &&
-  f.bit21 === 1 &&
-  ((f.insn >>> 10) & 1) === 1; // bit[10]=1 marks the three-same family
-
 /**
  * Dispatch a three-same op on (opcode[15:11], U). `size` selects lane width and,
  * for the logical opcode 00011, also selects AND/BIC/ORR/ORN (U=0) or
@@ -1010,11 +915,6 @@ function execNeonThreeSame(ctx: SimdContext, f: SimdFields): boolean {
 
 // ── NEON two-register miscellaneous (single source, per-lane transform) ────
 // 0 Q U 01110 size 10000 opcode[16:12] 10 Rn Rd.
-const isNeonTwoRegMisc = (f: SimdFields): boolean =>
-  ((f.insn >>> 31) & 1) === 0 &&
-  f.base28_24 === 0b01110 &&
-  f.field21_17 === 0b10000 &&
-  f.low11_10 === 0b10;
 
 function execNeonTwoRegMisc(ctx: SimdContext, f: SimdFields): boolean {
   const { rd, rn, size, q, u } = f;
@@ -1051,11 +951,6 @@ function execNeonTwoRegMisc(ctx: SimdContext, f: SimdFields): boolean {
 
 // ── NEON across-lanes reductions ───────────────────────────────────────────
 // 0 Q U 01110 size 11000 opcode[16:12] 10 Rn Rd.
-const isNeonAcross = (f: SimdFields): boolean =>
-  ((f.insn >>> 31) & 1) === 0 &&
-  f.base28_24 === 0b01110 &&
-  f.field21_17 === 0b11000 &&
-  f.low11_10 === 0b10;
 
 function execNeonAcross(ctx: SimdContext, f: SimdFields): boolean {
   const { rd, rn, size, q, u } = f;
@@ -1077,10 +972,6 @@ function execNeonAcross(ctx: SimdContext, f: SimdFields): boolean {
 
 // ── NEON copy: DUP element/general, INS ────────────────────────────────────
 // 0 Q op 01110000 imm5 0 imm4 1 Rn Rd.  imm5 trailing-zero count picks size.
-const isNeonCopy = (f: SimdFields): boolean =>
-  ((f.insn >>> 31) & 1) === 0 &&
-  ((f.insn >>> 21) & 0b11111111) === 0b01110000 &&
-  ((f.insn >>> 10) & 1) === 1;
 
 /** Decode the copy `imm5` field → [size, index] (size = trailing-zero position). */
 function decodeCopyImm5(imm5: number): { size: number; index: number } | null {
@@ -1109,8 +1000,6 @@ function execNeonCopy(ctx: SimdContext, f: SimdFields): boolean {
 
 // ── NEON modified immediate: MOVI/MVNI/ORR/BIC (vector, immediate) ─────────
 // 0 Q op 0111100000 abc[18:16] cmode[15:12] o2[11] 1 defgh[9:5] Rd.
-const isNeonModImm = (f: SimdFields): boolean =>
-  ((f.insn >>> 31) & 1) === 0 && f.base28_19 === 0b0111100000 && ((f.insn >>> 10) & 1) === 1;
 
 function execNeonModImm(ctx: SimdContext, f: SimdFields): boolean {
   const abc = (f.insn >>> 16) & 0b111;
@@ -1151,11 +1040,6 @@ function execNeonModImm(ctx: SimdContext, f: SimdFields): boolean {
 
 // ── NEON shift by immediate: SHL / USHR / SSHR ─────────────────────────────
 // 0 Q U 011110 immh[22:19] immb[18:16] opcode[15:11] 1 Rn Rd.  immh!=0000.
-const isNeonShiftImm = (f: SimdFields): boolean =>
-  ((f.insn >>> 31) & 1) === 0 &&
-  ((f.insn >>> 23) & 0b111111) === 0b011110 &&
-  f.immh !== 0b0000 &&
-  ((f.insn >>> 10) & 1) === 1;
 
 /** Highest set bit position of immh (1..3) selects the element size. */
 function shiftSize(immh: number): number {
@@ -1195,13 +1079,6 @@ function execNeonShiftImm(ctx: SimdContext, f: SimdFields): boolean {
 
 // ── NEON EXT: extract a byte window from Rn:Rm ─────────────────────────────
 // 0 Q 101110 00 0 Rm 0 imm4[14:11] 0 Rn Rd.
-const isNeonExt = (f: SimdFields): boolean =>
-  ((f.insn >>> 31) & 1) === 0 &&
-  f.base29_24 === 0b101110 &&
-  ((f.insn >>> 22) & 0b11) === 0b00 &&
-  f.bit21 === 0 &&
-  ((f.insn >>> 15) & 1) === 0 &&
-  ((f.insn >>> 10) & 1) === 0;
 
 function execNeonExt(ctx: SimdContext, f: SimdFields): boolean {
   ctx.vSetBytes(f.rd, neonExt(ctx.vGetBytes(f.rn), ctx.vGetBytes(f.rm), f.imm4, f.q));
@@ -1210,12 +1087,6 @@ function execNeonExt(ctx: SimdContext, f: SimdFields): boolean {
 
 // ── NEON permute: ZIP/UZP/TRN ──────────────────────────────────────────────
 // 0 Q 001110 size 0 Rm 0 opcode[14:12] 10 Rn Rd.
-const isNeonPermute = (f: SimdFields): boolean =>
-  ((f.insn >>> 31) & 1) === 0 &&
-  f.base29_24 === 0b001110 &&
-  f.bit21 === 0 &&
-  ((f.insn >>> 15) & 1) === 0 &&
-  f.low11_10 === 0b10;
 
 function execNeonPermute(ctx: SimdContext, f: SimdFields): boolean {
   const { rd, rn, rm, size, q } = f;
@@ -1247,12 +1118,6 @@ function execNeonPermute(ctx: SimdContext, f: SimdFields): boolean {
 
 // ── NEON TBL/TBX: table lookup ─────────────────────────────────────────────
 // 0 Q 001110 000 Rm 0 len[14:13] tbx[12] 00 Rn Rd.
-const isNeonTable = (f: SimdFields): boolean =>
-  ((f.insn >>> 31) & 1) === 0 &&
-  f.base29_24 === 0b001110 &&
-  ((f.insn >>> 21) & 0b111) === 0b000 &&
-  ((f.insn >>> 15) & 1) === 0 &&
-  f.low11_10 === 0b00;
 
 function execNeonTable(ctx: SimdContext, f: SimdFields): boolean {
   // Build the table from `len`+1 consecutive registers starting at Rn.

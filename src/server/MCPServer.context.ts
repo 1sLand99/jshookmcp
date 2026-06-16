@@ -62,6 +62,12 @@ export interface ToolRegistryState {
     string,
     Record<string, (value: string) => string[] | Promise<string[]>>
   >;
+  /** Context guard for consecutive call detection and response enrichment */
+  contextGuard: import('@server/ToolCallContextGuard').ToolCallContextGuard;
+  /** Circuit breaker for failing tools */
+  circuitBreaker: import('@server/security/ToolCircuitBreaker').ToolCircuitBreaker;
+  /** Offloads large response data (>512KB) to disk / DetailedDataManager to keep context lean */
+  largeDataOffloader: import('@server/ToolResponseOffloader').LargeDataOffloader;
 }
 
 /** Minimal info stored for meta-tools so describe_tool can look them up. */

@@ -8,11 +8,9 @@ import { CacheManager } from '@utils/cache';
 import { TokenBudgetManager } from '@utils/TokenBudgetManager';
 import { UnifiedCacheManager } from '@utils/UnifiedCacheManager';
 import { DetailedDataManager } from '@utils/DetailedDataManager';
-import { asErrorResponse } from '@server/domains/shared/response';
 import { LLMSamplingBridge } from '@server/LLMSamplingBridge';
 import { ElicitationBridge } from '@server/ElicitationBridge';
 import type { ToolProfile } from '@server/ToolCatalog';
-import { getToolDomain } from '@server/ToolCatalog';
 import { ToolExecutionRouter } from '@server/ToolExecutionRouter';
 import { ToolCallContextGuard } from '@server/ToolCallContextGuard';
 import { ToolCircuitBreaker } from '@server/security/ToolCircuitBreaker';
@@ -22,7 +20,6 @@ import type { ToolArgs } from '@server/types';
 import { resolveToolsForRegistration } from '@server/MCPServer.registration';
 import { createDomainProxy, resolveEnabledDomains } from '@server/MCPServer.domain';
 import { getLoaderMetadata } from '@server/registry/discovery';
-import { refreshDomainTtlForTool } from '@server/MCPServer.activation.ttl';
 import type { DomainTtlEntry } from '@server/MCPServer.activation.ttl';
 import { closeServer, startHttpTransport, startStdioTransport } from '@server/MCPServer.transport';
 import { McpLogTransport } from '@server/transport/McpLogTransport';
@@ -46,7 +43,6 @@ import {
   restorePendingDomainActivations,
 } from '@server/runtime/ServerRuntimeState';
 import { BrowserSessionCoordinator } from '@server/runtime/BrowserSessionCoordinator';
-import { parseBrowserSessionSnapshot } from '@server/runtime/BrowserSessionCoordinator';
 import type { ToolHandlerDeps } from '@server/registry/contracts';
 import type {
   ExtensionListResult,
@@ -61,123 +57,7 @@ import {
   listExtensions as listExtensionsImpl,
   reloadExtensions as reloadExtensionsImpl,
 } from '@server/extensions/ExtensionManager';
-
-interface ExecutionMetricMemorySnapshot {
-  source: 'server';
-  rssBytes: number;
-  privateBytes: null;
-  virtualBytes: null;
-  heapUsedBytes: number;
-  heapTotalBytes: number;
-  externalBytes: number;
-  arrayBuffersBytes: number;
-}
-
-interface ExecutionMetricPayload {
-  source: 'server';
-  startedAt: string;
-  finishedAt: string;
-  elapsedMs: number;
-  timeoutMs: number;
-  serverPid: number;
-  cpuUserMicros: number;
-  cpuSystemMicros: number;
-  memoryBefore: ExecutionMetricMemorySnapshot;
-  memoryAfter: ExecutionMetricMemorySnapshot;
-  memoryDelta: {
-    rssBytes: number;
-    privateBytes: null;
-    virtualBytes: null;
-    heapUsedBytes: number;
-    heapTotalBytes: number;
-    externalBytes: number;
-    arrayBuffersBytes: number;
-  };
-}
-
-function shouldCollectExecutionMetrics(): boolean {
-  return process.env.E2E_COLLECT_PERFORMANCE === '1';
-}
-
-function captureExecutionMetricMemory(): ExecutionMetricMemorySnapshot {
-  const memory = process.memoryUsage();
-  return {
-    source: 'server',
-    rssBytes: memory.rss,
-    privateBytes: null,
-    virtualBytes: null,
-    heapUsedBytes: memory.heapUsed,
-    heapTotalBytes: memory.heapTotal,
-    externalBytes: memory.external,
-    arrayBuffersBytes: memory.arrayBuffers,
-  };
-}
-
-function buildExecutionMetrics(
-  startedAt: string,
-  startTime: number,
-  timeoutMs: number,
-  cpuStart: NodeJS.CpuUsage,
-  memoryBefore: ExecutionMetricMemorySnapshot,
-): ExecutionMetricPayload {
-  const finishedAt = new Date().toISOString();
-  const cpuUsage = process.cpuUsage(cpuStart);
-  const memoryAfter = captureExecutionMetricMemory();
-  return {
-    source: 'server',
-    startedAt,
-    finishedAt,
-    elapsedMs: Number((performance.now() - startTime).toFixed(2)),
-    timeoutMs,
-    serverPid: process.pid,
-    cpuUserMicros: cpuUsage.user,
-    cpuSystemMicros: cpuUsage.system,
-    memoryBefore,
-    memoryAfter,
-    memoryDelta: {
-      rssBytes: memoryAfter.rssBytes - memoryBefore.rssBytes,
-      privateBytes: null,
-      virtualBytes: null,
-      heapUsedBytes: memoryAfter.heapUsedBytes - memoryBefore.heapUsedBytes,
-      heapTotalBytes: memoryAfter.heapTotalBytes - memoryBefore.heapTotalBytes,
-      externalBytes: memoryAfter.externalBytes - memoryBefore.externalBytes,
-      arrayBuffersBytes: memoryAfter.arrayBuffersBytes - memoryBefore.arrayBuffersBytes,
-    },
-  };
-}
-
-function appendExecutionMetrics<T extends { content?: unknown[] }>(
-  response: T,
-  metrics: ExecutionMetricPayload,
-): T {
-  const content = response.content;
-  if (!Array.isArray(content)) return response;
-
-  const firstText = content.find(
-    (entry: unknown): entry is { type: string; text: string } =>
-      typeof entry === 'object' &&
-      entry !== null &&
-      (entry as Record<string, unknown>).type === 'text' &&
-      typeof (entry as Record<string, unknown>).text === 'string',
-  );
-  if (!firstText) return response;
-
-  try {
-    const parsed = JSON.parse(firstText.text) as unknown;
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      return response;
-    }
-    const record = parsed as Record<string, unknown>;
-    if (!('_executionMetrics' in record)) {
-      record._executionMetrics = metrics;
-      firstText.text = JSON.stringify(record);
-    }
-  } catch {
-    return response;
-  }
-
-  return response;
-}
+import { executeToolWithTracking as executeToolWithTrackingImpl } from '@server/MCPServer.execution';
 
 export class MCPServer implements MCPServerContext {
   public readonly config: Config;
@@ -518,6 +398,7 @@ export class MCPServer implements MCPServerContext {
     this.samplingBridge = new LLMSamplingBridge(this.server);
     this.elicitationBridge = new ElicitationBridge(this.server);
     this.setDomainInstance('activationController', new ActivationController(this.eventBus, this));
+    this.setDomainInstance('searchQualityTracker', this.searchQualityTracker);
 
     // Snapshot scheduler for StateBoard + EvidenceGraph persistence
     const stateDir = getStateDir();
@@ -650,168 +531,7 @@ export class MCPServer implements MCPServerContext {
   }
 
   public async executeToolWithTracking(name: string, args: ToolArgs) {
-    let timeoutTimer: NodeJS.Timeout | undefined;
-    const timeoutMs = 30000;
-    const collectExecutionMetrics = shouldCollectExecutionMetrics();
-    const executionStartedAt = collectExecutionMetrics ? new Date().toISOString() : null;
-    const executionStartTime = collectExecutionMetrics ? performance.now() : 0;
-    const executionCpuStart = collectExecutionMetrics ? process.cpuUsage() : null;
-    const executionMemoryBefore = collectExecutionMetrics ? captureExecutionMetricMemory() : null;
-    try {
-      this.setDomainInstance('activeToolArgs', args);
-      timeoutTimer = setTimeout(() => {
-        try {
-          const safeArgs = JSON.stringify(args).slice(0, 500);
-          logger.warn(
-            `Telemetry Alert [ERR-03]: Tool execution hung (>30s) for '${name}'. Args preview: ${safeArgs}...`,
-          );
-        } catch {
-          logger.warn(`Telemetry Alert [ERR-03]: Tool execution hung (>30s) for '${name}'.`);
-        }
-      }, timeoutMs);
-      timeoutTimer.unref();
-
-      if (this.circuitBreaker.shouldBlock(name)) {
-        const state = this.circuitBreaker.getState(name);
-        const retryAfter = state
-          ? Math.ceil(
-              (this.circuitBreaker.getRecoveryMs() - (Date.now() - state.lastFailureTime)) / 1000,
-            )
-          : 30;
-        if (timeoutTimer) clearTimeout(timeoutTimer);
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({
-                success: false,
-                error: `Circuit breaker open for tool "${name}"`,
-                reason: `Tool has failed consecutively ${state?.failureCount ?? 0} times`,
-                retryAfterSeconds: retryAfter,
-              }),
-            },
-          ],
-          isError: true,
-        };
-      }
-
-      let response;
-      try {
-        const browserCoordinator =
-          getToolDomain(name) === 'browser'
-            ? this.getDomainInstance<BrowserSessionCoordinator>('browserSessionCoordinator')
-            : null;
-        const sessionId = (args['_meta'] as { sessionId?: string } | undefined)?.sessionId ?? null;
-        response = browserCoordinator
-          ? await browserCoordinator.runExclusive(sessionId, async () => {
-              await browserCoordinator.restoreSessionContext(sessionId);
-              return await this.router.execute(name, args);
-            })
-          : await this.router.execute(name, args);
-      } finally {
-        if (timeoutTimer) clearTimeout(timeoutTimer);
-      }
-
-      // Offload large response data (>512KB) to disk / DetailedDataManager
-      // to prevent context bloat while preserving data for later retrieval.
-      this.largeDataOffloader.offload(name, response);
-
-      if (getToolDomain(name) === 'browser') {
-        const browserCoordinator = this.getDomainInstance<BrowserSessionCoordinator>(
-          'browserSessionCoordinator',
-        );
-        const sessionId = (args['_meta'] as { sessionId?: string } | undefined)?.sessionId ?? null;
-        browserCoordinator?.noteToolResult(sessionId, name, parseBrowserSessionSnapshot(response));
-      }
-
-      // Track consecutive tool calls for repeat loop detection
-      this.contextGuard.recordCall(name);
-      this.getDomainInstance<ServerRuntimeState>('serverRuntimeState')?.recordToolCall(name, args);
-      // Enrich context-sensitive tool responses with current tab metadata
-      let enriched = this.contextGuard.enrichResponse(name, response);
-      if (
-        collectExecutionMetrics &&
-        executionStartedAt &&
-        executionCpuStart &&
-        executionMemoryBefore
-      ) {
-        enriched = appendExecutionMetrics(
-          enriched,
-          buildExecutionMetrics(
-            executionStartedAt,
-            executionStartTime,
-            timeoutMs,
-            executionCpuStart,
-            executionMemoryBefore,
-          ),
-        );
-      }
-      try {
-        this.tokenBudget.recordToolCall(name, args, enriched);
-      } catch (trackingError) {
-        logger.warn('Token tracking failed, continuing without tracking this call:', trackingError);
-      }
-      // Refresh domain TTL when an activated tool is used
-      if (this.activatedToolNames.has(name)) {
-        refreshDomainTtlForTool(this, name);
-      }
-      let toolResultSuccess = !enriched.isError;
-      if (enriched?.structuredContent && typeof enriched.structuredContent === 'object') {
-        const resultPayload = enriched.structuredContent as Record<string, unknown>;
-        toolResultSuccess = resultPayload.success !== false;
-      } else if (enriched?.content?.[0]?.type === 'text' && 'text' in enriched.content[0]) {
-        try {
-          const parsed = JSON.parse(enriched.content[0].text) as Record<string, unknown>;
-          toolResultSuccess = parsed.success !== false;
-        } catch {
-          toolResultSuccess = !enriched.isError;
-        }
-      }
-      // Circuit breaker: record success or failure
-      if (toolResultSuccess) {
-        this.circuitBreaker.recordSuccess(name);
-      } else {
-        this.circuitBreaker.recordFailure(name);
-      }
-      // Emit tool:called event for ActivationController
-      void this.eventBus.emit('tool:called', {
-        toolName: name,
-        domain: getToolDomain(name) ?? null,
-        timestamp: new Date().toISOString(),
-        success: toolResultSuccess,
-        args,
-        result: {
-          success: toolResultSuccess,
-          isError: enriched.isError === true,
-        },
-      });
-      this.searchQualityTracker.associateLastSearch(name);
-      this.mcpLog.info('jshookmcp', {
-        event: 'tool_called',
-        toolName: name,
-        domain: getToolDomain(name) ?? null,
-        success: toolResultSuccess,
-      });
-      // Commit pending resource updates to prevent stream flooding
-      this.getDomainInstance<import('@server/evidence/ReverseEvidenceGraph').ReverseEvidenceGraph>(
-        'evidenceGraph',
-      )?.commit();
-      return enriched;
-    } catch (error) {
-      this.circuitBreaker.recordFailure(name);
-      const errorResponse = asErrorResponse(error);
-      try {
-        this.tokenBudget.recordToolCall(name, args, errorResponse);
-      } catch (trackingError) {
-        logger.warn('Token tracking failed on error path:', trackingError);
-      }
-      this.getDomainInstance<import('@server/evidence/ReverseEvidenceGraph').ReverseEvidenceGraph>(
-        'evidenceGraph',
-      )?.commit();
-      throw error;
-    } finally {
-      this.setDomainInstance('activeToolArgs', undefined);
-    }
+    return executeToolWithTrackingImpl(this, name, args);
   }
 
   // ── Lifecycle ──
