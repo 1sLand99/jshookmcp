@@ -20,7 +20,7 @@ Extract and classify strings, recover Smi integer constants, and resolve obfusca
 - dart-inspector + binary-instrument
 - dart-inspector + adb-bridge
 
-## Full tool list (7)
+## Full tool list (12)
 
 | Tool | Description |
 | --- | --- |
@@ -31,3 +31,8 @@ Extract and classify strings, recover Smi integer constants, and resolve obfusca
 | `dart_snapshot_header_parse` | Parse the Dart isolate snapshot header in a libapp.so: magic, kind, 32-byte hash, features, target arch. Read-only. |
 | `dart_version_fingerprint` | Identify Flutter/Dart SDK release from a libapp.so by combining header parse with a built-in (and optionally user-supplied) hash table. |
 | `dart_object_pool_dump` | Read-only static dump of the Dart isolate ObjectPool in a libapp.so: classify each slot as smi/mint/double/string/classRef/functionRef/pool/null/unknown. |
+| `dart_load_snapshot` | Load and parse a Dart AOT snapshot from libapp.so, extracting metadata and statistics (Code objects, ObjectPool entries, clusters). |
+| `dart_list_functions` | List all Dart Code objects (compiled functions) from a loaded snapshot, with entry point address, size, and name (if available). |
+| `dart_call_function` | Execute a Dart function in the ARM64 emulator by address or name, with simplified runtime (mock built-ins, tagged pointers). |
+| `dart_inspect_object_pool` | Dump an ObjectPool at a specific address, showing all entries with types and values. |
+| `dart_trace_execution` | Trace Dart function execution step-by-step, emitting each instruction with register state (PC, x0-x30, PP, THR). |

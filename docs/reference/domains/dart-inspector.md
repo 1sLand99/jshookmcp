@@ -20,14 +20,19 @@
 - dart-inspector + binary-instrument
 - dart-inspector + adb-bridge
 
-## 工具清单（7）
+## 工具清单（12）
 
 | 工具 | 说明 |
 | --- | --- |
-| `dart_strings_extract` | 从 Flutter libapp.so 抽取并分类可见字符串，识别 URL、路径、类名、包引用与加密关键字。 |
-| `dart_smi_scan` | 从 libapp.so 中还原 Dart Small Integer（Smi）整数常量。Dart VM 用最低位区分 Smi（0）与堆指针（1），整数字面量按 value &lt;&lt; 1 存储，普通字符串扫描看不到。本工具按对齐的小端字（4 或 8 字节）扫描并还原 Smi 值，支持范围过滤、起止偏移、步长、限量截断等参数。 |
-| `dart_symbolize` | 使用开发者提供的 Flutter --save-obfuscation-map JSON（flat、pairs 或 object 格式）还原混淆后的 Dart 标识符。 |
-| `flutter_packages_detect` | 检测 Flutter libapp.so 中的第三方 Dart `package:` 引用，聚合后过滤 SDK 标准库。 |
-| `dart_snapshot_header_parse` | 解析 libapp.so 中 Dart isolate 快照头：魔数、类型、32 字节哈希、特性标志、目标架构。只读。 |
-| `dart_version_fingerprint` | 通过解析头信息并结合内置（及可选用户提供的）哈希表，从 libapp.so 识别 Flutter/Dart SDK 版本。 |
-| `dart_object_pool_dump` | 只读静态转储 libapp.so 中 Dart isolate ObjectPool：按 smi/mint/double/string/classRef/functionRef/pool/null/unknown 分类每个槽位。 |
+| `dart_strings_extract` | 待补充中文：Stream-extract ASCII/UTF-16LE strings from a Dart AOT libapp.so and classify them (urls, paths, classNames, packageRefs, cryptoKeywords, plus customRules). ReDoS-guarded. |
+| `dart_smi_scan` | 待补充中文：Recover Dart Small Integer (Smi) constants from a libapp.so by reading aligned little-endian words and stripping the heap-pointer tag bit. |
+| `dart_symbolize` | 待补充中文：Resolve obfuscated Dart identifiers using a developer-supplied Flutter --save-obfuscation-map JSON (flat, pairs, or object shape). |
+| `flutter_packages_detect` | 待补充中文：Detect third-party Dart `package:` refs in a Flutter libapp.so, aggregated and SDK-stdlib-filtered. |
+| `dart_snapshot_header_parse` | 待补充中文：Parse the Dart isolate snapshot header in a libapp.so: magic, kind, 32-byte hash, features, target arch. Read-only. |
+| `dart_version_fingerprint` | 待补充中文：Identify Flutter/Dart SDK release from a libapp.so by combining header parse with a built-in (and optionally user-supplied) hash table. |
+| `dart_object_pool_dump` | 待补充中文：Read-only static dump of the Dart isolate ObjectPool in a libapp.so: classify each slot as smi/mint/double/string/classRef/functionRef/pool/null/unknown. |
+| `dart_load_snapshot` | 待补充中文：Load and parse a Dart AOT snapshot from libapp.so, extracting metadata and statistics (Code objects, ObjectPool entries, clusters). |
+| `dart_list_functions` | 待补充中文：List all Dart Code objects (compiled functions) from a loaded snapshot, with entry point address, size, and name (if available). |
+| `dart_call_function` | 待补充中文：Execute a Dart function in the ARM64 emulator by address or name, with simplified runtime (mock built-ins, tagged pointers). |
+| `dart_inspect_object_pool` | 待补充中文：Dump an ObjectPool at a specific address, showing all entries with types and values. |
+| `dart_trace_execution` | 待补充中文：Trace Dart function execution step-by-step, emitting each instruction with register state (PC, x0-x30, PP, THR). |
