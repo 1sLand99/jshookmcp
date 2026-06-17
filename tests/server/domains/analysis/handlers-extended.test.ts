@@ -134,6 +134,10 @@ describe('CoreAnalysisHandlers — extended coverage', () => {
       getHookRecords: vi.fn(),
       clearHookRecords: vi.fn(),
     },
+    samplingBridge: {
+      isSamplingSupported: vi.fn().mockReturnValue(false),
+      sampleText: vi.fn(),
+    },
   };
 
   let handlers: CoreAnalysisHandlers;

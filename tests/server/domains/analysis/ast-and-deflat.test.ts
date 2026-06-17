@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CoreAnalysisHandlers } from '@server/domains/analysis/handlers';
 import type {
   Deobfuscator,
@@ -10,6 +10,7 @@ import type {
 } from '@server/domains/shared/modules';
 import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import type { ScriptManager } from '@server/domains/shared/modules';
+import type { LLMSamplingBridge } from '@server/LLMSamplingBridge';
 
 function parseJson(response: {
   content: Array<{ type: string; text?: string }>;
@@ -29,6 +30,10 @@ const stubDeps = {
   analyzer: {} as CodeAnalyzer,
   cryptoDetector: {} as CryptoDetector,
   hookManager: {} as HookManager,
+  samplingBridge: {
+    isSamplingSupported: vi.fn().mockReturnValue(false),
+    sampleText: vi.fn(),
+  } as unknown as LLMSamplingBridge,
 };
 
 const handler = new CoreAnalysisHandlers(stubDeps);

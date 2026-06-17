@@ -322,4 +322,32 @@ export const coreTools: Tool[] = [
       })
       .required('instructions'),
   ),
+  tool('ai_suggest_exploits', (t) =>
+    t
+      .desc(
+        'Use LLM to suggest exploit primitives and attack chains for a given vulnerability. ' +
+          'Returns theoretical exploitation steps, references, and required conditions. ' +
+          'IMPORTANT: Does NOT generate executable payloads or malicious code.',
+      )
+      .prop('vulnerability', {
+        type: 'object',
+        description: 'Vulnerability details (type, description, severity, location)',
+        properties: {
+          type: { type: 'string', description: 'Vulnerability type (e.g., xss, sqli, rce)' },
+          description: { type: 'string', description: 'Vulnerability description' },
+          severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
+          location: { type: 'object', description: 'Source location' },
+        },
+        required: ['type', 'description'],
+      })
+      .enum(
+        'targetPlatform',
+        ['browser', 'nodejs', 'electron', 'android', 'ios', 'unknown'],
+        'Target platform',
+        { default: 'unknown' },
+      )
+      .array('mitigations', { type: 'string' }, 'Known mitigations in place (e.g., CSP, ASLR)')
+      .required('vulnerability')
+      .readOnly(),
+  ),
 ];

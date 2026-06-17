@@ -75,6 +75,7 @@ async function ensure(ctx: MCPServerContext): Promise<H> {
         analyzer: ctx.analyzer,
         cryptoDetector: ctx.cryptoDetector,
         hookManager: ctx.hookManager,
+        samplingBridge: ctx.samplingBridge,
       });
     }
   }
@@ -102,6 +103,12 @@ const manifest = {
   prerequisites: {
     collect_code: [
       { condition: 'Browser must be launched', fix: 'Call browser_launch or browser_attach first' },
+    ],
+    ai_suggest_exploits: [
+      {
+        condition: 'Client must support MCP sampling',
+        fix: 'Use Claude Desktop or another sampling-capable MCP client',
+      },
     ],
   },
 
@@ -248,6 +255,12 @@ const manifest = {
       tool: t('js_symbolic_execute_jsvmp'),
       domain: DOMAIN,
       bind: b((h, a) => h.handleJsSymbolicExecuteJsvmp(a)),
+    },
+    {
+      tool: t('ai_suggest_exploits'),
+      domain: DOMAIN,
+      profiles: ['workflow', 'full'],
+      bind: b((h, a) => h.handleAiSuggestExploits(a)),
     },
   ],
 } satisfies DomainManifest<typeof DEP_KEY, H, typeof DOMAIN>;

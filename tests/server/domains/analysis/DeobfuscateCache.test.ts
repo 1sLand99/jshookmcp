@@ -15,10 +15,18 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { existsSync, rmSync } from 'fs';
 import type { ToolResponse } from '@server/types';
+import type { LLMSamplingBridge } from '@server/LLMSamplingBridge';
 
 const parseToolResponse = <T>(response: ToolResponse): T => {
   // @ts-expect-error
   return JSON.parse(response.content[0]!.text) as T;
+};
+
+const createMockSamplingBridge = (): LLMSamplingBridge => {
+  return {
+    isSamplingSupported: vi.fn().mockReturnValue(false),
+    sampleText: vi.fn(),
+  } as unknown as LLMSamplingBridge;
 };
 
 describe('DeobfuscateCache Integration', () => {
@@ -81,6 +89,7 @@ describe('DeobfuscateCache Integration', () => {
       analyzer: new CodeAnalyzer(),
       cryptoDetector: new CryptoDetector(),
       hookManager: new HookManager(),
+      samplingBridge: createMockSamplingBridge(),
     });
   };
 

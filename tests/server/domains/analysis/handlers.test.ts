@@ -62,6 +62,10 @@ describe('CoreAnalysisHandlers', () => {
       getHookRecords: vi.fn(),
       clearHookRecords: vi.fn(),
     },
+    samplingBridge: {
+      isSamplingSupported: vi.fn().mockReturnValue(false),
+      sampleText: vi.fn(),
+    },
   };
 
   let handlers: CoreAnalysisHandlers;

@@ -150,6 +150,7 @@ export interface DomainInstances {
   extensionRegistryHandlers?: ExtensionRegistryHandlers;
   crossDomainHandlers?: CrossDomainHandlers;
   dartInspectorHandlers?: DartInspectorHandlers;
+  webgpuHandlers?: import('@server/domains/webgpu/index').WebGPUHandlers;
   debuggerHandlers?: import('@server/domains/debugger/index').DebuggerToolHandlers;
   advancedHandlers?: import('@server/domains/network/index').AdvancedToolHandlers;
   aiHookHandlers?: import('@server/domains/instrumentation/hooks/ai-handlers').AIHookToolHandlers;

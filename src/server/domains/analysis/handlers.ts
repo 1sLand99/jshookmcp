@@ -34,7 +34,9 @@ import { CollectionHandlers } from './handlers/collection';
 import { DataManagementHandlers } from './handlers/data-management';
 import { handleManageHooks } from './handlers/hooks';
 import { handleWebpackEnumerate } from './handlers/webpack';
+import { handleAiSuggestExploits } from './handlers/exploit-suggestion';
 import { JSVMPDeobfuscator } from '@modules/deobfuscator/JSVMPDeobfuscator';
+import type { LLMSamplingBridge } from '@server/LLMSamplingBridge';
 
 interface CoreAnalysisHandlerDeps {
   collector: CodeCollector;
@@ -45,6 +47,7 @@ interface CoreAnalysisHandlerDeps {
   analyzer: CodeAnalyzer;
   cryptoDetector: CryptoDetector;
   hookManager: HookManager;
+  samplingBridge: LLMSamplingBridge;
 }
 
 export class CoreAnalysisHandlers {
@@ -56,6 +59,7 @@ export class CoreAnalysisHandlers {
   private readonly analyzer: CodeAnalyzer;
   private readonly cryptoDetector: CryptoDetector;
   private readonly hookManager: HookManager;
+  private readonly samplingBridge: LLMSamplingBridge;
   private readonly jsvmpDeobfuscator: JSVMPDeobfuscator;
   private readonly collectionHandlers: CollectionHandlers;
   private readonly dataManagementHandlers: DataManagementHandlers;
@@ -69,6 +73,7 @@ export class CoreAnalysisHandlers {
     this.analyzer = deps.analyzer;
     this.cryptoDetector = deps.cryptoDetector;
     this.hookManager = deps.hookManager;
+    this.samplingBridge = deps.samplingBridge;
     this.jsvmpDeobfuscator = new JSVMPDeobfuscator();
     this.collectionHandlers = new CollectionHandlers({
       collector: this.collector,
@@ -172,5 +177,10 @@ export class CoreAnalysisHandlers {
 
   async handleGetCollectionStats(): Promise<ToolResponse> {
     return this.dataManagementHandlers.handleGetCollectionStats();
+  }
+
+  // Exploit suggestion (migrated from ai-assist)
+  async handleAiSuggestExploits(args: ToolArgs): Promise<ToolResponse> {
+    return handleAiSuggestExploits(this.samplingBridge, args);
   }
 }
