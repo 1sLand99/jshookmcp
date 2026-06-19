@@ -486,6 +486,6 @@
   "webgpu_timing_analysis": "GPU 计时分析用于侧信道检测。测量 GPU 命令执行时间方差以检测基于缓存的侧信道攻击（格拉茨大学 2025 年研究）。",
   "webgpu_memory_layout": "分析 GPU 内存分配和缓冲区使用。识别可能易受侧信道攻击的内存布局模式。",
   "webgpu_capture_commands": "捕获 GPU 命令队列提交（渲染通道、计算调度）。用于分析 GPU 工作负载和检测恶意 shader 行为。",
-  "page_session_storage": "待补充中文：Read, write, or clear sessionStorage entries for the current origin.",
-  "browser_passkey_seed": "待补充中文：Seed a WebAuthn/Passkey credential into the browser for test automation."
+  "page_session_storage": "读取、写入或清空当前域名下的 sessionStorage。",
+  "browser_passkey_seed": "向浏览器注入 WebAuthn/Passkey 虚拟凭据，用于 FIDO2 认证自动化测试。"
 }
