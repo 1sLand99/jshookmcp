@@ -276,3 +276,38 @@ export async function requestJson(
 
   return { status: response.status, data, text };
 }
+
+// ── Zod 4.4 utilities ──
+
+/**
+ * Utility to reverse a codec's encode/decode direction.
+ * Zod 4.4 added `z.invertCodec()` — this typed wrapper preserves the types.
+ *
+ * @example
+ *   const stringToNumberCodec = {
+ *     decode: (val: string) => Number(val),
+ *     encode: (val: number) => String(val),
+ *   };
+ *   const numberToStringCodec = invertCodec(stringToNumberCodec);
+ */
+export function invertCodec<TDecoded, TEncoded>(codec: {
+  decode: (val: TEncoded) => TDecoded;
+  encode: (val: TDecoded) => TEncoded;
+}): {
+  decode: (val: TDecoded) => TEncoded;
+  encode: (val: TEncoded) => TDecoded;
+} {
+  return { decode: codec.encode, encode: codec.decode };
+}
+
+/**
+ * Zod 4.4 transform context now supports `ctx.addIssue()` for structured errors.
+ *
+ * Use in custom transforms:
+ *   z.string().transform((val, ctx) => {
+ *     if (val.length < 3) {
+ *       ctx.addIssue({ code: 'custom', message: 'too short' });
+ *     }
+ *     return val;
+ *   });
+ */
