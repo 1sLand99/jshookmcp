@@ -95,4 +95,17 @@ export const browserSecurityStateTools: Tool[] = [
       .required('locale')
       .query(),
   ),
+  tool('browser_passkey_seed', (t) =>
+    t
+      .desc('Seed a WebAuthn/Passkey credential into the browser for test automation.')
+      .string('relyingPartyId', 'Relying party ID (e.g. example.com)')
+      .string('credentialId', 'Base64-encoded credential ID')
+      .string('userHandle', 'Base64-encoded user handle')
+      .string('privateKey', 'Base64-encoded PKCS#8 private key')
+      .string('publicKey', 'Base64-encoded public key (optional but recommended)')
+      .string('userDisplayName', 'Display name for the credential owner')
+      .required('relyingPartyId', 'credentialId', 'userHandle', 'privateKey')
+      .destructive()
+      .idempotent(),
+  ),
 ];

@@ -82,10 +82,18 @@ export const browserPageSystemTools: Tool[] = [
   ),
   tool('page_local_storage', (t) =>
     t
-      .desc('Read or write localStorage entries for the current origin.')
-      .enum('action', ['get', 'set'], 'Action')
-      .string('key', 'Key')
-      .string('value', 'Value')
+      .desc('Read, write, or clear localStorage entries for the current origin.')
+      .enum('action', ['get', 'set', 'clear'], 'Action')
+      .string('key', 'Key (for set/get)')
+      .string('value', 'Value (for set)')
+      .required('action'),
+  ),
+  tool('page_session_storage', (t) =>
+    t
+      .desc('Read, write, or clear sessionStorage entries for the current origin.')
+      .enum('action', ['get', 'set', 'clear'], 'Action')
+      .string('key', 'Key (for set/get)')
+      .string('value', 'Value (for set)')
       .required('action'),
   ),
   tool('page_press_key', (t) =>

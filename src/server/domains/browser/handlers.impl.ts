@@ -570,13 +570,45 @@ export class BrowserToolHandlers {
         return this.pageData.handlePageGetLocalStorage(args);
       case 'set':
         return this.pageData.handlePageSetLocalStorage(args);
+      case 'clear':
+        return this.pageData.handlePageClearLocalStorage();
       default:
         return asErrorResponse(
-          new ToolError('VALIDATION', `Invalid action: "${action}". Expected one of: get, set`, {
-            toolName: 'page_local_storage',
-          }),
+          new ToolError(
+            'VALIDATION',
+            `Invalid action: "${action}". Expected one of: get, set, clear`,
+            {
+              toolName: 'page_local_storage',
+            },
+          ),
         );
     }
+  }
+
+  async handlePageSessionStorageDispatch(args: Record<string, unknown>) {
+    const action = String(args['action'] ?? '');
+    switch (action) {
+      case 'get':
+        return this.pageData.handlePageGetSessionStorage(args);
+      case 'set':
+        return this.pageData.handlePageSetSessionStorage(args);
+      case 'clear':
+        return this.pageData.handlePageClearSessionStorage();
+      default:
+        return asErrorResponse(
+          new ToolError(
+            'VALIDATION',
+            `Invalid action: "${action}". Expected one of: get, set, clear`,
+            {
+              toolName: 'page_session_storage',
+            },
+          ),
+        );
+    }
+  }
+
+  async handleBrowserPasskeySeed(args: Record<string, unknown>) {
+    return this.pageData.handleBrowserPasskeySeed(args);
   }
 
   // ── Console ──

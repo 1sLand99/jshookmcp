@@ -353,8 +353,22 @@ export class NetworkHandlersCore {
           (TYPE_SORT_PRIORITY[b.type ?? ''] ?? DEFAULT_SORT_PRIORITY),
       );
 
-      const beforeLimit = requests.length;
-      requests = requests.slice(offset, offset + limit);
+      // Enrich each request with TLS security details + server address from its captured response.
+      const enriched = requests.map((req) => {
+        const reqId = req.requestId;
+        if (!reqId) return req;
+        const activity = this.consoleMonitor.getNetworkActivity(reqId);
+        const resp = activity?.response;
+        if (!resp) return req;
+        const { securityDetails, remoteAddress, ..._rest } = resp;
+        const result: Record<string, unknown> = { ...req };
+        if (securityDetails) result.securityDetails = securityDetails;
+        if (remoteAddress) result.serverAddr = remoteAddress;
+        return result as typeof req;
+      });
+
+      const beforeLimit = enriched.length;
+      requests = enriched.slice(offset, offset + limit) as typeof requests;
       const hasMore = offset + requests.length < beforeLimit;
 
       const filterMiss =

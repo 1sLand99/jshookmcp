@@ -193,4 +193,57 @@ export class PageDataHandlers {
       return { key };
     });
   }
+
+  async handlePageClearLocalStorage(): Promise<ToolResponse> {
+    return handleSafe(async () => {
+      await this.deps.pageController.clearLocalStorage();
+      return { message: 'localStorage cleared' };
+    });
+  }
+
+  async handlePageGetSessionStorage(_args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => {
+      const storage = await this.deps.pageController.getSessionStorage();
+      return { count: Object.keys(storage).length, storage };
+    });
+  }
+
+  async handlePageSetSessionStorage(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => {
+      const key = argString(args, 'key', '');
+      const value = argString(args, 'value', '');
+      await this.deps.pageController.setSessionStorage(key, value);
+      return { key };
+    });
+  }
+
+  async handlePageClearSessionStorage(): Promise<ToolResponse> {
+    return handleSafe(async () => {
+      await this.deps.pageController.clearSessionStorage();
+      return { message: 'sessionStorage cleared' };
+    });
+  }
+
+  async handleBrowserPasskeySeed(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => {
+      const relyingPartyId = argString(args, 'relyingPartyId', '');
+      const credentialId = argString(args, 'credentialId', '');
+      const userHandle = argString(args, 'userHandle', '');
+      const privateKey = argString(args, 'privateKey', '');
+      const publicKey = argString(args, 'publicKey', '');
+      const userDisplayName = argString(args, 'userDisplayName', '');
+      if (!relyingPartyId || !credentialId || !userHandle || !privateKey) {
+        throw new Error('relyingPartyId, credentialId, userHandle and privateKey are required');
+      }
+      const result = await this.deps.pageController.seedWebAuthnCredential({
+        relyingPartyId,
+        credentialId,
+        userHandle,
+        privateKey,
+        publicKey: publicKey || undefined,
+        userDisplayName: userDisplayName || undefined,
+      });
+      return { seeded: true, ...result };
+    });
+  }
 }

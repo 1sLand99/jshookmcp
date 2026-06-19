@@ -21,7 +21,7 @@
 - browser + instrumentation
 - browser + workflow
 
-## 工具清单（64）
+## 工具清单（66）
 
 | 工具 | 说明 |
 | --- | --- |
@@ -61,6 +61,8 @@
 | `page_set_viewport` | 设置当前页面视口尺寸。 |
 | `page_emulate_device` | 模拟移动设备环境，例如 iPhone、iPad 或 Android 机型。 |
 | `page_local_storage` | 管理 localStorage。操作：get（获取全部项）、set（需提供 key 和 value）。 |
+| `page_session_storage` | 待补充中文：Read, write, or clear sessionStorage entries for the current origin. |
+| `browser_passkey_seed` | 待补充中文：Seed a WebAuthn/Passkey credential into the browser for test automation. |
 | `page_press_key` | 模拟按下键盘按键，如 Enter、Escape 或 ArrowDown。 |
 | `captcha_detect` | 使用 AI 视觉分析检测页面上是否有 CAPTCHA 验证码。 |
 | `captcha_wait` | 等待用户手动完成 CAPTCHA 验证码。 |

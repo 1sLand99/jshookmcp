@@ -21,7 +21,7 @@ Primary browser control and DOM interaction domain; the usual entry point for mo
 - browser + instrumentation
 - browser + workflow
 
-## Full tool list (64)
+## Full tool list (66)
 
 | Tool | Description |
 | --- | --- |
@@ -60,7 +60,9 @@ Primary browser control and DOM interaction domain; the usual entry point for mo
 | `page_cookies` | Manage page cookies; clear requires matching expectedCount. |
 | `page_set_viewport` | Set the browser viewport dimensions. |
 | `page_emulate_device` | Emulate a mobile device profile. |
-| `page_local_storage` | Read or write localStorage entries for the current origin. |
+| `page_local_storage` | Read, write, or clear localStorage entries for the current origin. |
+| `page_session_storage` | Read, write, or clear sessionStorage entries for the current origin. |
+| `browser_passkey_seed` | Seed a WebAuthn/Passkey credential into the browser for test automation. |
 | `page_press_key` | Simulate a key press by name. |
 | `captcha_detect` | Detect CAPTCHAs on the current page. |
 | `captcha_wait` | Block until the user manually solves the CAPTCHA. |

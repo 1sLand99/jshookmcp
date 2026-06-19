@@ -667,6 +667,92 @@ export class PageController {
     logger.info('LocalStorage cleared');
   }
 
+  // ── sessionStorage ──
+
+  async getSessionStorage(): Promise<Record<string, string>> {
+    const page = await this.collector.getActivePage();
+    const storage = await page.evaluate(() => {
+      const items: Record<string, string> = {};
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i);
+        if (key) items[key] = sessionStorage.getItem(key) || '';
+      }
+      return items;
+    });
+    logger.info(`Retrieved ${Object.keys(storage).length} sessionStorage items`);
+    return storage;
+  }
+
+  async setSessionStorage(key: string, value: string): Promise<void> {
+    const page = await this.collector.getActivePage();
+    await page.evaluate(
+      (k, v) => {
+        sessionStorage.setItem(k, v);
+      },
+      key,
+      value,
+    );
+    logger.info(`Set sessionStorage: ${key}`);
+  }
+
+  async clearSessionStorage(): Promise<void> {
+    if (this.collector.isExistingBrowserConnection()) {
+      throw new Error(
+        'Cannot clear sessionStorage on an attached browser. ' +
+          'This operation is restricted to browsers launched by jshook to prevent accidental modification of user data.',
+      );
+    }
+    const page = await this.collector.getActivePage();
+    await page.evaluate(() => {
+      sessionStorage.clear();
+    });
+    logger.info('SessionStorage cleared');
+  }
+
+  // ── WebAuthn passkey seeding ──
+
+  async seedWebAuthnCredential(options: {
+    relyingPartyId: string;
+    credentialId: string;
+    userHandle: string;
+    privateKey: string;
+    publicKey?: string;
+    userDisplayName?: string;
+  }): Promise<{ authenticatorId: string; credentialId: string }> {
+    const page = await this.collector.getActivePage();
+    const cdp = await page.createCDPSession();
+    try {
+      await cdp.send('WebAuthn.enable', { enableUI: true });
+      const authResult = (await cdp.send('WebAuthn.addVirtualAuthenticator', {
+        options: {
+          protocol: 'ctap2',
+          transport: 'internal',
+          hasResidentKey: true,
+          hasUserVerification: true,
+          isUserVerified: true,
+          automaticPresenceSimulation: true,
+        },
+      })) as { authenticatorId: string };
+      await cdp.send('WebAuthn.addCredential', {
+        authenticatorId: authResult.authenticatorId,
+        credential: {
+          credentialId: options.credentialId,
+          isResidentCredential: true,
+          privateKey: options.privateKey,
+          signCount: 0,
+          rpId: options.relyingPartyId,
+          userHandle: options.userHandle,
+          userDisplayName: options.userDisplayName ?? 'jshook user',
+          ...(options.publicKey ? { publicKey: options.publicKey } : {}),
+        },
+      });
+      logger.info(`Seeded WebAuthn credential for ${options.relyingPartyId}`);
+      return { authenticatorId: authResult.authenticatorId, credentialId: options.credentialId };
+    } finally {
+      await cdp.detach().catch(() => {});
+    }
+  }
+
   async pressKey(key: string): Promise<void> {
     const page = await this.collector.getActivePage();
     await page.keyboard.press(key as Parameters<typeof page.keyboard.press>[0]);

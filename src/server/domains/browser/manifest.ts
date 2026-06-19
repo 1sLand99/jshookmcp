@@ -55,6 +55,8 @@ const registrations = defineMethodRegistrations<H, (typeof toolDefinitions)[numb
     { tool: 'page_set_viewport', method: 'handlePageSetViewport' },
     { tool: 'page_emulate_device', method: 'handlePageEmulateDevice' },
     { tool: 'page_local_storage', method: 'handlePageLocalStorageDispatch' },
+    { tool: 'page_session_storage', method: 'handlePageSessionStorageDispatch' },
+    { tool: 'browser_passkey_seed', method: 'handleBrowserPasskeySeed' },
     { tool: 'page_press_key', method: 'handlePagePressKey' },
     { tool: 'captcha_detect', method: 'handleCaptchaDetect' },
     { tool: 'captcha_wait', method: 'handleCaptchaWait' },

@@ -18,6 +18,27 @@ export interface NetworkRequest {
   initiator?: NetworkInitiator;
 }
 
+export interface NetworkSecurityDetails {
+  protocol?: string;
+  keyExchange?: string;
+  keyExchangeGroup?: string;
+  cipher?: string;
+  mac?: string;
+  certificateId?: number;
+  subjectName?: string;
+  sanList?: string[];
+  issuer?: string;
+  validFrom?: number;
+  validTo?: number;
+  signedCertificateTimestampList?: unknown[];
+  certificateTransparencyCompliance?: string;
+}
+
+export interface NetworkRemoteAddress {
+  ip: string;
+  port: number;
+}
+
 export interface NetworkResponse {
   requestId: string;
   rawRequestId?: string;
@@ -34,6 +55,8 @@ export interface NetworkResponse {
   fromCache?: boolean;
   timing?: NetworkTiming;
   protocol?: string;
+  securityDetails?: NetworkSecurityDetails;
+  remoteAddress?: NetworkRemoteAddress;
 }
 
 export interface NetworkStatus {

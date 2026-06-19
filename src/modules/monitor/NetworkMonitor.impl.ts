@@ -45,6 +45,9 @@ interface CDPResponseReceivedPayload {
     fromServiceWorker?: boolean;
     timing?: unknown;
     protocol?: string;
+    securityDetails?: UnknownRecord;
+    remoteIPAddress?: string;
+    remotePort?: number;
   };
   timestamp: number;
 }
@@ -122,6 +125,32 @@ const toFiniteNumber = (value: unknown, fallback = 0): number =>
 
 const toBoolean = (value: unknown, fallback: boolean): boolean =>
   typeof value === 'boolean' ? value : fallback;
+
+// ── TLS / remote address normalizers ──
+
+function normalizeSecurityDetails(value: unknown): Record<string, unknown> | undefined {
+  if (!isObjectRecord(value)) return undefined;
+  const d = value as Record<string, unknown>;
+  return {
+    protocol: typeof d.protocol === 'string' ? d.protocol : undefined,
+    keyExchange: typeof d.keyExchange === 'string' ? d.keyExchange : undefined,
+    cipher: typeof d.cipher === 'string' ? d.cipher : undefined,
+    subjectName: typeof d.subjectName === 'string' ? d.subjectName : undefined,
+    sanList: Array.isArray(d.sanList)
+      ? d.sanList.filter((s): s is string => typeof s === 'string')
+      : undefined,
+    issuer: typeof d.issuer === 'string' ? d.issuer : undefined,
+    validFrom: typeof d.validFrom === 'number' ? d.validFrom : undefined,
+    validTo: typeof d.validTo === 'number' ? d.validTo : undefined,
+  };
+}
+
+function normalizeRemoteAddress(ip: unknown, port: unknown): Record<string, unknown> | undefined {
+  if (typeof ip !== 'string' || typeof port !== 'number' || Number.isNaN(port)) return undefined;
+  return { ip, port };
+}
+
+// ── NetworkMonitor implementation ──
 
 export class NetworkMonitor implements NetworkMonitorLike {
   private networkEnabled = false;
@@ -240,6 +269,11 @@ export class NetworkMonitor implements NetworkMonitorLike {
           fromCache: params.response.fromDiskCache || params.response.fromServiceWorker,
           timing: params.response.timing,
           protocol: params.response.protocol,
+          securityDetails: normalizeSecurityDetails(params.response.securityDetails),
+          remoteAddress: normalizeRemoteAddress(
+            params.response.remoteIPAddress,
+            params.response.remotePort,
+          ),
         };
 
         this.responses.set(scopedRequestId, response);
