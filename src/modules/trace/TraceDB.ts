@@ -211,28 +211,11 @@ export class TraceDB {
   // ── Read operations ──
 
   query(sql: string): TraceQueryResult {
-    this.ensureOpen();
+    return this.executeReadQuery(sql, []);
+  }
 
-    if (WRITE_SQL_PATTERN.test(sql)) {
-      throw new Error(
-        `Write operations are not allowed in trace queries. Rejected SQL: ${sql.slice(0, 100)}`,
-      );
-    }
-
-    const stmt = this.db.prepare(sql);
-    const rows = stmt.all() as Record<string, unknown>[];
-
-    if (rows.length === 0) {
-      const columns = stmt.columns().map((column: { name: string }) => column.name);
-      return { columns, rows: [], rowCount: 0 };
-    }
-
-    const columns = Object.keys(rows[0]!);
-    return {
-      columns,
-      rows: rows.map((row) => columns.map((column) => row[column])),
-      rowCount: rows.length,
-    };
+  queryWithParams(sql: string, params: readonly unknown[]): TraceQueryResult {
+    return this.executeReadQuery(sql, params);
   }
 
   getEventsByTimeRange(start: number, end: number): TraceEvent[] {
@@ -403,5 +386,30 @@ export class TraceDB {
     if (this.closed) {
       throw new Error('TraceDB is closed');
     }
+  }
+
+  private executeReadQuery(sql: string, params: readonly unknown[]): TraceQueryResult {
+    this.ensureOpen();
+
+    if (WRITE_SQL_PATTERN.test(sql)) {
+      throw new Error(
+        `Write operations are not allowed in trace queries. Rejected SQL: ${sql.slice(0, 100)}`,
+      );
+    }
+
+    const stmt = this.db.prepare(sql);
+    const rows = stmt.all(...params) as Record<string, unknown>[];
+
+    if (rows.length === 0) {
+      const columns = stmt.columns().map((column: { name: string }) => column.name);
+      return { columns, rows: [], rowCount: 0 };
+    }
+
+    const columns = Object.keys(rows[0]!);
+    return {
+      columns,
+      rows: rows.map((row) => columns.map((column) => row[column])),
+      rowCount: rows.length,
+    };
   }
 }

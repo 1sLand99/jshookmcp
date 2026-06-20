@@ -5,7 +5,6 @@
  * request-scoped network flow retrieval, heap diffing, and export.
  */
 
-import { writeFile } from 'node:fs/promises';
 import type { MCPServerContext } from '@server/MCPServer.context';
 import type { TraceQueryResult } from '@modules/trace/TraceDB.types';
 import { TraceDB } from '@modules/trace/TraceDB';
@@ -16,6 +15,8 @@ import { argEnum } from '@server/domains/shared/parse-args';
 import { R } from '@server/domains/shared/ResponseBuilder';
 import { ToolError } from '@errors/ToolError';
 import { PrerequisiteError } from '@errors/PrerequisiteError';
+import { getProjectRoot, getSystemTempRoots } from '@utils/outputPaths';
+import { resolveSafeOutputPath, writeTextFileAtomically } from '@utils/safeOutput';
 import {
   asBoolean,
   asNumber,
@@ -23,8 +24,18 @@ import {
   formatNetworkResource,
   formatTraceEvent,
   getDbForReading,
+  optionalBooleanArg,
+  optionalNumberArg,
+  optionalStringArg,
+  optionalStringArrayArg,
+  parseTraceSummary,
   readEventsByExpression,
+  readExportTraceRow,
+  readSummaryMemoryDeltaRow,
+  readSummaryTraceEventRow,
   readTraceBody,
+  readTraceSummaryNumber,
+  readTraceSummaryObjectCounts,
   rowToObject,
   safeParseJSON,
   smartHandleDetailed,
@@ -32,7 +43,6 @@ import {
 import {
   summarizeEvents,
   summarizeMemoryDeltas,
-  type SummaryDetail,
   type TraceEvent as SummaryTraceEvent,
   type MemoryDelta,
 } from '@server/domains/trace/TraceSummarizer';
@@ -51,12 +61,24 @@ export class TraceToolHandlers {
   }
 
   async handleStartTraceRecording(args: Record<string, unknown>): Promise<unknown> {
-    const cdpDomains = args['cdpDomains'] as string[] | undefined;
-    const recordMemoryDeltas = args['recordMemoryDeltas'] as boolean | undefined;
-    const recordResponseBodies = args['recordResponseBodies'] as boolean | undefined;
-    const streamResponseChunks = args['streamResponseChunks'] as boolean | undefined;
-    const networkBodyMaxBytes = args['networkBodyMaxBytes'] as number | undefined;
-    const networkInlineBodyBytes = args['networkInlineBodyBytes'] as number | undefined;
+    const cdpDomains = optionalStringArrayArg(args['cdpDomains'], 'cdpDomains');
+    const recordMemoryDeltas = optionalBooleanArg(args['recordMemoryDeltas'], 'recordMemoryDeltas');
+    const recordResponseBodies = optionalBooleanArg(
+      args['recordResponseBodies'],
+      'recordResponseBodies',
+    );
+    const streamResponseChunks = optionalBooleanArg(
+      args['streamResponseChunks'],
+      'streamResponseChunks',
+    );
+    const networkBodyMaxBytes = optionalNumberArg(
+      args['networkBodyMaxBytes'],
+      'networkBodyMaxBytes',
+    );
+    const networkInlineBodyBytes = optionalNumberArg(
+      args['networkInlineBodyBytes'],
+      'networkInlineBodyBytes',
+    );
 
     const eventBus = this.ctx.eventBus;
     if (!eventBus) {
@@ -139,8 +161,8 @@ export class TraceToolHandlers {
   }
 
   async handleQueryTraceSql(args: Record<string, unknown>): Promise<unknown> {
-    const sql = args['sql'] as string;
-    const dbPath = args['dbPath'] as string | undefined;
+    const sql = typeof args['sql'] === 'string' ? args['sql'] : '';
+    const dbPath = typeof args['dbPath'] === 'string' ? args['dbPath'] : undefined;
 
     if (!sql) {
       throw new ToolError('VALIDATION', 'sql parameter is required');
@@ -179,12 +201,21 @@ export class TraceToolHandlers {
   }
 
   async handleSeekToTimestamp(args: Record<string, unknown>): Promise<unknown> {
-    const timestamp = args['timestamp'] as number;
-    const dbPath = args['dbPath'] as string | undefined;
-    const windowMs = (args['windowMs'] as number) ?? 100;
-    const timeDomain = (args['timeDomain'] as 'wall' | 'monotonic' | undefined) ?? 'wall';
+    const timestamp = asNumber(args['timestamp'], {
+      defaultValue: Number.NaN,
+      min: 0,
+    });
+    const dbPath = typeof args['dbPath'] === 'string' ? args['dbPath'] : undefined;
+    const windowMs = asNumber(args['windowMs'], {
+      defaultValue: 100,
+      min: 1,
+      max: 60_000,
+      integer: true,
+    });
+    const timeDomain =
+      argEnum(args, 'timeDomain', new Set(['wall', 'monotonic'] as const), 'wall') ?? 'wall';
 
-    if (!timestamp) {
+    if (!Number.isFinite(timestamp)) {
       throw new ToolError('VALIDATION', 'timestamp parameter is required');
     }
 
@@ -206,43 +237,48 @@ export class TraceToolHandlers {
           ? db.getEventsByTimeRange(timestamp - windowMs, timestamp + windowMs)
           : readEventsByExpression(db, eventTimeExpr, timestamp - windowMs, timestamp + windowMs);
 
-      const debuggerEventsResult = db.query(
-        `SELECT * FROM events WHERE category = 'debugger' AND ${eventTimeExpr} <= ${timestamp} ORDER BY ` +
+      const debuggerEventsResult = db.queryWithParams(
+        `SELECT * FROM events WHERE category = 'debugger' AND ${eventTimeExpr} <= ? ORDER BY ` +
           `${eventTimeExpr} DESC, sequence DESC LIMIT 5`,
+        [timestamp],
       );
 
       const memoryStateResult =
         timeDomain === 'wall'
-          ? db.query(
+          ? db.queryWithParams(
               `SELECT m1.* FROM memory_deltas m1
-               INNER JOIN (SELECT address, MAX(timestamp) as max_ts FROM memory_deltas WHERE timestamp <= ${timestamp} GROUP BY address) m2
+               INNER JOIN (SELECT address, MAX(timestamp) as max_ts FROM memory_deltas WHERE timestamp <= ? GROUP BY address) m2
                ON m1.address = m2.address AND m1.timestamp = m2.max_ts
                ORDER BY m1.address`,
+              [timestamp],
             )
           : null;
 
-      let networkResult = db.query(
+      let networkResult = db.queryWithParams(
         `SELECT * FROM network_resources
-         WHERE ${networkTimeExpr} IS NOT NULL AND ${networkTimeExpr} <= ${timestamp}
+         WHERE ${networkTimeExpr} IS NOT NULL AND ${networkTimeExpr} <= ?
          ORDER BY ${networkTimeExpr} DESC
          LIMIT 20`,
+        [timestamp],
       );
       if (networkResult.rowCount === 0) {
-        networkResult = db.query(
+        networkResult = db.queryWithParams(
           `SELECT * FROM events
            WHERE category = 'network'
              AND event_type = 'Network.loadingFinished'
-             AND ${eventTimeExpr} <= ${timestamp}
+             AND ${eventTimeExpr} <= ?
            ORDER BY ${eventTimeExpr} DESC
            LIMIT 20`,
+          [timestamp],
         );
       }
 
       const snapshotResult =
         timeDomain === 'wall'
-          ? db.query(
-              `SELECT id, timestamp, summary FROM heap_snapshots WHERE timestamp <= ${timestamp} ORDER BY timestamp ` +
+          ? db.queryWithParams(
+              `SELECT id, timestamp, summary FROM heap_snapshots WHERE timestamp <= ? ORDER BY timestamp ` +
                 `DESC LIMIT 1`,
+              [timestamp],
             )
           : null;
 
@@ -291,8 +327,8 @@ export class TraceToolHandlers {
   }
 
   async handleGetTraceNetworkFlow(args: Record<string, unknown>): Promise<unknown> {
-    const requestId = typeof args['requestId'] === 'string' ? args['requestId'] : '';
-    const dbPath = args['dbPath'] as string | undefined;
+    const requestId = optionalStringArg(args['requestId'], 'requestId') ?? '';
+    const dbPath = optionalStringArg(args['dbPath'], 'dbPath');
     const includeBody = asBoolean(args['includeBody'], true);
     const includeChunks = asBoolean(args['includeChunks'], true);
     const includeEvents = asBoolean(args['includeEvents'], true);
@@ -358,11 +394,19 @@ export class TraceToolHandlers {
   }
 
   async handleDiffHeapSnapshots(args: Record<string, unknown>): Promise<unknown> {
-    const snapshotId1 = args['snapshotId1'] as number;
-    const snapshotId2 = args['snapshotId2'] as number;
-    const dbPath = args['dbPath'] as string | undefined;
+    const snapshotId1 = asNumber(args['snapshotId1'], {
+      defaultValue: Number.NaN,
+      min: 1,
+      integer: true,
+    });
+    const snapshotId2 = asNumber(args['snapshotId2'], {
+      defaultValue: Number.NaN,
+      min: 1,
+      integer: true,
+    });
+    const dbPath = typeof args['dbPath'] === 'string' ? args['dbPath'] : undefined;
 
-    if (!snapshotId1 || !snapshotId2) {
+    if (!Number.isFinite(snapshotId1) || !Number.isFinite(snapshotId2)) {
       throw new ToolError('VALIDATION', 'snapshotId1 and snapshotId2 are required');
     }
 
@@ -372,11 +416,13 @@ export class TraceToolHandlers {
       const db = getDbForReading(this.recorder, dbPath);
       if (dbPath) tempDb = db;
 
-      const snap1Result = db.query(
-        `SELECT id, timestamp, summary FROM heap_snapshots WHERE id = ${snapshotId1}`,
+      const snap1Result = db.queryWithParams(
+        'SELECT id, timestamp, summary FROM heap_snapshots WHERE id = ?',
+        [snapshotId1],
       );
-      const snap2Result = db.query(
-        `SELECT id, timestamp, summary FROM heap_snapshots WHERE id = ${snapshotId2}`,
+      const snap2Result = db.queryWithParams(
+        'SELECT id, timestamp, summary FROM heap_snapshots WHERE id = ?',
+        [snapshotId2],
       );
 
       if (snap1Result.rowCount === 0) {
@@ -389,11 +435,11 @@ export class TraceToolHandlers {
       const snap1Row = rowToObject(snap1Result.columns, snap1Result.rows[0]!);
       const snap2Row = rowToObject(snap2Result.columns, snap2Result.rows[0]!);
 
-      const summary1 = safeParseJSON(snap1Row['summary'] as string) as Record<string, unknown>;
-      const summary2 = safeParseJSON(snap2Row['summary'] as string) as Record<string, unknown>;
+      const summary1 = parseTraceSummary(snap1Row['summary']);
+      const summary2 = parseTraceSummary(snap2Row['summary']);
 
-      const counts1 = (summary1['objectCounts'] ?? {}) as Record<string, number>;
-      const counts2 = (summary2['objectCounts'] ?? {}) as Record<string, number>;
+      const counts1 = readTraceSummaryObjectCounts(summary1);
+      const counts2 = readTraceSummaryObjectCounts(summary2);
       const allKeys = new Set([...Object.keys(counts1), ...Object.keys(counts2)]);
       const added: Array<{ name: string; count: number }> = [];
       const removed: Array<{ name: string; count: number }> = [];
@@ -419,8 +465,8 @@ export class TraceToolHandlers {
 
       changed.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
 
-      const totalSize1 = (summary1['totalSize'] as number) ?? 0;
-      const totalSize2 = (summary2['totalSize'] as number) ?? 0;
+      const totalSize1 = readTraceSummaryNumber(summary1, 'totalSize');
+      const totalSize2 = readTraceSummaryNumber(summary2, 'totalSize');
 
       return R.ok()
         .merge({
@@ -428,13 +474,13 @@ export class TraceToolHandlers {
             id: snap1Row['id'],
             timestamp: snap1Row['timestamp'],
             totalSize: totalSize1,
-            nodeCount: summary1['nodeCount'] ?? 0,
+            nodeCount: readTraceSummaryNumber(summary1, 'nodeCount'),
           },
           snapshot2: {
             id: snap2Row['id'],
             timestamp: snap2Row['timestamp'],
             totalSize: totalSize2,
-            nodeCount: summary2['nodeCount'] ?? 0,
+            nodeCount: readTraceSummaryNumber(summary2, 'nodeCount'),
           },
           diff: {
             added: added.slice(0, 50),
@@ -453,8 +499,9 @@ export class TraceToolHandlers {
   }
 
   async handleExportTrace(args: Record<string, unknown>): Promise<unknown> {
-    const dbPath = args['dbPath'] as string | undefined;
-    const outputPath = args['outputPath'] as string | undefined;
+    const dbPath = typeof args['dbPath'] === 'string' ? args['dbPath'] : undefined;
+    const outputPath =
+      typeof args['outputPath'] === 'string' ? args['outputPath'].trim() || undefined : undefined;
 
     let tempDb: TraceDB | null = null;
 
@@ -470,10 +517,11 @@ export class TraceToolHandlers {
       const pairedBegin = new Set(['Debugger.paused']);
       const pairedEnd = new Set(['Debugger.resumed']);
       const traceEvents = allEvents.rows.map((row) => {
-        const ts = (row[0] as number) * 1000;
-        const cat = row[1] as string;
-        const name = row[2] as string;
-        const dataStr = row[3] as string;
+        const traceRow = readExportTraceRow(row);
+        const ts = traceRow.timestampMs * 1000;
+        const cat = traceRow.category;
+        const name = traceRow.eventType;
+        const dataStr = traceRow.data;
 
         let ph = 'i';
         if (pairedBegin.has(name)) ph = 'B';
@@ -491,8 +539,12 @@ export class TraceToolHandlers {
         };
       });
 
+      const allowedRoots = [getProjectRoot(), ...getSystemTempRoots()];
       const finalOutputPath = outputPath
-        ? outputPath
+        ? await resolveSafeOutputPath(outputPath, {
+            allowedRoots,
+            allowedRootsDescription: 'project root or system temp directory',
+          })
         : (
             await resolveArtifactPath({
               category: 'traces',
@@ -501,7 +553,9 @@ export class TraceToolHandlers {
             })
           ).absolutePath;
 
-      await writeFile(finalOutputPath, JSON.stringify(traceEvents, null, 2), 'utf-8');
+      await writeTextFileAtomically(finalOutputPath, JSON.stringify(traceEvents, null, 2), {
+        allowedRoots: outputPath ? allowedRoots : undefined,
+      });
 
       return R.ok()
         .merge({
@@ -519,8 +573,13 @@ export class TraceToolHandlers {
   }
 
   async handleSummarizeTrace(args: Record<string, unknown>): Promise<unknown> {
-    const detail = (args['detail'] as SummaryDetail) ?? 'balanced';
-    const dbPath = args['dbPath'] as string | undefined;
+    const rawDetail = typeof args['detail'] === 'string' ? args['detail'] : undefined;
+    const detail =
+      rawDetail === 'summary'
+        ? 'balanced'
+        : (argEnum(args, 'detail', new Set(['compact', 'balanced', 'full'] as const), 'balanced') ??
+          'balanced');
+    const dbPath = typeof args['dbPath'] === 'string' ? args['dbPath'] : undefined;
 
     let db: TraceDB;
     let shouldClose = false;
@@ -540,26 +599,12 @@ export class TraceToolHandlers {
         'SELECT timestamp, category, event_type, data, script_id, line_number, wall_time, monotonic_time, ' +
           'request_id, sequence FROM events ORDER BY timestamp, sequence',
       );
-      const events: SummaryTraceEvent[] = eventsResult.rows.map((row: unknown[]) => ({
-        timestamp: row[0] as number,
-        category: row[1] as string,
-        eventType: row[2] as string,
-        data: typeof row[3] === 'string' ? safeParseJSON(row[3]) : row[3],
-        scriptId: (row[4] as string | null) ?? undefined,
-        lineNumber: (row[5] as number | null) ?? undefined,
-      }));
+      const events: SummaryTraceEvent[] = eventsResult.rows.map(readSummaryTraceEventRow);
 
       const deltasResult = db.query(
         'SELECT timestamp, address, old_value, new_value, size, value_type FROM memory_deltas ORDER BY timestamp',
       );
-      const deltas: MemoryDelta[] = deltasResult.rows.map((row: unknown[]) => ({
-        timestamp: row[0] as number,
-        address: row[1] as string,
-        oldValue: row[2] as string,
-        newValue: row[3] as string,
-        size: row[4] as number,
-        valueType: row[5] as string,
-      }));
+      const deltas: MemoryDelta[] = deltasResult.rows.map(readSummaryMemoryDeltaRow);
 
       const networkSummary = db.query(
         `SELECT

@@ -185,6 +185,19 @@ describe('TraceDB', () => {
     expect(result.columns).toEqual(['timestamp', 'category']);
   });
 
+  it('queryWithParams binds positional values without string interpolation', () => {
+    db.insertEvent(makeEvent({ timestamp: 123, category: 'debugger' }));
+    db.insertEvent(makeEvent({ timestamp: 456, category: 'network' }));
+    db.flush();
+
+    const result = db.queryWithParams(
+      'SELECT timestamp, category FROM events WHERE timestamp >= ? AND category = ?',
+      [100, 'debugger'],
+    );
+    expect(result.rowCount).toBe(1);
+    expect(result.rows[0]).toEqual([123, 'debugger']);
+  });
+
   it('getEventsByTimeRange filters correctly', () => {
     db.insertEvent(makeEvent({ timestamp: 100 }));
     db.insertEvent(makeEvent({ timestamp: 200 }));

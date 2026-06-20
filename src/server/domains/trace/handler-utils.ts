@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { ToolError } from '@errors/ToolError';
 import type { MCPServerContext } from '@server/MCPServer.context';
 import { TraceDB } from '@modules/trace/TraceDB';
 import type {
@@ -7,11 +8,73 @@ import type {
   TraceEvent as DbTraceEvent,
 } from '@modules/trace/TraceDB.types';
 import type { TraceRecorder } from '@modules/trace/TraceRecorder';
+import type {
+  MemoryDelta as SummaryMemoryDelta,
+  TraceEvent as SummaryTraceEvent,
+} from '@server/domains/trace/TraceSummarizer';
 
 export const TRACE_DETAIL_THRESHOLD_BYTES = 25_600;
 
 export const asBoolean = (value: unknown, defaultValue: boolean): boolean =>
   typeof value === 'boolean' ? value : defaultValue;
+
+const readStringValue = (value: unknown): string | undefined =>
+  typeof value === 'string' ? value : undefined;
+
+const readNumberValue = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+
+const readObjectValue = (value: unknown): Record<string, unknown> | undefined =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+
+const validationError = (fieldName: string, expected: string): ToolError =>
+  new ToolError('VALIDATION', `${fieldName} must be ${expected}`);
+
+export const optionalStringArg = (value: unknown, fieldName: string): string | undefined => {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  const parsed = readStringValue(value);
+  if (parsed === undefined) {
+    throw validationError(fieldName, 'a string');
+  }
+  return parsed;
+};
+
+export const optionalBooleanArg = (value: unknown, fieldName: string): boolean | undefined => {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== 'boolean') {
+    throw validationError(fieldName, 'a boolean');
+  }
+  return value;
+};
+
+export const optionalNumberArg = (value: unknown, fieldName: string): number | undefined => {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  const parsed = readNumberValue(value);
+  if (parsed === undefined) {
+    throw validationError(fieldName, 'a finite number');
+  }
+  return parsed;
+};
+
+export const optionalStringArrayArg = (value: unknown, fieldName: string): string[] | undefined => {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string')) {
+    throw validationError(fieldName, 'an array of strings');
+  }
+  return [...value];
+};
 
 export const asNumber = (
   value: unknown,
@@ -39,6 +102,76 @@ export const safeParseJSON = (str: string): unknown => {
     return str;
   }
 };
+
+export const parseTraceSummary = (value: unknown): Record<string, unknown> => {
+  const parsed = typeof value === 'string' ? safeParseJSON(value) : value;
+  return readObjectValue(parsed) ?? {};
+};
+
+export const readTraceSummaryObjectCounts = (
+  summary: Record<string, unknown>,
+): Record<string, number> => {
+  const counts = readObjectValue(summary['objectCounts']);
+  if (!counts) {
+    return {};
+  }
+
+  const normalized: Record<string, number> = {};
+  for (const [key, value] of Object.entries(counts)) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      normalized[key] = value;
+    }
+  }
+  return normalized;
+};
+
+export const readTraceSummaryNumber = (summary: Record<string, unknown>, key: string): number =>
+  readNumberValue(summary[key]) ?? 0;
+
+export const readDbTraceEventRow = (row: unknown[]): DbTraceEvent => ({
+  timestamp: readNumberValue(row[0]) ?? 0,
+  category: readStringValue(row[1]) ?? '',
+  eventType: readStringValue(row[2]) ?? '',
+  data: readStringValue(row[3]) ?? '',
+  scriptId: readStringValue(row[4]) ?? null,
+  lineNumber: readNumberValue(row[5]) ?? null,
+  wallTime: readNumberValue(row[6]) ?? null,
+  monotonicTime: readNumberValue(row[7]) ?? null,
+  requestId: readStringValue(row[8]) ?? null,
+  sequence: readNumberValue(row[9]) ?? null,
+});
+
+export const readSummaryTraceEventRow = (row: unknown[]): SummaryTraceEvent => ({
+  timestamp: readNumberValue(row[0]) ?? 0,
+  category: readStringValue(row[1]) ?? '',
+  eventType: readStringValue(row[2]) ?? '',
+  data: typeof row[3] === 'string' ? safeParseJSON(row[3]) : row[3],
+  scriptId: readStringValue(row[4]),
+  lineNumber: readNumberValue(row[5]),
+});
+
+export const readSummaryMemoryDeltaRow = (row: unknown[]): SummaryMemoryDelta => ({
+  timestamp: readNumberValue(row[0]) ?? 0,
+  address: readStringValue(row[1]) ?? '',
+  oldValue: readStringValue(row[2]) ?? '',
+  newValue: readStringValue(row[3]) ?? '',
+  size: readNumberValue(row[4]) ?? 0,
+  valueType: readStringValue(row[5]) ?? '',
+});
+
+export const readExportTraceRow = (
+  row: unknown[],
+): {
+  timestampMs: number;
+  category: string;
+  eventType: string;
+  data: string;
+} => ({
+  timestampMs: readNumberValue(row[0]) ?? 0,
+  category: readStringValue(row[1]) ?? '',
+  eventType: readStringValue(row[2]) ?? '',
+  data: readStringValue(row[3]) ?? '',
+});
 
 export const formatTraceEvent = (event: DbTraceEvent): Record<string, unknown> => ({
   timestamp: event.timestamp,
@@ -161,7 +294,8 @@ export const readEventsByExpression = (
   start: number,
   end: number,
 ): DbTraceEvent[] => {
-  const result = db.query(`
+  const result = db.queryWithParams(
+    `
       SELECT
         timestamp,
         category,
@@ -174,22 +308,13 @@ export const readEventsByExpression = (
         request_id,
         sequence
       FROM events
-      WHERE ${timeExpr} >= ${start} AND ${timeExpr} <= ${end}
+      WHERE ${timeExpr} >= ? AND ${timeExpr} <= ?
       ORDER BY ${timeExpr} ASC, sequence ASC
-    `);
+    `,
+    [start, end],
+  );
 
-  return result.rows.map((row: unknown[]) => ({
-    timestamp: row[0] as number,
-    category: row[1] as string,
-    eventType: row[2] as string,
-    data: row[3] as string,
-    scriptId: (row[4] as string | null) ?? null,
-    lineNumber: (row[5] as number | null) ?? null,
-    wallTime: (row[6] as number | null) ?? null,
-    monotonicTime: (row[7] as number | null) ?? null,
-    requestId: (row[8] as string | null) ?? null,
-    sequence: (row[9] as number | null) ?? null,
-  }));
+  return result.rows.map(readDbTraceEventRow);
 };
 
 export const smartHandleDetailed = <T>(

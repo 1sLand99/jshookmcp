@@ -468,6 +468,19 @@ describe('TraceToolHandlers', () => {
       expect(result.chunks.returned).toBe(1);
       expect(result.events[0]?.eventType).toBe('Network.responseReceived');
     });
+
+    it('rejects non-string dbPath values', async () => {
+      const recorder = new TraceRecorder();
+      const ctx = createMockContext() as MCPServerContext;
+      const handler = new TraceToolHandlers(recorder, ctx);
+
+      await expect(
+        handler.handleGetTraceNetworkFlow({
+          requestId: 'req-trace',
+          dbPath: 1234,
+        }),
+      ).rejects.toThrow(/dbPath must be a string/);
+    });
   });
 
   describe('handleDiffHeapSnapshots', () => {
@@ -782,6 +795,23 @@ describe('TraceToolHandlers', () => {
 
       await expect(handler.handleExportTrace({})).rejects.toThrow(/No active recording/);
     });
+
+    it('rejects export paths outside project and temp roots', async () => {
+      // @ts-expect-error
+      db.close();
+
+      const recorder = new TraceRecorder();
+      const ctx = createMockContext() as MCPServerContext;
+      const handler = new TraceToolHandlers(recorder, ctx);
+      const outsidePath = process.platform === 'win32' ? '..\\..\\trace.json' : '../../trace.json';
+
+      await expect(
+        handler.handleExportTrace({
+          dbPath,
+          outputPath: outsidePath,
+        }),
+      ).rejects.toThrow(/outputPath must be within/);
+    });
   });
 
   describe('handleStartTraceRecording', () => {
@@ -797,6 +827,30 @@ describe('TraceToolHandlers', () => {
       );
       expect(result.status).toBe('recording');
       expect(result.sessionId).toBe('sess-1');
+    });
+
+    it('rejects invalid cdpDomains shapes', async () => {
+      const recorder = new TraceRecorder();
+      const ctx = createMockContext() as MCPServerContext;
+      const handler = new TraceToolHandlers(recorder, ctx);
+
+      await expect(
+        handler.handleStartTraceRecording({
+          cdpDomains: ['Debugger', 42],
+        }),
+      ).rejects.toThrow(/cdpDomains must be an array of strings/);
+    });
+
+    it('rejects invalid recording toggle types', async () => {
+      const recorder = new TraceRecorder();
+      const ctx = createMockContext() as MCPServerContext;
+      const handler = new TraceToolHandlers(recorder, ctx);
+
+      await expect(
+        handler.handleStartTraceRecording({
+          recordResponseBodies: 'yes',
+        }),
+      ).rejects.toThrow(/recordResponseBodies must be a boolean/);
     });
 
     it('throws if EventBus is not available on ctx', async () => {
@@ -969,6 +1023,16 @@ describe('TraceToolHandlers', () => {
       // the summary aggregates by category so we verify the network category appears
       expect(result.events.categories.find((c: any) => c.category === 'network')).toBeDefined();
       expect(result.events.totalEvents).toBe(1);
+    });
+
+    it('rejects invalid detail values', async () => {
+      const recorder = new TraceRecorder();
+      const ctx = createMockContext() as MCPServerContext;
+      const handler = new TraceToolHandlers(recorder, ctx);
+
+      await expect(handler.handleSummarizeTrace({ detail: 'verbose' })).rejects.toThrow(
+        /Invalid detail/,
+      );
     });
   });
 
