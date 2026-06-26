@@ -7,6 +7,8 @@ import {
   SYMBOLIC_EXEC_MAX_DEPTH,
   SYMBOLIC_EXEC_TIMEOUT_MS,
 } from '@src/constants';
+import { withZ3, isZ3Failed } from '@modules/z3/Z3Solver';
+import { jsExprToZ3, AstBridgeError } from '@modules/z3/ast-bridge';
 
 export type SymbolicValueType =
   | 'number'
@@ -370,20 +372,138 @@ export class SymbolicExecutor {
   private async solveConstraints(paths: ExecutionPath[], warnings: string[]): Promise<void> {
     logger.info(' ...');
 
-    for (const path of paths) {
-      const result = this.simpleSMTSolver(path.constraints);
-
-      if (!result.satisfiable) {
-        path.isFeasible = false;
-        warnings.push(` ${path.id} : ${result.reason}`);
-      } else {
-        path.isFeasible = true;
-      }
+    const z3Used = await this.solveConstraintsZ3(paths, warnings);
+    if (!z3Used) {
+      // Z3 unavailable — fall back to simple regex solver
+      this.solveConstraintsLegacy(paths, warnings);
     }
 
     logger.info(
       `Path analysis complete, feasible paths: ${paths.filter((p) => p.isFeasible).length}/${paths.length}`,
     );
+  }
+
+  /**
+   * Solve path constraints with Z3 SMT.
+   * @returns true if Z3 was used, false if init failed and caller should fall back
+   */
+  private async solveConstraintsZ3(paths: ExecutionPath[], warnings: string[]): Promise<boolean> {
+    if (isZ3Failed()) return false;
+
+    let z3Worked = false;
+    const result = await withZ3(async (api) => {
+      const ctx = new api.Context('main');
+      const { Solver, And } = ctx;
+
+      for (const path of paths) {
+        if (path.constraints.length === 0) {
+          path.isFeasible = true;
+          continue;
+        }
+
+        try {
+          const solver = new Solver();
+          solver.set('timeout', 5000);
+
+          // Build `And(c1, c2, ...)` from all path constraints (they are
+          // conjunctive — all must hold for the path to be traversed).
+          const z3Exprs: unknown[] = [];
+          for (const c of path.constraints) {
+            const vars = extractVarsFromExpr(c.expression);
+            const z3expr = jsExprToZ3(
+              c.expression,
+              api,
+              ctx,
+              vars.map((v) => ({ name: v, type: 'int' as const })),
+            );
+            z3Exprs.push(z3expr);
+          }
+          // If we have exactly one expression, add it directly; otherwise And them
+          let formula: unknown;
+          if (z3Exprs.length === 1) {
+            formula = z3Exprs[0];
+          } else {
+            formula = And(...(z3Exprs as never[]));
+          }
+          solver.add(formula as never);
+
+          const checkResult = await solver.check();
+          if (checkResult === 'unsat') {
+            path.isFeasible = false;
+            warnings.push(` ${path.id} UNSAT (Z3)`);
+          } else if (checkResult === 'sat') {
+            path.isFeasible = true;
+            // Extract model — the concrete values that trigger this path
+            try {
+              const model = solver.model();
+              if (model) {
+                const allVars = new Set<string>();
+                for (const c of path.constraints) {
+                  for (const v of extractVarsFromExpr(c.expression)) {
+                    allVars.add(v);
+                  }
+                }
+                for (const v of allVars) {
+                  const decl = ctx.Int.const(v);
+                  const assigned = model.eval(decl);
+                  if (assigned) {
+                    const val = assigned.ast ? String(assigned) : String(assigned);
+                    warnings.push(`  ${path.id}: ${v} = ${val}`);
+                  }
+                }
+              }
+            } catch {
+              // model extraction is best-effort; don't fail the path
+            }
+          } else {
+            // 'unknown' — Z3 couldn't decide
+            // Fall through to legacy solver for this path only
+            const legacyResult = this.simpleSMTSolver(path.constraints);
+            path.isFeasible = legacyResult.satisfiable;
+          }
+        } catch (err) {
+          if (err instanceof AstBridgeError) {
+            // Expression too complex for our babel bridge — fall back for
+            // this single path
+            const legacyResult = this.simpleSMTSolver(path.constraints);
+            path.isFeasible = legacyResult.satisfiable;
+            warnings.push(` ${path.id} ${err.nodeType}: ${err.message} (fell back to regex)`);
+          } else {
+            logger.warn(`[symbolic] Z3 path analysis failed for ${path.id}:`, err);
+            // Fall back for this path
+            const legacyResult = this.simpleSMTSolver(path.constraints);
+            path.isFeasible = legacyResult.satisfiable;
+          }
+        }
+      }
+      z3Worked = true;
+      return true;
+    });
+
+    if (result === null || !z3Worked) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Legacy regex-based SMT solver — kept as fallback when Z3 is unavailable.
+   * @deprecated Z3 is the primary solver; this exists only for graceful degradation.
+   */
+  private solveConstraintsLegacy(paths: ExecutionPath[], warnings: string[]): void {
+    for (const path of paths) {
+      if (path.constraints.length === 0) {
+        path.isFeasible = true;
+        continue;
+      }
+      const result = this.simpleSMTSolver(path.constraints);
+      if (!result.satisfiable) {
+        path.isFeasible = false;
+        warnings.push(` ${path.id}  (legacy regex): ${result.reason}`);
+      } else {
+        path.isFeasible = true;
+      }
+    }
   }
 
   private simpleSMTSolver(constraints: Constraint[]): { satisfiable: boolean; reason?: string } {
@@ -480,4 +600,37 @@ export class SymbolicExecutor {
       description,
     });
   }
+}
+
+/** Simple regex to extract identifiers from a constraint expression. */
+function extractVarsFromExpr(expr: string): string[] {
+  const seen = new Set<string>();
+  const matches = expr.matchAll(/[a-zA-Z_][a-zA-Z0-9_]*/g);
+  // Skip known keywords / operators
+  const ignored = new Set([
+    'true',
+    'false',
+    'null',
+    'undefined',
+    'void',
+    'typeof',
+    'NaN',
+    'Infinity',
+    'if',
+    'else',
+    'while',
+    'for',
+    'switch',
+    'case',
+    'break',
+    'continue',
+    'return',
+    'new',
+    'function',
+  ]);
+  for (const m of matches) {
+    const id = m[0];
+    if (!ignored.has(id)) seen.add(id);
+  }
+  return [...seen];
 }
