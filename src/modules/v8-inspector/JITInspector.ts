@@ -50,13 +50,16 @@ function mapOptimizationTier(status: number | null): { optimized: boolean; tier:
   if (status === null) {
     return { optimized: false, tier: 'unknown' };
   }
-  if ((status & 128) !== 0) {
-    return { optimized: true, tier: 'maglev' };
-  }
-  if ((status & 64) !== 0) {
+  // V8 runtime.h OptimizationStatus bit positions (v13+):
+  //   bit 5 (32) = kTurboFanned, bit 4 (16) = kMaglevved,
+  //   bit 3 (8) = kOptimized, bit 14 (16384) = kBaseline (Sparkplug)
+  if ((status & 32) !== 0) {
     return { optimized: true, tier: 'turbofan' };
   }
-  if ((status & 16) !== 0 || (status & 32) !== 0) {
+  if ((status & 16) !== 0) {
+    return { optimized: true, tier: 'maglev' };
+  }
+  if ((status & 8) !== 0) {
     return { optimized: true, tier: 'optimized' };
   }
   return { optimized: false, tier: 'interpreted' };

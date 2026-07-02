@@ -88,6 +88,7 @@ export class V8InspectorHandlers {
       v8_deopt_trace: (toolArgs) => this.v8_deopt_trace(toolArgs),
       v8_turbofan_inspect: (toolArgs) => this.v8_turbofan_inspect(toolArgs),
       v8_function_retained: (toolArgs) => this.v8_function_retained(toolArgs),
+      v8_turbofan_graph: (toolArgs) => this.v8_turbofan_graph(toolArgs),
     };
 
     const handler = dispatchTable[toolName];
@@ -106,7 +107,13 @@ export class V8InspectorHandlers {
   async v8_turbofan_inspect(args: ToolArgs): Promise<unknown> {
     const { handleTurbofanInspect } =
       await import('@server/domains/v8-inspector/handlers/turbofan-inspect');
-    return handleTurbofanInspect(args);
+    return handleTurbofanInspect(args, createPageGetter(this.deps.ctx));
+  }
+
+  async v8_turbofan_graph(args: ToolArgs): Promise<unknown> {
+    const { handleTurbofanGraph } =
+      await import('@server/domains/v8-inspector/handlers/turbofan-graph');
+    return handleTurbofanGraph(args);
   }
 
   async v8_function_retained(args: ToolArgs) {

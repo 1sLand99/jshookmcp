@@ -123,6 +123,38 @@ export const v8InspectorTools: Tool[] = [
       .required('scriptId')
       .query(),
   ),
+  tool('v8_turbofan_graph', (t) =>
+    t
+      .desc(
+        'Collect and visualize V8 TurboFan IR (sea-of-nodes / Turboshaft graph). ' +
+          'Two modes: (1) Provide JS source code — spawns an isolated V8 child ' +
+          'with --trace-turbo to generate IR JSON, then parses nodes, edges, ' +
+          'phases, and opcode histogram. (2) Provide a traceDir path to read ' +
+          'already-generated turbo-*.json files (e.g. from a browser launched ' +
+          'with --trace-turbo). Returns per-function graph summaries with ' +
+          'phase-level node/edge counts, sample nodes, and opcode distribution.',
+      )
+      .string('source', 'JS source code to compile and trace (source mode)')
+      .string('traceDir', 'Path to directory containing turbo-*.json files (directory mode)')
+      .string(
+        'functionName',
+        'Optional function name for --trace-turbo-filter (default: anonymous)',
+      )
+      .string('phaseFilter', 'Optional: only include phases whose name contains this substring')
+      .number('maxNodesPerPhase', 'Max sample nodes per phase in output (default: 20)', {
+        default: 20,
+      })
+      .boolean('includePhases', 'Include per-phase breakdown with sample nodes (default: false)', {
+        default: false,
+      })
+      .number('timeoutMs', 'Timeout for isolated V8 process in ms (default: 30000)', {
+        default: 30000,
+      })
+      .boolean('keepTraceDir', 'Keep temp trace directory after parsing (default: false)', {
+        default: false,
+      })
+      .query(),
+  ),
   tool('v8_function_retained', (t) =>
     t
       .desc(

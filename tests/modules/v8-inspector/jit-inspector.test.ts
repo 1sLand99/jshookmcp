@@ -36,7 +36,8 @@ describe('JITInspector', () => {
       }
       // @ts-expect-error
       if (method === 'Runtime.evaluate' && params?.expression?.includes('%GetOptimizationStatus')) {
-        return { result: { value: 64 } };
+        // V8 OptimizationStatus bit 5 (value 32) = kTurboFanned
+        return { result: { value: 32 } };
       }
       return {};
     });
@@ -47,6 +48,68 @@ describe('JITInspector', () => {
     expect(result.functions).toHaveLength(1);
     expect(result.functions[0]?.optimized).toBe(true);
     expect(result.functions[0]?.tier).toBe('turbofan');
+  });
+
+  it('maps kMaglevved bit (16) to maglev tier', async () => {
+    const inspector = createInspector(async (method, params) => {
+      if (method === 'Debugger.getScriptSource')
+        return { scriptSource: 'function myFunc() { return 1; }' };
+      if (method === 'Profiler.takePreciseCoverage') {
+        return {
+          result: [
+            {
+              scriptId: '1',
+              functions: [{ functionName: 'myFunc', ranges: [{ startOffset: 0, endOffset: 30 }] }],
+            },
+          ],
+        };
+      }
+      // @ts-expect-error
+      if (method === 'Runtime.evaluate' && params?.expression?.includes('%HaveSameMap')) {
+        return { result: { value: true } };
+      }
+      // @ts-expect-error
+      if (method === 'Runtime.evaluate' && params?.expression?.includes('%GetOptimizationStatus')) {
+        // V8 OptimizationStatus bit 4 (value 16) = kMaglevved
+        return { result: { value: 16 } };
+      }
+      return {};
+    });
+
+    const result = await inspector.inspectJIT('1');
+    expect(result.functions[0]?.optimized).toBe(true);
+    expect(result.functions[0]?.tier).toBe('maglev');
+  });
+
+  it('maps kInterpreted bit (64) to interpreted tier', async () => {
+    const inspector = createInspector(async (method, params) => {
+      if (method === 'Debugger.getScriptSource')
+        return { scriptSource: 'function myFunc() { return 1; }' };
+      if (method === 'Profiler.takePreciseCoverage') {
+        return {
+          result: [
+            {
+              scriptId: '1',
+              functions: [{ functionName: 'myFunc', ranges: [{ startOffset: 0, endOffset: 30 }] }],
+            },
+          ],
+        };
+      }
+      // @ts-expect-error
+      if (method === 'Runtime.evaluate' && params?.expression?.includes('%HaveSameMap')) {
+        return { result: { value: true } };
+      }
+      // @ts-expect-error
+      if (method === 'Runtime.evaluate' && params?.expression?.includes('%GetOptimizationStatus')) {
+        // V8 OptimizationStatus bit 6 (value 64) = kInterpreted
+        return { result: { value: 64 } };
+      }
+      return {};
+    });
+
+    const result = await inspector.inspectJIT('1');
+    expect(result.functions[0]?.optimized).toBe(false);
+    expect(result.functions[0]?.tier).toBe('interpreted');
   });
 
   it('returns a cached list of optimized functions', async () => {

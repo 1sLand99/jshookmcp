@@ -35,6 +35,24 @@ interface TurboFanInspectResult {
   };
 }
 
+// ── V8 Status Bit Mapping (V8 runtime.h OptimizationStatus) ───────────────────
+//
+// Correct bit positions per V8 source (as of V8 v13+):
+//   bit 5  (32)   = kTurboFanned
+//   bit 4  (16)   = kMaglevved
+//   bit 6  (64)   = kInterpreted
+//   bit 3  (8)    = kOptimized (any tier)
+//   bit 14 (16384) = kBaseline (Sparkplug)
+
+function mapTier(status: number): { optimized: boolean; tier: FunctionOptStatus['tier'] } {
+  if ((status & 32) !== 0) return { optimized: true, tier: 'turbofan' };
+  if ((status & 16) !== 0) return { optimized: true, tier: 'maglev' };
+  if ((status & 8) !== 0) return { optimized: true, tier: 'turbofan' };
+  if ((status & 16384) !== 0) return { optimized: false, tier: 'interpreted' };
+  if ((status & 64) !== 0) return { optimized: false, tier: 'interpreted' };
+  return { optimized: false, tier: 'interpreted' };
+}
+
 // ── CDP Helpers ────────────────────────────────────────────────────────────────
 
 interface CDPSessionLike {
@@ -59,13 +77,6 @@ async function createCDPSession(getPage?: () => Promise<unknown>): Promise<CDPSe
   } catch {
     return null;
   }
-}
-
-function mapTier(status: number): { optimized: boolean; tier: FunctionOptStatus['tier'] } {
-  if ((status & 128) !== 0) return { optimized: true, tier: 'maglev' };
-  if ((status & 64) !== 0) return { optimized: true, tier: 'turbofan' };
-  if ((status & 16) !== 0 || (status & 32) !== 0) return { optimized: true, tier: 'turbofan' };
-  return { optimized: false, tier: 'interpreted' };
 }
 
 // ── Handler ────────────────────────────────────────────────────────────────────

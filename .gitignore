@@ -75,6 +75,14 @@ artifacts/
 /workflows/
 /plugins/
 
+# V8 --trace-turbo artifacts (turbo-<name>-<id>.json IR dumps +
+# turbo-<pid>-<srcId>.cfg C1 visualizer files). TurboFanTraceCollector
+# routes these into artifacts/tmp/ (covered by `artifacts/` above); this
+# pattern is a safety net for accidental `node --trace-turbo` from the
+# repo root.
+turbo-*.json
+turbo-*.cfg
+
 # Debug artifacts
 debug/
 debugger-sessions/
