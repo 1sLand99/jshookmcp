@@ -21,7 +21,7 @@
 - browser + instrumentation
 - browser + workflow
 
-## 工具清单（66）
+## 工具清单（69）
 
 | 工具 | 说明 |
 | --- | --- |
@@ -57,6 +57,9 @@
 | `console_get_logs` | 获取当前页面已捕获的控制台日志输出。 |
 | `console_execute` | 在控制台中执行 JavaScript 表达式。 |
 | `page_inject_script` | 向页面注入 JavaScript 代码。 |
+| `page_coverage_start` | 待补充中文：Start JS+CSS code coverage collection on the active page. Coverage tracks which bytes of each loaded script/stylesheet are actually executed. Use page_coverage_stop to stop collection and retrieve results. |
+| `page_coverage_stop` | 待补充中文：Stop coverage collection and return per-script JS+CSS coverage results. Includes total bytes, used bytes, and coverage percentage per URL. |
+| `page_block_script` | 待补充中文：Manage script blocking rules by URL pattern. Blocked scripts are prevented from loading/executing. Actions: add/block (add a rule), remove/unblock (remove a rule), list (show all rules), clear (remove all). |
 | `page_cookies` | 管理页面 Cookie。操作：get（获取全部）、set（需提供 cookies 数组）、clear（清除全部）。 |
 | `page_set_viewport` | 设置当前页面视口尺寸。 |
 | `page_emulate_device` | 模拟移动设备环境，例如 iPhone、iPad 或 Android 机型。 |

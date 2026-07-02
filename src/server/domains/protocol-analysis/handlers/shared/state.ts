@@ -14,7 +14,11 @@ export type ProtocolAtomicEvent =
   | 'protocol:icmp_echo_built'
   | 'protocol:checksum_applied'
   | 'protocol:pcap_written'
-  | 'protocol:pcap_read';
+  | 'protocol:pcap_read'
+  | 'protocol:pcapng_written'
+  | 'protocol:pcapng_read'
+  | 'protocol:dns_dissected'
+  | 'protocol:http_dissected';
 
 export type ProtocolAtomicEventPayload<K extends ProtocolAtomicEvent> = Omit<
   ServerEventMap[K],

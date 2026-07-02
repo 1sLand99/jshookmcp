@@ -20,7 +20,7 @@ Core static and semi-static analysis domain for script collection, deobfuscation
 - browser + network + core
 - core + sourcemap + transform
 
-## Full tool list (23)
+## Full tool list (25)
 
 | Tool | Description |
 | --- | --- |
@@ -47,3 +47,5 @@ Core static and semi-static analysis domain for script collection, deobfuscation
 | `js_symbolic_execute` | Symbolic execution of JavaScript: explore all feasible execution paths, collect path constraints, and solve them. Best for control-flow-flattened code with complex branching. |
 | `js_symbolic_execute_jsvmp` | Symbolic execution of JSVMP bytecode: step through instructions symbolically to infer original logic, constraints, and confidence score. Use after js_analyze_vm to get instructions. |
 | `ai_suggest_exploits` | Use LLM to suggest exploit primitives and attack chains for a given vulnerability. Returns theoretical exploitation steps, references, and required conditions. IMPORTANT: Does NOT generate executable payloads or malicious code. |
+| `analysis_data_flow` | Trace data flow through JavaScript: identify sources (user input, network, storage), sinks (XSS, eval, SQL injection, command execution), sanitizer pass-through points, and tainted variable propagation paths. Useful for finding injection vulnerabilities. |
+| `analysis_security_scan` | Static security scan of JavaScript: detect hardcoded secrets (API keys, tokens), dangerous functions (eval, Function constructor), XSS sinks (innerHTML, document.write), SQL injection patterns, and weak crypto (Math.random). Returns structured risks with severity and recommendations. |

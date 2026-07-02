@@ -20,7 +20,7 @@ Custom protocol analysis domain supporting protocol pattern definition, automati
 - network + protocol-analysis
 - encoding + protocol-analysis
 
-## Full tool list (16)
+## Full tool list (20)
 
 | Tool | Description |
 | --- | --- |
@@ -39,4 +39,8 @@ Custom protocol analysis domain supporting protocol pattern definition, automati
 | `checksum_apply` | Apply a deterministic 16-bit Internet checksum across a payload slice, optionally zeroing and writing the checksum field back into the packet. |
 | `pcap_write` | Write a compact classic PCAP file from deterministic packet byte records. |
 | `pcap_read` | Read a classic PCAP file and return compact deterministic packet summaries. PCAPNG is intentionally not supported. |
+| `pcapng_write` | Write a PCAPNG (pcap-ng) capture file from one or more interfaces and deterministic packet byte records. Emits a Section Header Block, an Interface Description Block per interface, and an Enhanced Packet Block per packet. |
+| `pcapng_read` | Read a PCAPNG (pcap-ng) capture file and return structured Section/Interface/Packet blocks. Supports Section Header, Interface Description, Enhanced/Simple Packet, Name Resolution, and Interface Statistics blocks; unknown block types are surfaced as warnings. |
+| `proto_dissect_dns` | Dissect a raw DNS payload (RFC 1035 + EDNS(0)) into header flags, questions, answers, authorities, and additionals with full compression-pointer handling and OPT pseudo-record decoding. |
+| `proto_dissect_http` | Dissect a raw HTTP/1.x request or response payload (RFC 7230) into the start line, headers, and body. Unwinds chunked transfer-encoding and reports Content-Length / Content-Type / Content-Encoding hints. |
 | `proto_fingerprint` | Identify protocol type from hex payload samples. |

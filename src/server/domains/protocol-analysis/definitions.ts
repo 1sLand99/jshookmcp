@@ -241,6 +241,116 @@ export const protocolAnalysisTools: Tool[] = [
       .required('path')
       .query(),
   ),
+  tool('pcapng_write', (t) =>
+    t
+      .desc(
+        'Write a PCAPNG (pcap-ng) capture file from one or more interfaces and deterministic packet byte records. ' +
+          'Emits a Section Header Block, an Interface Description Block per interface, and an Enhanced Packet Block ' +
+          'per packet.',
+      )
+      .string('path', 'Destination path for the PCAPNG file')
+      .array(
+        'interfaces',
+        {
+          type: 'object',
+          properties: {
+            linkType: {
+              type: 'number',
+              description:
+                'Link-layer type code (LINKTYPE_). Ethernet = 1, raw = 101, loopback = 0',
+            },
+            snapLen: {
+              type: 'number',
+              description: 'Per-interface snapshot length. Default: 262144',
+            },
+            name: { type: 'string', description: 'Optional interface name (if_name option)' },
+          },
+          required: ['linkType'],
+        },
+        'Interface Description Blocks to emit in order',
+      )
+      .array(
+        'packets',
+        {
+          type: 'object',
+          properties: {
+            dataHex: { type: 'string', description: 'Packet bytes as a hex string' },
+            interfaceId: {
+              type: 'number',
+              description: 'Index into the interfaces array. Default: 0',
+            },
+            timestampHigh: {
+              type: 'number',
+              description: 'Upper 32 bits of the 64-bit timestamp. Default: 0',
+            },
+            timestampLow: {
+              type: 'number',
+              description: 'Lower 32 bits of the 64-bit timestamp. Default: 0',
+            },
+            originalLength: {
+              type: 'number',
+              description: 'Original on-wire packet length. Defaults to included length',
+            },
+          },
+          required: ['dataHex'],
+        },
+        'Enhanced Packet Blocks to serialize in order',
+      )
+      .enum('endianness', ['little', 'big'], 'PCAPNG byte order for numeric fields', {
+        default: 'little',
+      })
+      .number('majorVersion', 'Section Header major version. Default: 1', { default: 1 })
+      .number('minorVersion', 'Section Header minor version. Default: 0', { default: 0 })
+      .required('path', 'interfaces', 'packets')
+      .idempotent(),
+  ),
+  tool('pcapng_read', (t) =>
+    t
+      .desc(
+        'Read a PCAPNG (pcap-ng) capture file and return structured Section/Interface/Packet blocks. Supports ' +
+          'Section Header, Interface Description, Enhanced/Simple Packet, Name Resolution, and Interface Statistics ' +
+          'blocks; unknown block types are surfaced as warnings.',
+      )
+      .string('path', 'Path to the PCAPNG file to parse')
+      .number('maxPackets', 'Maximum number of packet records to decode')
+      .number(
+        'maxBytesPerPacket',
+        'Maximum payload bytes to return per packet before truncating the reported hex payload',
+      )
+      .number(
+        'interfaceFilter',
+        'When set, only Enhanced Packet Blocks matching this interface ID are returned (Simple Packet Blocks pass through)',
+      )
+      .required('path')
+      .query(),
+  ),
+  tool('proto_dissect_dns', (t) =>
+    t
+      .desc(
+        'Dissect a raw DNS payload (RFC 1035 + EDNS(0)) into header flags, questions, answers, authorities, and ' +
+          'additionals with full compression-pointer handling and OPT pseudo-record decoding.',
+      )
+      .string('packetHex', 'Raw DNS payload as a hex string (UDP or TCP segment body)')
+      .number(
+        'maxPointerDepth',
+        'Maximum compression-pointer recursion depth before bailing (default: 10)',
+      )
+      .required('packetHex')
+      .query(),
+  ),
+  tool('proto_dissect_http', (t) =>
+    t
+      .desc(
+        'Dissect a raw HTTP/1.x request or response payload (RFC 7230) into the start line, headers, and body. ' +
+          'Unwinds chunked transfer-encoding and reports Content-Length / Content-Type / Content-Encoding hints.',
+      )
+      .string(
+        'packetHex',
+        'Raw HTTP payload as a hex string (single segment, not a reassembled stream)',
+      )
+      .required('packetHex')
+      .query(),
+  ),
   tool('proto_define_pattern', (t) =>
     t
       .desc('Define a protocol pattern with delimiter, byte order, and field layout.')

@@ -21,7 +21,7 @@ Primary browser control and DOM interaction domain; the usual entry point for mo
 - browser + instrumentation
 - browser + workflow
 
-## Full tool list (66)
+## Full tool list (69)
 
 | Tool | Description |
 | --- | --- |
@@ -57,6 +57,9 @@ Primary browser control and DOM interaction domain; the usual entry point for mo
 | `console_get_logs` | Retrieve captured console logs with type and time filters. |
 | `console_execute` | Evaluate a JS expression in the browser console context. |
 | `page_inject_script` | Inject JavaScript to run on every page load. |
+| `page_coverage_start` | Start JS+CSS code coverage collection on the active page. Coverage tracks which bytes of each loaded script/stylesheet are actually executed. Use page_coverage_stop to stop collection and retrieve results. |
+| `page_coverage_stop` | Stop coverage collection and return per-script JS+CSS coverage results. Includes total bytes, used bytes, and coverage percentage per URL. |
+| `page_block_script` | Manage script blocking rules by URL pattern. Blocked scripts are prevented from loading/executing. Actions: add/block (add a rule), remove/unblock (remove a rule), list (show all rules), clear (remove all). |
 | `page_cookies` | Manage page cookies; clear requires matching expectedCount. |
 | `page_set_viewport` | Set the browser viewport dimensions. |
 | `page_emulate_device` | Emulate a mobile device profile. |

@@ -29,6 +29,10 @@ const registrations = defineMethodRegistrations<H, (typeof protocolAnalysisTools
     { tool: 'checksum_apply', method: 'handleChecksumApply' },
     { tool: 'pcap_write', method: 'handlePcapWrite' },
     { tool: 'pcap_read', method: 'handlePcapRead' },
+    { tool: 'pcapng_write', method: 'handlePcapngWrite' },
+    { tool: 'pcapng_read', method: 'handlePcapngRead' },
+    { tool: 'proto_dissect_dns', method: 'handleProtoDissectDns' },
+    { tool: 'proto_dissect_http', method: 'handleProtoDissectHttp' },
     { tool: 'proto_fingerprint', method: 'handleProtoFingerprint' },
   ],
 });
@@ -100,10 +104,15 @@ const manifest = {
       'icmp_echo_build',
       'pcap_write',
       'pcap_read',
+      'pcapng_write',
+      'pcapng_read',
+      'proto_dissect_dns',
+      'proto_dissect_http',
     ],
     hint:
       'Capture or craft packet bytes -> build Ethernet/ARP/IP/ICMP headers -> apply deterministic checksums and ' +
-      'payload mutations -> read/write compact PCAP files -> infer fields or state machines from resulting payloads',
+      'payload mutations -> read/write PCAP or PCAPNG files -> dissect DNS/HTTP payloads or infer fields/state ' +
+      'machines from resulting payloads',
   },
   toolDependencies: [
     {

@@ -153,6 +153,31 @@ export interface ServerEventMap {
     timestamp: string;
   };
   'protocol:pcap_read': { path: string; packetCount: number; timestamp: string };
+  'protocol:pcapng_written': {
+    path: string;
+    packetCount: number;
+    interfaceCount: number;
+    byteLength: number;
+    timestamp: string;
+  };
+  'protocol:pcapng_read': {
+    path: string;
+    blockCount: number;
+    packetCount: number;
+    timestamp: string;
+  };
+  'protocol:dns_dissected': {
+    byteLength: number;
+    questionCount: number;
+    answerCount: number;
+    timestamp: string;
+  };
+  'protocol:http_dissected': {
+    byteLength: number;
+    kind: 'request' | 'response';
+    headerCount: number;
+    timestamp: string;
+  };
 }
 
 interface Subscription {

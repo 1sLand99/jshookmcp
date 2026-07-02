@@ -2,6 +2,6 @@
  * ProtocolAnalysisHandlers — thin facade over the split handler chain.
  */
 
-import { ProtocolAnalysisFingerprintHandlers } from './fingerprint-handlers';
+import { ProtocolAnalysisHttpHandlers } from './http-handlers';
 
-export class ProtocolAnalysisHandlers extends ProtocolAnalysisFingerprintHandlers {}
+export class ProtocolAnalysisHandlers extends ProtocolAnalysisHttpHandlers {}
