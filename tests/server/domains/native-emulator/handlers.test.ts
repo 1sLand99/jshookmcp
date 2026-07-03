@@ -215,11 +215,12 @@ describe('NativeEmulatorHandlers — happy path', () => {
         'ld2-ld3-ld4-deinterleaving',
         'long-widening-neon',
         'saturating-neon',
+        'neon-ins-general',
       ]),
     );
     // The remaining gaps are declared, not hidden.
     expect(simd.unsupported).toEqual(
-      expect.arrayContaining(['bit-bif', 'integer-pmul', 'ins', 'vector-fmov-immediate', 'fp16']),
+      expect.arrayContaining(['bit-bif', 'integer-pmul', 'vector-fmov-immediate', 'fp16']),
     );
     expect(String(data.note)).toMatch(/NEON/);
     expect(String(data.note)).toMatch(/saturating|widening/);

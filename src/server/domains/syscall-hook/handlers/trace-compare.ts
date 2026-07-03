@@ -62,13 +62,13 @@ function computeSignificance(baseline: number, target: number): SyscallFreqDelta
 
 export async function handleSyscallTraceCompare(
   args: Record<string, unknown>,
-  getBaseline: () => SyscallEvent[],
-  getTarget: () => SyscallEvent[],
+  baselineEvents: SyscallEvent[],
+  targetEvents: SyscallEvent[],
 ): Promise<TraceCompareResult> {
   const maxDeltas = argNumber(args, 'maxDeltas', 30);
 
-  const baseline = getBaseline();
-  const target = getTarget();
+  const baseline = baselineEvents;
+  const target = targetEvents;
 
   const baselineKeySet = new Set(baseline.map(syscallKey));
   const targetKeySet = new Set(target.map(syscallKey));
@@ -96,9 +96,8 @@ export async function handleSyscallTraceCompare(
     }
   }
 
-  freqDeltas.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
-  const topDeltas = freqDeltas.slice(0, maxDeltas);
-
+  const sortedDeltas = freqDeltas.toSorted((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  const topDeltas = sortedDeltas.slice(0, maxDeltas);
   const summaryParts: string[] = [];
   if (appeared.length > 0) summaryParts.push(`${appeared.length} new syscalls appeared`);
   if (disappeared.length > 0) summaryParts.push(`${disappeared.length} syscalls disappeared`);

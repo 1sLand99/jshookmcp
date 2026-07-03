@@ -1241,7 +1241,21 @@ function execNeonCopy(ctx: SimdContext, f: SimdFields): boolean {
     ctx.vSetBytes(f.rd, neonDupGeneral(ctx.gprRead(f.rn), size, f.q));
     return true;
   }
-  return false; // INS and other copy forms not yet modelled
+  // op=0, imm4=0011 → INS (general): insert GPR Rn into V[Rd] element [index].
+  // Preserves the other lanes of V[Rd] (read-modify-write).
+  if (f.op29 === 0 && f.imm4 === 0b0011) {
+    const dst = ctx.vGetBytes(f.rd); // 16-byte copy
+    const elemBytes = 1 << size;
+    const offset = index * elemBytes;
+    let v = BigInt.asUintN(8 * elemBytes, ctx.gprRead(f.rn));
+    for (let b = 0; b < elemBytes; b++) {
+      dst[offset + b] = Number(BigInt.asUintN(8, v));
+      v >>= 8n;
+    }
+    ctx.vSetBytes(f.rd, dst);
+    return true;
+  }
+  return false; // INS (element), SMOV/UMOV not yet modelled
 }
 
 // ── NEON modified immediate: MOVI/MVNI/ORR/BIC (vector, immediate) ─────────

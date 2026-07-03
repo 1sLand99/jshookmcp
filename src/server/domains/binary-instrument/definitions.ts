@@ -277,6 +277,28 @@ export const binaryInstrumentTools: Tool[] = [
       .required('filePath')
       .query(),
   ),
+  tool('binary_entropy_profile', (t) =>
+    t
+      .desc(
+        'Compute Shannon entropy across fixed-size chunks of a binary file to locate ' +
+          'encrypted / packed / compressed sections. High-entropy regions (>=7.0 bits/byte) ' +
+          'are likely encrypted or compressed; low-entropy (<4.0) are typically code or text. ' +
+          'Pure-compute, no external tools.',
+      )
+      .string('filePath', 'Path to the binary file.')
+      .number('chunkSize', 'Bytes per entropy sample. Default 256.', {
+        default: 256,
+        minimum: 64,
+        maximum: 65536,
+      })
+      .number('maxChunks', 'Maximum chunks to analyze (caps large files). Default 2000.', {
+        default: 2000,
+        minimum: 1,
+        maximum: 50000,
+      })
+      .required('filePath')
+      .query(),
+  ),
   tool('apk_native_libs_list', (t) =>
     t
       .desc('List packaged native shared libraries (.so) inside an APK.')

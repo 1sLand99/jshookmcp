@@ -525,20 +525,27 @@ END {
     return handleSyscallStackCapture(args, events, this.ctx);
   }
 
-  // ── Trace Compare (snapshot-based diff) ──────────────────────────────────────
+  // ── Trace Compare (explicit baseline/target event arrays) ────────────────────
 
   async handleSyscallTraceCompare(args: Record<string, unknown>): Promise<unknown> {
-    const monitor = this.ensureMonitor();
-    // Baseline is read from last capture; target is fresh capture
-    const baseline = await monitor.captureEvents();
-    await monitor.stop();
-    // Re-start to get a fresh capture window (user should have done operation between calls)
-    // In practice baseline/target are taken from separate calls — this is best-effort
-    const target = await monitor.captureEvents();
+    const baselineEvents = args['baselineEvents'];
+    const targetEvents = args['targetEvents'];
+    if (!Array.isArray(baselineEvents) || !baselineEvents.every((e) => isSyscallEvent(e))) {
+      return {
+        ok: false,
+        error: 'baselineEvents must be an array of valid SyscallEvent objects',
+      };
+    }
+    if (!Array.isArray(targetEvents) || !targetEvents.every((e) => isSyscallEvent(e))) {
+      return {
+        ok: false,
+        error: 'targetEvents must be an array of valid SyscallEvent objects',
+      };
+    }
     return handleSyscallTraceCompare(
       args,
-      () => baseline,
-      () => target,
+      baselineEvents as SyscallEvent[],
+      targetEvents as SyscallEvent[],
     );
   }
 

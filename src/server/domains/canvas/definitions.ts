@@ -40,4 +40,26 @@ export const canvasTools: Tool[] = [
       .number('maxFrames', 'Maximum call stack frames to capture', { default: 50 })
       .requiredOpenWorld('x', 'y'),
   ),
+  tool('canvas_scene_search', (t) =>
+    t
+      .desc(
+        'Search a previously-dumped scene tree (canvas_scene_dump output) for nodes by name ' +
+          'regex and/or type. Pure-compute — no browser session required. Returns matching ' +
+          'nodes with their path from root, depth, and engine-specific properties.',
+      )
+      .prop('sceneTree', {
+        type: 'object',
+        description: 'Scene tree JSON (the output of canvas_scene_dump)',
+        additionalProperties: true,
+      })
+      .string('namePattern', 'Optional regex matched against node name (case-insensitive)')
+      .string('typeFilter', 'Optional exact node type to match (e.g. "Sprite", "Container")')
+      .number('maxResults', 'Maximum matches to return', {
+        default: 100,
+        minimum: 1,
+        maximum: 1000,
+      })
+      .required('sceneTree')
+      .query(),
+  ),
 ];

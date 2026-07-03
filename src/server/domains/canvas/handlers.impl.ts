@@ -11,6 +11,7 @@ import { handleFingerprint } from './handlers/fingerprint';
 import { handleSceneDump } from './handlers/scene-dump';
 import { handlePick } from './handlers/pick';
 import { handleTraceClick } from './handlers/trace';
+import { handleSceneSearch } from './handlers/scene-search';
 
 export class CanvasToolHandlers {
   private readonly pageController;
@@ -48,5 +49,9 @@ export class CanvasToolHandlers {
       args,
     );
     return asJsonResponse(result);
+  }
+
+  async handleSceneSearch(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSceneSearch(args);
   }
 }

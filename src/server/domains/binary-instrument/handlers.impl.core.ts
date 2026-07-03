@@ -144,6 +144,9 @@ export class BinaryInstrumentHandlers {
   handleBinaryStringsExtract(args: Record<string, unknown>) {
     return this.binaryScan.handleBinaryStringsExtract(args);
   }
+  handleBinaryEntropyProfile(args: Record<string, unknown>) {
+    return this.binaryScan.handleBinaryEntropyProfile(args);
+  }
   handleGenerateHooks(args: Record<string, unknown>) {
     return this.hooksGeneration.handleGenerateHooks(args);
   }

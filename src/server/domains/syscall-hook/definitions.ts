@@ -121,11 +121,19 @@ export const syscallHookToolDefinitions: Tool[] = [
       .desc(
         'Diff two syscall trace snapshots to find appeared/disappeared syscalls and ' +
           'frequency changes. Useful for understanding what OS calls a JS operation triggers. ' +
-          'Capture baseline → perform operation → capture target → compare.',
+          'Capture baseline events → perform the operation → capture target events → pass both ' +
+          'arrays here. Use syscall_capture_events (or syscall_trace_export) to obtain each snapshot.',
       )
+      .array(
+        'baselineEvents',
+        SYSCALL_EVENT_SCHEMA,
+        'Baseline syscall events (before the operation)',
+      )
+      .array('targetEvents', SYSCALL_EVENT_SCHEMA, 'Target syscall events (after the operation)')
       .number('maxDeltas', 'Maximum frequency delta entries to return (default: 30)', {
         default: 30,
       })
+      .required('baselineEvents', 'targetEvents')
       .query(),
   ),
   tool('syscall_trace_export', (t) =>

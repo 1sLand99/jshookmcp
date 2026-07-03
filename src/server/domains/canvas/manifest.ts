@@ -27,6 +27,7 @@ const registrations = defineMethodRegistrations<H, (typeof canvasTools)[number][
     { tool: 'canvas_scene_dump', method: 'handleSceneDump', profiles: ['full'] },
     { tool: 'canvas_pick_object_at_point', method: 'handlePick', profiles: ['full'] },
     { tool: 'canvas_trace_click_handler', method: 'handleTraceClick', profiles: ['full'] },
+    { tool: 'canvas_scene_search', method: 'handleSceneSearch', profiles: ['full'] },
   ],
 });
 const skiaRegistrations = defineMethodRegistrations<SK, (typeof skiaTools)[number]['name']>({

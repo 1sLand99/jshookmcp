@@ -41,6 +41,7 @@ const registrations = defineMethodRegistrations<H, (typeof binaryInstrumentTools
     { tool: 'apk_dex_intake', method: 'handleApkDexIntake' },
     { tool: 'dex_scan_file', method: 'handleDexScanFile' },
     { tool: 'binary_strings_extract', method: 'handleBinaryStringsExtract' },
+    { tool: 'binary_entropy_profile', method: 'handleBinaryEntropyProfile' },
     { tool: 'apk_native_libs_list', method: 'handleApkNativeLibsList' },
     { tool: 'unidbg_launch', method: 'handleUnidbgLaunch' },
     { tool: 'unidbg_call', method: 'handleUnidbgCall' },
