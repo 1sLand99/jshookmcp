@@ -134,7 +134,7 @@ const WIN32_ONLY_TOOLS = new Set([
   // PE / Module introspection (ELF/Mach-O parity pending — E5-C)
   'memory_pe_headers',
   'memory_pe_imports_exports',
-  'memory_inline_hook_detect',
+  // inline_hook_detect now has a cross-platform raw-pattern fallback (E5-B)
   // Anti-cheat detection has a cross-platform fallback (returns platformNote),
   // and integrity_check / guard_pages use PlatformMemoryAPI — all three are
   // registered on every platform now (E5-A).

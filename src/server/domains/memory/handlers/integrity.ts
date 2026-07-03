@@ -15,6 +15,7 @@ import { createPlatformProvider } from '@native/platform/factory';
 import type { PlatformMemoryAPI } from '@native/platform/PlatformMemoryAPI';
 import { scanGuardPages as crossPlatformScanGuardPages } from '@native/platform/GuardPageScanner';
 import { scanIntegrity as crossPlatformScanIntegrity } from '@native/platform/IntegrityScanner';
+import { scanRangeForHooks } from '@native/platform/HookPatternScanner';
 
 const TOOL_SPEEDHACK = 'memory_speedhack';
 const TOOL_GUARD_PAGES = 'memory_guard_pages';
@@ -283,35 +284,112 @@ export class IntegrityHandlers {
 
   async handleInlineHookDetect(args: Record<string, unknown>) {
     return handleSafe(async () => {
-      if (!this.peAnalyzer) {
-        throw new Error(
-          'Inline hook detection (memory_inline_hook_detect) is only supported on Windows. ' +
-            'This tool requires Win32 PE format introspection.',
-        );
-      }
       const pid = await this.resolvePid(args.pid);
       const moduleName = argString(args, 'moduleName');
       const scanMode = argEnum(args, 'scanMode', HOOK_SCAN_MODES, 'inline');
 
-      // inline mode: compare export prologues disk-vs-memory.
-      // iat mode: compare IAT entries against source-module ranges.
-      // both: run the two scans (independent — no shared state).
-      const inlineHooks =
-        scanMode === 'iat' ? [] : await this.peAnalyzer.detectInlineHooks(pid, moduleName);
-      const iatHooks =
-        scanMode === 'inline' ? [] : await this.peAnalyzer.detectIATHooks(pid, moduleName);
+      // Win32 fast path — PEAnalyzer (export-prologue disk-vs-memory comparison)
+      if (this.peAnalyzer) {
+        // inline mode: compare export prologues disk-vs-memory.
+        // iat mode: compare IAT entries against source-module ranges.
+        // both: run the two scans (independent — no shared state).
+        const inlineHooks =
+          scanMode === 'iat' ? [] : await this.peAnalyzer.detectInlineHooks(pid, moduleName);
+        const iatHooks =
+          scanMode === 'inline' ? [] : await this.peAnalyzer.detectIATHooks(pid, moduleName);
 
-      const total = inlineHooks.length + iatHooks.length;
-      return {
-        inlineHooks,
-        iatHooks,
-        count: total,
-        scanMode,
-        hint:
-          total > 0
-            ? `Detected ${inlineHooks.length} inline + ${iatHooks.length} IAT hooks. Check hookType/jumpTarget (inline) and actualModule (IAT) for each.`
-            : `No hooks detected (scanMode=${scanMode}). Exports match disk and IAT entries resolve within their source modules.`,
-      };
+        const total = inlineHooks.length + iatHooks.length;
+        return {
+          inlineHooks,
+          iatHooks,
+          count: total,
+          scanMode,
+          hint:
+            total > 0
+              ? `Detected ${inlineHooks.length} inline + ${iatHooks.length} IAT hooks. Check hookType/jumpTarget (inline) and actualModule (IAT) for each.`
+              : `No hooks detected (scanMode=${scanMode}). Exports match disk and IAT entries resolve within their source modules.`,
+        };
+      }
+
+      // Cross-platform fallback — raw byte-pattern scan via PlatformMemoryAPI.
+      // Without a PE export table (or ELF/Mach-O symbol resolution, which is
+      // E5-C), the scanner cannot do per-function disk-vs-memory comparison.
+      // Instead it sweeps an explicit address range and reports high-confidence
+      // hook patterns (FF25 / mov_jmp / mov_call / push_ret — rare in clean
+      // compiler output). The caller supplies startAddress + size; without them
+      // the tool returns guidance rather than guessing.
+      if (scanMode === 'iat') {
+        return {
+          inlineHooks: [],
+          iatHooks: [],
+          count: 0,
+          scanMode,
+          platformNote:
+            `IAT hook detection requires PE import-table parsing (Windows-only). ` +
+            `On ${process.platform} use scanMode='inline' with an explicit startAddress+size for a raw pattern sweep.`,
+          hint: 'IAT scan is Windows-only; switch to scanMode=inline for cross-platform raw pattern detection.',
+        };
+      }
+      const startAddressStr = argString(args, 'startAddress');
+      const size = argNumber(args, 'size', 4096);
+      if (!startAddressStr) {
+        return {
+          inlineHooks: [],
+          iatHooks: [],
+          count: 0,
+          scanMode,
+          platformNote:
+            `Cross-platform inline-hook scan on ${process.platform} needs an explicit ` +
+            `startAddress (hex) + optional size (default 4096). Without a PE export table ` +
+            `the scanner does a raw byte-pattern sweep of the given range and reports ` +
+            `high-confidence hook patterns (FF25/mov_jmp/mov_call/push_ret).`,
+          hint: 'Provide startAddress (hex) and optional size to scan a specific code range.',
+        };
+      }
+      validateHexAddress(startAddressStr, 'startAddress');
+      const normalized = startAddressStr.startsWith('0x')
+        ? startAddressStr
+        : `0x${startAddressStr}`;
+      const startAddr = BigInt(normalized);
+
+      const api = getPlatformApi();
+      if (!api) {
+        throw new Error(
+          'memory_inline_hook_detect: no platform memory provider is available on ' +
+            `${process.platform}. Provide startAddress + size for a raw byte-pattern scan.`,
+        );
+      }
+      const handle = api.openProcess(pid, false);
+      try {
+        const memResult = api.readMemory(handle, startAddr, size);
+        const matches = scanRangeForHooks(new Uint8Array(memResult.data), startAddr);
+        const inlineHooks = matches.map((m) => ({
+          address: m.address,
+          moduleName: moduleName ?? `raw-scan@0x${startAddr.toString(16)}`,
+          functionName: `<offset+0x${m.offset.toString(16)}>`,
+          originalBytes: [] as number[], // raw scan — no disk comparison
+          currentBytes: m.matchedBytes,
+          hookType: m.hookType,
+          jumpTarget: m.jumpTarget,
+        }));
+        return {
+          inlineHooks,
+          iatHooks: [],
+          count: inlineHooks.length,
+          scanMode,
+          platformNote:
+            `Raw byte-pattern scan on ${api.platform} (${size} bytes from 0x${startAddr.toString(16)}). ` +
+            `Reports high-confidence patterns only (FF25/mov_jmp/mov_call/push_ret); jmp_rel32/call_rel32 ` +
+            `are common in legitimate code and are suppressed without disk comparison. ` +
+            `Provide confidence via the raw bytes if you need the full set.`,
+          hint:
+            inlineHooks.length > 0
+              ? `Found ${inlineHooks.length} high-confidence hook pattern(s). Each is rare in clean compiler output — investigate jumpTarget.`
+              : `No high-confidence hook patterns in the scanned range. (Legitimate jmp/call instructions are not reported without disk comparison.)`,
+        };
+      } finally {
+        api.closeProcess(handle);
+      }
     });
   }
 

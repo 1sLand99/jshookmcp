@@ -427,6 +427,11 @@ export const memoryScanToolDefinitions: readonly Tool[] = [
       )
       .number('pid', 'Target process ID (optional when a browser session is attached)')
       .string('moduleName', 'Module name filter (optional — scans all modules if omitted)')
+      .string(
+        'startAddress',
+        'Hex address of the code range to scan (cross-platform raw mode — required on Linux/macOS where there is no PE export table)',
+      )
+      .number('size', 'Byte length of the range to scan in cross-platform raw mode (default 4096)')
       .enum('scanMode', ['inline', 'iat', 'both'], 'Hook scan mode (default: inline)', {
         default: 'inline',
       })

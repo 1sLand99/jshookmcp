@@ -184,14 +184,18 @@ describe('Memory Domain - Win32-only Platform Guards', () => {
       expect(parsed.error).toContain('only supported on Windows');
     });
 
-    it('memory_inline_hook_detect returns clear error on non-Win32', async () => {
+    it('memory_inline_hook_detect returns guidance when no startAddress (non-Win32)', async () => {
+      // E5-B: non-Win32 no longer errors — it returns a guidance response asking
+      // for startAddress+size (raw byte-pattern scan mode), success: true.
       const result = await handlers.handleInlineHookDetect({
         pid: 1234,
       });
 
       const parsed = JSON.parse(getResponseText(result));
-      expect(parsed).toHaveProperty('success', false);
-      expect(parsed.error).toContain('only supported on Windows');
+      expect(parsed.success).toBe(true);
+      expect(parsed.count).toBe(0);
+      expect(parsed.platformNote).toMatch(/startAddress/i);
+      expect(parsed.platformNote).toMatch(new RegExp(process.platform));
     });
   });
 
@@ -237,9 +241,9 @@ describe('Memory Domain - Win32-only Platform Guards', () => {
         () => handlers.handleSpeedhackSet({ pid: 1234, speed: 1.5 }),
         () => handlers.handlePEHeaders({ pid: 1234, moduleBase: '0x400000' }),
         () => handlers.handlePEImportsExports({ pid: 1234, moduleBase: '0x400000', table: 'both' }),
-        () => handlers.handleInlineHookDetect({ pid: 1234 }),
-        // heap/anticheat/guard/integrity now have cross-platform fallbacks;
-        // they return success instead of error. Verified in this file above.
+        // inline_hook_detect / heap / anticheat / guard / integrity now have
+        // cross-platform fallbacks; they return success instead of error.
+        // Verified in this file above.
       ];
 
       for (const testCase of testCases) {

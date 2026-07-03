@@ -30,7 +30,6 @@ const WIN32_ONLY_TOOLS = new Set([
   'memory_heap_anomalies',
   'memory_pe_headers',
   'memory_pe_imports_exports',
-  'memory_inline_hook_detect',
   'memory_breakpoint',
   'memory_find_accesses',
   'memory_speedhack',
@@ -132,8 +131,8 @@ describe('memory manifest platform filtering', () => {
     const linuxManifest = await loadManifestWithPlatform('linux');
 
     expect(win32Manifest.registrations.length).toBe(34);
-    // E5-A: integrity_check / anticheat_detect / guard_pages now have cross-
-    // platform fallbacks, so they register on Linux/macOS too (was 22, now 25).
-    expect(linuxManifest.registrations.length).toBe(25);
+    // E5-A: integrity_check / anticheat_detect / guard_pages cross-platform (22→25).
+    // E5-B: inline_hook_detect raw-pattern fallback (25→26).
+    expect(linuxManifest.registrations.length).toBe(26);
   });
 });
