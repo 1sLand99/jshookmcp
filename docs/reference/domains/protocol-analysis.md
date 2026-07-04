@@ -39,8 +39,8 @@
 | `checksum_apply` | 对载荷切片应用确定性 16 位互联网校验和，可选清零并将校验和字段写回数据包。 |
 | `pcap_write` | 从确定性数据包字节记录写入紧凑的经典 PCAP 文件。 |
 | `pcap_read` | 读取经典 PCAP 文件并返回紧凑的确定性数据包摘要。不支持 PCAPNG 格式。 |
-| `pcapng_write` | 待补充中文：Write a PCAPNG (pcap-ng) capture file from one or more interfaces and deterministic packet byte records. Emits a Section Header Block, an Interface Description Block per interface, and an Enhanced Packet Block per packet. |
-| `pcapng_read` | 待补充中文：Read a PCAPNG (pcap-ng) capture file and return structured Section/Interface/Packet blocks. Supports Section Header, Interface Description, Enhanced/Simple Packet, Name Resolution, and Interface Statistics blocks; unknown block types are surfaced as warnings. |
-| `proto_dissect_dns` | 待补充中文：Dissect a raw DNS payload (RFC 1035 + EDNS(0)) into header flags, questions, answers, authorities, and additionals with full compression-pointer handling and OPT pseudo-record decoding. |
-| `proto_dissect_http` | 待补充中文：Dissect a raw HTTP/1.x request or response payload (RFC 7230) into the start line, headers, and body. Unwinds chunked transfer-encoding and reports Content-Length / Content-Type / Content-Encoding hints. |
+| `pcapng_write` | 从一个或多个网络接口和确定性数据包字节记录写入 PCAPNG（pcap-ng）抓包文件。生成 Section Header Block、每个接口的 Interface Description Block 和每个数据包的 Enhanced Packet Block。 |
+| `pcapng_read` | 读取 PCAPNG（pcap-ng）抓包文件并返回结构化的 Section/Interface/Packet 块。支持 Section Header、Interface Description、Enhanced/Simple Packet、Name Resolution 和 Interface Statistics 块；未知块类型以警告形式呈现。 |
+| `proto_dissect_dns` | 将原始 DNS 载荷（RFC 1035 + EDNS(0)）解析为头部标志、问题、回答、授权和附加段，完整支持压缩指针处理和 OPT 伪记录解码。 |
+| `proto_dissect_http` | 将原始 HTTP/1.x 请求或响应载荷（RFC 7230）解析为起始行、头部和正文。展开 chunked 传输编码，报告 Content-Length / Content-Type / Content-Encoding 提示。 |
 | `proto_fingerprint` | 从 hex 载荷样本识别协议类型（TLS、HTTP、DNS、WebSocket、SSH）。 |

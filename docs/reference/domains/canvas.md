@@ -30,7 +30,7 @@
 | `canvas_scene_dump` | 从检测到的 Canvas 引擎中提取完整的场景树/显示列表 |
 | `canvas_pick_object_at_point` | 使用引擎的命中测试系统，在给定屏幕坐标处拾取/命中测试最上层的对象 |
 | `canvas_trace_click_handler` | 追踪点击事件经过 DOM 事件、引擎分发和 JS 调用栈的过程，定位最终的处理函数 |
-| `canvas_scene_search` | 待补充中文：Search a previously-dumped scene tree (canvas_scene_dump output) for nodes by name regex and/or type. Pure-compute — no browser session required. Returns matching nodes with their path from root, depth, and engine-specific properties. |
+| `canvas_scene_search` | 在已 dump 的场景树（canvas_scene_dump 输出）中按名称正则和/或类型搜索节点。纯计算——无需浏览器会话。返回匹配节点及其从根的路径、深度和引擎特定属性。 |
 | `skia_detect_renderer` | 从当前页面上下文检测活跃的 Skia 渲染后端。 |
 | `skia_extract_scene` | 从选中的 canvas 提取轻量级 Skia 场景树。 |
 | `skia_correlate_objects` | 将请求的 Skia 节点标识符与提取的场景树进行关联。 |

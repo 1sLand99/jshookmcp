@@ -54,7 +54,7 @@
 | `memory_anticheat_detect` | 扫描进程导入项中的反调试/反作弊机制，例如 IsDebuggerPresent、NtQueryInformationProcess、计时检测（QPC、GetTickCount）、线程隐藏、堆标志检查以及 DR 寄存器检测。每项发现都会附带绕过建议。 |
 | `memory_guard_pages` | 查找进程中所有带有 PAGE_GUARD 保护属性的内存区域。Guard page 常用于防篡改机制或栈溢出检测。 |
 | `memory_integrity_check` | 通过比较磁盘字节与内存字节的 SHA-256 哈希，检查代码节完整性。可用于发现补丁、Hook 以及其他对可执行节的运行时修改。 |
-| `memory_region_enumerate` | 待补充中文：Enumerate memory regions in a target process. Cross-platform: Windows (VirtualQueryEx), macOS (mach_vm_region), Linux (/proc/pid/maps). Returns base address, size, protection (r/w/x/rw/rx/rwx), state, type (image/mapped/private), and module name (if module-backed). |
-| `memory_aob_scan` | 待补充中文：Array-of-Bytes scan with wildcard support. Search for byte patterns like "48 8B ?? ?? 00 00" across readable memory. Accepts hex bytes (00-FF, optional 0x prefix) and "??" wildcards. Case insensitive. |
-| `memory_find_accesses` | 待补充中文：Find what writes to or accesses a memory address (Cheat Engine MWT workflow). Sets a hardware breakpoint on the target address, auto-rearms after each hit, captures the faulting instruction address + context + timestamp, and optionally disassembles the instruction. Returns aggregated hits with per-hit instruction details. |
-| `memory_parse_dump` | 待补充中文：Parse a Windows Minidump (.dmp) file and extract forensic information: loaded modules (base/size/name/timestamp), threads (ID/stack/context), memory ranges (64-bit or 32-bit), system info (OS/CPU), and exception records. Optionally resolve a list of addresses against the dump contents. Pure TS — cross-platform (can analyze Windows dumps on Linux/macOS). |
+| `memory_region_enumerate` | 枚举目标进程的内存区域。跨平台：Windows（VirtualQueryEx）、macOS（mach_vm_region）、Linux（/proc/pid/maps）。返回基址、大小、保护属性（r/w/x/rw/rx/rwx）、状态、类型（image/mapped/private）和模块名（如有模块背书）。 |
+| `memory_aob_scan` | 支持通配符的字节阵列扫描（AOB scan）。在可读内存中搜索如 "48 8B ?? ?? 00 00" 的字节模式。接受十六进制字节（00-FF，可选 0x 前缀）和 "??" 通配符，大小写不敏感。 |
+| `memory_find_accesses` | 查找写入或访问某内存地址的指令（Cheat Engine MWT 工作流）。在目标地址设置硬件断点，每次命中后自动重装，捕获触发故障的指令地址、上下文和时间戳，可选择反汇编该指令。返回聚合的命中记录及每条命中的指令详情。 |
+| `memory_parse_dump` | 解析 Windows Minidump（.dmp）文件并提取取证信息：已加载模块（基址/大小/名称/时间戳）、线程（ID/栈/上下文）、内存范围（64 位或 32 位）、系统信息（OS/CPU）和异常记录。可选解析地址列表对照 dump 内容。纯 TS 实现——跨平台（可在 Linux/macOS 上分析 Windows dump）。 |

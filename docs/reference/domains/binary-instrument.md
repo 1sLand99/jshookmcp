@@ -49,7 +49,7 @@
 | `apk_dex_intake` | 构建一体化的 APK/DEX 取证证据包：ZIP 条目、清单摘要、DEX 头、native 库、表面提示与调用方提供的自定义提示匹配，以及后续操作建议。 |
 | `dex_scan_file` | 扫描二进制/内存 dump 文件中的 DEX 或 CompactDex 魔数，并可选择性地提取命中结果。 |
 | `binary_strings_extract` | 从二进制文件中提取可打印的 ASCII/UTF-16LE 字符串，支持正则过滤。 |
-| `binary_entropy_profile` | 待补充中文：Compute Shannon entropy across fixed-size chunks of a binary file to locate encrypted / packed / compressed sections. High-entropy regions (&gt;=7.0 bits/byte) are likely encrypted or compressed; low-entropy (&lt;4.0) are typically code or text. Pure-compute, no external tools. |
+| `binary_entropy_profile` | 跨定长 chunk 计算二进制文件的香农熵以定位加密/加壳/压缩段。高熵区（≥7.0 bits/byte）疑似加密或压缩；低熵（&lt;4.0）通常是代码或文本。纯计算，无外部工具依赖。 |
 | `apk_native_libs_list` | 列出 APK 内打包的原生共享库（.so）及其 ABI 目录。 |
 | `unidbg_launch` | 在 Unidbg 模拟器中启动 ARM/ARM64 .so 库，首次调用约 3-5 秒预热。 |
 | `unidbg_call` | 在运行中的 Unidbg 模拟器会话中调用 JNI 函数。 |

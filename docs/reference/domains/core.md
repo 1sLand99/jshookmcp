@@ -47,5 +47,5 @@
 | `js_symbolic_execute` | JavaScript 符号执行：探索所有可行执行路径，收集路径约束并求解。适用于控制流平坦化后的复杂分支代码分析。 |
 | `js_symbolic_execute_jsvmp` | JSVMP 字节码符号执行：逐步对指令进行符号执行，推断原始逻辑、约束和置信度。需先使用 js_analyze_vm 获取指令序列。 |
 | `ai_suggest_exploits` | 使用 LLM 为给定漏洞建议利用原语和攻击链。返回理论利用步骤、参考资料和所需条件。重要提示：不生成可执行的 payload 或恶意代码。 |
-| `analysis_data_flow` | 待补充中文：Trace data flow through JavaScript: identify sources (user input, network, storage), sinks (XSS, eval, SQL injection, command execution), sanitizer pass-through points, and tainted variable propagation paths. Useful for finding injection vulnerabilities. |
-| `analysis_security_scan` | 待补充中文：Static security scan of JavaScript: detect hardcoded secrets (API keys, tokens), dangerous functions (eval, Function constructor), XSS sinks (innerHTML, document.write), SQL injection patterns, and weak crypto (Math.random). Returns structured risks with severity and recommendations. |
+| `analysis_data_flow` | 追踪 JavaScript 中的数据流：识别污点源（用户输入、网络、存储）、污点汇（XSS、eval、SQL 注入、命令执行）、净化器透传点和污点变量传播路径。用于发现注入漏洞。 |
+| `analysis_security_scan` | JavaScript 静态安全扫描：检测硬编码密钥（API key、token）、危险函数（eval、Function 构造器）、XSS 汇（innerHTML、document.write）、SQL 注入模式和弱加密（Math.random）。返回带严重度和修复建议的结构化风险。 |

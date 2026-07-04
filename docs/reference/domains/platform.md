@@ -36,5 +36,5 @@
 | `electron_launch_debug` | 以调试模式启动 Electron 应用，同时支持主进程和渲染进程的调试。 |
 | `electron_debug_status` | 检查由 electron_launch_debug 启动的双轨 CDP 调试会话状态。 |
 | `electron_ipc_sniff` | 嗅探 Electron 应用的 IPC 通信，捕获 channel 名称和参数。 |
-| `electron_verify_integrity` | 待补充中文：Verify Electron ASAR integrity: parse the ElectronAsarIntegrity JSON embedded in the main binary, locate each referenced ASAR, and compare the on-disk SHA256 against the embedded hash. A mismatch means the ASAR was tampered with after build. |
-| `asar_deobfuscate` | 待补充中文：Scan every .js file inside an ASAR archive for obfuscation indicators (string-array arrays, webpack bundles, control-flow flattening, dynamic code, minification) and classify each file. Flagged files are optionally extracted to a directory for downstream deobfuscation. |
+| `electron_verify_integrity` | 验证 Electron ASAR 完整性：解析嵌入主二进制的 ElectronAsarIntegrity JSON，定位每个引用的 ASAR，对比磁盘 SHA256 与嵌入哈希。不匹配意味着 ASAR 在构建后被篡改。 |
+| `asar_deobfuscate` | 扫描 ASAR 归档内每个 .js 文件的混淆指标（字符串数组、webpack bundle、控制流平坦化、动态代码、压缩）并分类。标记的文件可提取到目录供后续反混淆。 |

@@ -57,9 +57,9 @@
 | `console_get_logs` | 获取当前页面已捕获的控制台日志输出。 |
 | `console_execute` | 在控制台中执行 JavaScript 表达式。 |
 | `page_inject_script` | 向页面注入 JavaScript 代码。 |
-| `page_coverage_start` | 待补充中文：Start JS+CSS code coverage collection on the active page. Coverage tracks which bytes of each loaded script/stylesheet are actually executed. Use page_coverage_stop to stop collection and retrieve results. |
-| `page_coverage_stop` | 待补充中文：Stop coverage collection and return per-script JS+CSS coverage results. Includes total bytes, used bytes, and coverage percentage per URL. |
-| `page_block_script` | 待补充中文：Manage script blocking rules by URL pattern. Blocked scripts are prevented from loading/executing. Actions: add/block (add a rule), remove/unblock (remove a rule), list (show all rules), clear (remove all). |
+| `page_coverage_start` | 在活动页面上开始 JS+CSS 代码覆盖率采集。覆盖率追踪每个已加载脚本/样式表中实际执行的字节。使用 page_coverage_stop 停止采集并获取结果。 |
+| `page_coverage_stop` | 停止覆盖率采集并返回每个脚本的 JS+CSS 覆盖率结果。包含每个 URL 的总字节数、已用字节数和覆盖率百分比。 |
+| `page_block_script` | 按 URL 模式管理脚本拦截规则。被拦截的脚本将被阻止加载/执行。操作：add/block（添加规则）、remove/unblock（移除规则）、list（显示全部规则）、clear（清除全部）。 |
 | `page_cookies` | 管理页面 Cookie。操作：get（获取全部）、set（需提供 cookies 数组）、clear（清除全部）。 |
 | `page_set_viewport` | 设置当前页面视口尺寸。 |
 | `page_emulate_device` | 模拟移动设备环境，例如 iPhone、iPad 或 Android 机型。 |
