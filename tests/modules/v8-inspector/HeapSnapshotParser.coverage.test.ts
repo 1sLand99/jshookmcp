@@ -147,6 +147,45 @@ describe('HeapSnapshotParser — real 2-node snapshot (deep parse)', () => {
     const dom = p.buildDominatorTree();
     expect(dom.size).toBeGreaterThan(0);
   });
+
+  // Multi-chunk standard snapshots must still parse as standard format.
+  // feedChunk joins chunks with '\n'; the previous format heuristic
+  // (`startsWith('{') && !includes('\n')`) misrouted any standard snapshot
+  // split across >1 chunk to parseLineSnapshot, silently producing zero
+  // nodes. The new looksLikeStandardSnapshot() probe checks the parsed
+  // shape, so splitting on '\n' no longer corrupts routing.
+  it('parses a multi-chunk standard snapshot split across chunks', () => {
+    const full = TWO_NODES;
+    // Split into 3 uneven chunks. Concatenation is the original JSON; the
+    // '\n' join between them must not flip format detection.
+    const cut1 = Math.floor(full.length / 3);
+    const cut2 = Math.floor((full.length * 2) / 3);
+    const chunks = [full.slice(0, cut1), full.slice(cut1, cut2), full.slice(cut2)];
+
+    const p = new HeapSnapshotParser();
+    p.feedChunk(chunks);
+
+    expect(p.nodeCount).toBe(2);
+    const nodes = p.getAllNodes();
+    expect(nodes[0]?.name).toBe('Root');
+    expect(nodes[1]?.name).toBe('Obj');
+    expect(p.parseEdges().length).toBe(1);
+  });
+
+  // And the hostile-but-real case: a pretty-printed standard JSON snapshot
+  // (newlines INSIDE one chunk). The old heuristic excluded any string with
+  // '\n'; a pretty-printed single-chunk snapshot would have been misrouted
+  // to parseLineSnapshot too.
+  it('parses a pretty-printed (multi-line) standard snapshot in one chunk', () => {
+    const pretty = JSON.stringify(JSON.parse(TWO_NODES), null, 2);
+    expect(pretty.includes('\n')).toBe(true);
+
+    const p = new HeapSnapshotParser();
+    p.feedChunk([pretty]);
+
+    expect(p.nodeCount).toBe(2);
+    expect(p.getAllNodes()[0]?.name).toBe('Root');
+  });
 });
 
 describe('HeapSnapshotParser — line-format snapshot (parseLineSnapshot)', () => {

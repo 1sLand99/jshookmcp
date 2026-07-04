@@ -110,6 +110,34 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+/**
+ * Detect whether `data` is a v8 standard-format heap snapshot — a single JSON
+ * object carrying a `snapshot.meta` record. Used by ensureParsed to pick the
+ * right parser. We deliberately require the `snapshot` shape (not just "starts
+ * with '{'") so NDJSON/line-format snapshots whose first line happens to open
+ * a brace are not swallowed by the standard parser, and so multi-chunk
+ * standard snapshots streamed in chunks are still recognized once feedChunk
+ * re-joins them with no separator (the bug the old `!includes('\n')`
+ * heuristic introduced — it gatekept standard format behind "no newlines",
+ * which multi-chunk or pretty-printed input violated).
+ *
+ * Best-effort: a JSON parse failure means "not standard"; the caller falls
+ * back to parseLineSnapshot, which tolerates per-line JSON.
+ */
+function looksLikeStandardSnapshot(data: string): boolean {
+  // Quick reject: standard snapshots always start with '{' after trim.
+  if (data.charCodeAt(0) !== 0x7b /* '{' */) return false;
+  let value: unknown;
+  try {
+    value = JSON.parse(data);
+  } catch {
+    return false;
+  }
+  if (!isRecord(value)) return false;
+  const snapshot = value['snapshot'];
+  if (!isRecord(snapshot)) return false;
+  return isRecord(snapshot['meta']);
+}
 function isNumberArray(value: unknown): value is number[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'number');
 }
@@ -267,7 +295,14 @@ export class HeapSnapshotParser {
       }
     }
 
-    this.snapshotData = this.chunkBuffer.join('\n');
+    // Standard V8 heap snapshots are one continuous JSON document streamed
+    // in chunks; concatenation must NOT insert separators (the previous '\n'
+    // join corrupted any standard snapshot split across chunks — the joined
+    // string was no longer valid JSON, so format detection and parsing both
+    // silently produced zero nodes). Empty-string join restores the original
+    // byte stream. Line-format (NDJSON) snapshots are routed via
+    // looksLikeStandardSnapshot() in ensureParsed, not via feedChunk wiring.
+    this.snapshotData = this.chunkBuffer.join('');
     this.ensureParsed();
   }
 
@@ -651,7 +686,21 @@ export class HeapSnapshotParser {
       return;
     }
 
-    if (trimmed.startsWith('{') && !trimmed.includes('\n')) {
+    // Format detection. The previous heuristic (`startsWith('{') && !includes('\n')`)
+    // misrouted multi-chunk standard-JSON snapshots to parseLineSnapshot:
+    // feedChunk joins chunks with '\n', so any standard snapshot whose JSON
+    // spans more than one chunk (or contains newlines) gained a '\n' and was
+    // treated as line format — silently producing zero/wrong nodes.
+    //
+    // Robust approach: try standard JSON first (it parses as a single object
+    // with a `snapshot` field). Only when that fails do we fall through to the
+    // line/NDJSON format. Order matters: a line-format blob whose first line
+    // happens to start with '{' would still go to standard first, but
+    // parseStandardSnapshot guards on the `snapshot` + `meta` shape and
+    // returns without writing anything if absent — so the fallback below
+    // re-runs it as line format. To make that fallback safe, only treat data
+    // as standard when it really looks like a v8 heap snapshot object.
+    if (looksLikeStandardSnapshot(trimmed)) {
       this.parseStandardSnapshot(trimmed);
     } else {
       this.parseLineSnapshot(trimmed);
