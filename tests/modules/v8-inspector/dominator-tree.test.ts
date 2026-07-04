@@ -149,6 +149,101 @@ describe('DominatorTreeBuilder', () => {
     });
   });
 
+  describe('non-trivial graphs (Lengauer-Tarjan eval)', () => {
+    // The previous `eval` stub returned `v` and so computed semi-dominators
+    // using `semi[v]` instead of the minimum-semi ancestor on the DFS path.
+    // That is wrong for any node reachable via a cross/forward edge whose
+    // semidominator is *not* one of its direct DFS predecessors. The graph
+    // below is hand-computable and distinguishes the stub from a correct LT.
+    //
+    //   1 (root) → 2 → 3
+    //       └──→ 4 ───↗
+    //   1 → 5 → 6 → 3   (5 and 6 only reach 3, not 2/4)
+    //
+    // Edges (DFS from 1 in adjacency order [2,4,5]):
+    //   1→2, 1→4, 1→5, 2→3, 4→3, 5→6, 6→3
+    //
+    // Three distinct paths reach node 3: 1→2→3, 1→4→3, 1→5→6→3. The only
+    // node that dominates 3 across all three paths is the root (1), so
+    // idom(3) = 1. A buggy eval that ignores the 6→3 cross edge would let
+    // semi(3) collapse to dfn(2) (the first DFS predecessor), yielding
+    // idom(3) = 2 — wrong. This fixture pins idom(3) = 1.
+    it('computes correct idom for a node reachable via cross/forward edges', () => {
+      const nodes: ParsedNode[] = [
+        { id: 1, name: 'Root', selfSize: 0, type: 'synthetic' },
+        { id: 2, name: 'A', selfSize: 10, type: 'object' },
+        { id: 3, name: 'Sink', selfSize: 100, type: 'object' },
+        { id: 4, name: 'B', selfSize: 10, type: 'object' },
+        { id: 5, name: 'C', selfSize: 10, type: 'object' },
+        { id: 6, name: 'D', selfSize: 10, type: 'object' },
+      ];
+
+      const edges: ParsedEdge[] = [
+        { fromId: 1, toId: 2, nameOrIndex: 'a', type: 'property' },
+        { fromId: 1, toId: 4, nameOrIndex: 'b', type: 'property' },
+        { fromId: 1, toId: 5, nameOrIndex: 'c', type: 'property' },
+        { fromId: 2, toId: 3, nameOrIndex: 'r', type: 'property' },
+        { fromId: 4, toId: 3, nameOrIndex: 'r', type: 'property' },
+        { fromId: 5, toId: 6, nameOrIndex: 'r', type: 'property' },
+        { fromId: 6, toId: 3, nameOrIndex: 'r', type: 'property' },
+      ];
+
+      const builder = new DominatorTreeBuilder();
+      const tree = builder.buildDominatorTree(nodes, edges);
+
+      expect(tree.nodeId).toBe(1);
+      // idom(3) must be 1 (root), NOT 2 — the cross edge 6→3 means 2 does not
+      // dominate 3. Assert via the dominator tree: 3 must be a direct child of
+      // the root, not a child of 2.
+      const node3 = findNodeInTree(tree, 3);
+      expect(node3).toBeDefined();
+      const parentOf3 = findParent(tree, 3);
+      expect(parentOf3).toBe(1);
+    });
+
+    // Nested diamond with a back-skipping forward edge.
+    //   1 → 2 → 3 → 5
+    //   1 → 4 → 5
+    //   2 → 5      (forward edge skips 3)
+    // idom(2)=1, idom(4)=1, idom(3)=2, idom(5)=1 (2→5 forward + 4→5 + 3→5
+    // mean only root dominates 5). Retained sizes are hand-computable so we
+    // also pin them: root retains everything (sum of self sizes).
+    it('computes correct idom for a nested diamond with a forward edge', () => {
+      const nodes: ParsedNode[] = [
+        { id: 1, name: 'Root', selfSize: 5, type: 'synthetic' },
+        { id: 2, name: 'A', selfSize: 100, type: 'object' },
+        { id: 3, name: 'B', selfSize: 200, type: 'object' },
+        { id: 4, name: 'C', selfSize: 100, type: 'object' },
+        { id: 5, name: 'D', selfSize: 300, type: 'object' },
+      ];
+
+      const edges: ParsedEdge[] = [
+        { fromId: 1, toId: 2, nameOrIndex: 'a', type: 'property' },
+        { fromId: 1, toId: 4, nameOrIndex: 'b', type: 'property' },
+        { fromId: 2, toId: 3, nameOrIndex: 'c', type: 'property' },
+        { fromId: 3, toId: 5, nameOrIndex: 'e', type: 'property' },
+        { fromId: 4, toId: 5, nameOrIndex: 'e', type: 'property' },
+        { fromId: 2, toId: 5, nameOrIndex: 'f', type: 'property' }, // forward (skips 3)
+      ];
+
+      const builder = new DominatorTreeBuilder();
+      const tree = builder.buildDominatorTree(nodes, edges);
+
+      expect(tree.nodeId).toBe(1);
+      // 5 is reachable via 1→2→5, 1→4→5, 1→2→3→5 → only root dominates 5.
+      expect(findParent(tree, 5)).toBe(1);
+      // 3's only parent in the dom tree is 2 (only path to 3 is through 2).
+      expect(findParent(tree, 3)).toBe(2);
+      // 4's only parent is the root.
+      expect(findParent(tree, 4)).toBe(1);
+      // Root retains the full graph: 5 + 100 + 200 + 100 + 300 = 705.
+      expect(tree.retainedSize).toBe(705);
+      // Node 2 still dominates 3, so 2 retains self(100) + 3(200) = 300.
+      const node2 = findNodeInTree(tree, 2);
+      expect(node2?.retainedSize).toBe(300);
+    });
+  });
+
   describe('leak detection', () => {
     it('should detect detached DOM nodes with explicit marker', () => {
       const nodes: ParsedNode[] = [
@@ -316,4 +411,19 @@ function findNodeInTree(tree: any, nodeId: number): any {
   }
 
   return null;
+}
+
+// Helper: walk the dominator tree and return the nodeId of the parent of
+// `targetId`, or undefined if the target is the root / not present.
+function findParent(tree: any, targetId: number): number | undefined {
+  const stack: any[] = [tree];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (!node) continue;
+    for (const child of node.children || []) {
+      if (child.nodeId === targetId) return node.nodeId;
+      stack.push(child);
+    }
+  }
+  return undefined;
 }

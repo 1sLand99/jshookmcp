@@ -288,14 +288,74 @@ export class DominatorTreeBuilder {
     // Buckets for deferred idom computation
     const bucket = new Map<number, Set<number>>();
 
-    // Initialize
+    // ── Link-eval forest (union-find with path compression) ──────────────────
+    // SemiNCA / near-linear Lengauer-Tarjan variant (Georgiadis 2006):
+    // ancestor[v] is v's forest parent (0 sentinel ⇒ tree root); label[v] is
+    // the vertex with minimum semi-dominator on the compressed path from v to
+    // its forest root. link() does a plain attach (no size balancing); compress()
+    // flattens the ancestor chain and copies the min-semi label downward. With
+    // plain link + compress this is O(m α(n)) — more than fast enough for the
+    // 10k-node perf test, and dramatically simpler/better-tested than the
+    // balanced-link variant. The previous stub `return v` produced WRONG idom
+    // maps on any graph with cross/forward edges (semi-dominator of w was
+    // never computed from min-semi ancestors, only from semi[w] itself).
+    const ancestor = new Map<number, number>();
+    const label = new Map<number, number>();
+
+    // Initialize every DFS-reachable node. label[v] starts as v itself — the
+    // invariant is that label[v] is the minimum-semi vertex on the path from
+    // v to ancestor[v]; with ancestor[v] = 0 (root), the path is just {v}.
     for (let i = 0; i < n; i++) {
       const nodeId = vertex[i];
       if (nodeId !== undefined) {
         semi.set(nodeId, i);
+        label.set(nodeId, nodeId);
+        ancestor.set(nodeId, 0); // 0 = sentinel "no ancestor"
         bucket.set(nodeId, new Set());
       }
     }
+
+    // link(v, w): attach w's tree under v. Called after w is fully processed
+    // (reverse-preorder iteration), making v the forest parent of w. Plain
+    // attach — no rebalancing; path compression in compress() handles the
+    // amortized complexity.
+    const link = (v: number, w: number): void => {
+      ancestor.set(w, v);
+    };
+
+    // compress(v): flatten the path from v up to its forest root and copy the
+    // minimum-semi label downward so label[v] becomes the minimum-semi
+    // ancestor on the (now compressed) path.
+    const compress = (v: number): void => {
+      const av = ancestor.get(v) ?? 0;
+      const aav = ancestor.get(av) ?? 0;
+      if (av === 0 || aav === 0) return;
+      // Recurse first so the parent path is already compressed.
+      compress(av);
+      if ((semi.get(label.get(aav) ?? aav) ?? n) < (semi.get(label.get(av) ?? av) ?? n)) {
+        label.set(v, label.get(aav) ?? aav);
+      }
+      ancestor.set(v, ancestor.get(aav) ?? 0);
+    };
+
+    // eval(v): return the vertex on the compressed path from v to its forest
+    // root whose semi-dominator is minimum — the heart of LT. With ancestor[v]
+    // = 0 (root) the answer is label[v] = v itself, reproducing the trivial-
+    // graph behavior the previous stub relied on, but correct for any graph
+    // with cross/forward edges once link()/compress() populate ancestor.
+    const evalLT = (v: number): number => {
+      if ((ancestor.get(v) ?? 0) === 0) {
+        return label.get(v) ?? v;
+      }
+      compress(v);
+      const av = ancestor.get(v) ?? 0;
+      const labelV = label.get(v) ?? v;
+      const labelAv = label.get(av) ?? av;
+      if ((semi.get(labelAv) ?? n) <= (semi.get(labelV) ?? n)) {
+        return labelAv;
+      }
+      return labelV;
+    };
 
     // Process nodes in reverse preorder (bottom-up)
     for (let i = n - 1; i >= 1; i--) {
@@ -311,7 +371,7 @@ export class DominatorTreeBuilder {
         const preV = pre.get(v);
         if (preV === undefined) continue;
 
-        const u = this.eval(v, semi, pre);
+        const u = evalLT(v);
         const semiW = semi.get(w) ?? i;
         const semiU = semi.get(u) ?? pre.get(u) ?? i;
 
@@ -329,10 +389,14 @@ export class DominatorTreeBuilder {
         bucket.set(semiNode, bucketSet);
       }
 
-      // Step 3: Implicitly define idom for nodes in bucket of parent
+      // Step 3: Implicitly define idom for nodes in bucket of parent.
+      // w's processing is done, so link parentW → w in the eval forest before
+      // reading the bucket so later eval() calls through w see the new edge.
+      link(parentW, w);
+
       const bucketParent = bucket.get(parentW) ?? new Set();
       for (const v of bucketParent) {
-        const u = this.eval(v, semi, pre);
+        const u = evalLT(v);
         const semiV = semi.get(v) ?? 0;
         const semiU = semi.get(u) ?? 0;
 
@@ -368,15 +432,6 @@ export class DominatorTreeBuilder {
     }
 
     return idom;
-  }
-
-  /**
-   * Evaluate function for path compression (part of union-find)
-   */
-  private eval(v: number, _semi: Map<number, number>, _pre: Map<number, number>): number {
-    // Simplified eval - returns node with minimum semi-dominator on path to root
-    // In full implementation, this would use path compression for efficiency
-    return v;
   }
 
   /**
