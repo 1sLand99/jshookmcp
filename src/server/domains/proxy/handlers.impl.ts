@@ -12,6 +12,7 @@ import {
 import {
   PROXY_ADB_MAX_BUFFER_BYTES,
   PROXY_ADB_TIMEOUT_MS,
+  PROXY_CAPTURE_BODY_PREVIEW_BYTES,
   PROXY_CAPTURE_BUFFER_MAX,
   PROXY_CAPTURE_RETURN_LIMIT,
 } from '@src/constants';
@@ -29,7 +30,50 @@ interface CaptureEntry {
   url?: string;
   status?: number;
   headers?: Record<string, string>;
+  bodyTextPreview?: string;
+  bodyBytes?: number;
+  bodyPreviewBytes?: number;
+  bodyTruncated?: boolean;
+  bodyEncoding?: 'utf8';
+  bodyUnavailable?: string;
+  remoteIpAddress?: string;
+  remotePort?: number;
+  timing?: CaptureTiming;
   timestamp: number;
+}
+
+interface CaptureTiming {
+  startedAt?: string;
+  startTime?: number;
+  bodyReceivedMs?: number;
+  headersSentMs?: number;
+  responseSentMs?: number;
+  durationMs?: number;
+}
+
+interface CaptureBody {
+  getText?: () => Promise<string | undefined>;
+  asText?: () => Promise<string>;
+  buffer?: Buffer;
+}
+
+interface CapturePayload {
+  id: string;
+  method?: string;
+  url?: string;
+  statusCode?: number;
+  headers?: Record<string, unknown>;
+  body?: CaptureBody;
+  timingEvents?: {
+    startTime?: number;
+    startTimestamp?: number;
+    bodyReceivedTimestamp?: number;
+    headersSentTimestamp?: number;
+    responseSentTimestamp?: number;
+    abortedTimestamp?: number;
+  };
+  remoteIpAddress?: string;
+  remotePort?: number;
 }
 
 async function pathExists(p: string): Promise<boolean> {
@@ -50,6 +94,91 @@ function compileUrlPattern(urlPattern: string): RegExp {
     return new RegExp(source, flags);
   }
   return new RegExp(trimmed);
+}
+
+function normalizeHeaders(headers: Record<string, unknown> | undefined): Record<string, string> {
+  const normalized: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers ?? {})) {
+    if (Array.isArray(value)) {
+      normalized[key] = value.map((item) => String(item)).join(', ');
+    } else if (value !== undefined) {
+      normalized[key] = String(value);
+    }
+  }
+  return normalized;
+}
+
+function millisFrom(base: number | undefined, value: number | undefined): number | undefined {
+  if (typeof base !== 'number' || typeof value !== 'number') {
+    return undefined;
+  }
+  return Math.max(0, Math.round((value - base) * 1000) / 1000);
+}
+
+function buildTiming(events: CapturePayload['timingEvents']): CaptureTiming | undefined {
+  if (!events) {
+    return undefined;
+  }
+  const base = events.startTimestamp;
+  const bodyReceivedMs = millisFrom(base, events.bodyReceivedTimestamp);
+  const headersSentMs = millisFrom(base, events.headersSentTimestamp);
+  const responseSentMs = millisFrom(base, events.responseSentTimestamp);
+  const abortedMs = millisFrom(base, events.abortedTimestamp);
+  const durationMs = responseSentMs ?? headersSentMs ?? abortedMs ?? bodyReceivedMs;
+  return {
+    ...(typeof events.startTime === 'number'
+      ? {
+          startedAt: new Date(events.startTime).toISOString(),
+          startTime: events.startTime,
+        }
+      : {}),
+    ...(bodyReceivedMs !== undefined ? { bodyReceivedMs } : {}),
+    ...(headersSentMs !== undefined ? { headersSentMs } : {}),
+    ...(responseSentMs !== undefined ? { responseSentMs } : {}),
+    ...(durationMs !== undefined ? { durationMs } : {}),
+  };
+}
+
+function truncateUtf8(text: string): {
+  bodyTextPreview: string;
+  bodyBytes: number;
+  bodyPreviewBytes: number;
+  bodyTruncated: boolean;
+  bodyEncoding: 'utf8';
+} {
+  const raw = Buffer.from(text, 'utf8');
+  const preview = raw.subarray(0, PROXY_CAPTURE_BODY_PREVIEW_BYTES);
+  return {
+    bodyTextPreview: preview.toString('utf8'),
+    bodyBytes: raw.length,
+    bodyPreviewBytes: preview.length,
+    bodyTruncated: raw.length > preview.length,
+    bodyEncoding: 'utf8',
+  };
+}
+
+async function readBodyPreview(body: CaptureBody | undefined): Promise<Partial<CaptureEntry>> {
+  if (!body) {
+    return {};
+  }
+  try {
+    let text: string | undefined;
+    if (typeof body.getText === 'function') {
+      text = await body.getText();
+    } else if (typeof body.asText === 'function') {
+      text = await body.asText();
+    } else if (Buffer.isBuffer(body.buffer)) {
+      text = body.buffer.toString('utf8');
+    }
+
+    if (text === undefined) {
+      return { bodyUnavailable: 'body could not be decoded as text' };
+    }
+
+    return truncateUtf8(text);
+  } catch (error) {
+    return { bodyUnavailable: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 export class ProxyHandlers {
@@ -103,6 +232,17 @@ export class ProxyHandlers {
     this.captureBuffer.push(entry);
     if (this.captureBuffer.length > PROXY_CAPTURE_BUFFER_MAX) {
       this.captureBuffer.shift();
+    }
+  }
+
+  private updateCapture(
+    type: CaptureEntry['type'],
+    id: string,
+    patch: Partial<CaptureEntry>,
+  ): void {
+    const entry = this.captureBuffer.find((item) => item.type === type && item.id === id);
+    if (entry) {
+      Object.assign(entry, patch);
     }
   }
 
@@ -172,30 +312,38 @@ export class ProxyHandlers {
         on(event: string, handler: (payload: unknown) => void): void;
       };
       eventEmitter.on('request', (raw) => {
-        const req = raw as {
-          id: string;
-          method: string;
-          url: string;
-          headers: Record<string, string>;
-        };
+        const req = raw as CapturePayload;
         this.appendCapture({
           type: 'request',
           id: req.id,
           method: req.method,
           url: req.url,
-          headers: req.headers,
+          headers: normalizeHeaders(req.headers),
+          remoteIpAddress: req.remoteIpAddress,
+          remotePort: req.remotePort,
+          timing: buildTiming(req.timingEvents),
           timestamp: Date.now(),
         });
+        void readBodyPreview(req.body).then((body) => this.updateCapture('request', req.id, body));
       });
       eventEmitter.on('response', (raw) => {
-        const res = raw as { id: string; statusCode: number; headers: Record<string, string> };
+        const res = raw as CapturePayload;
+        const matchingRequest = this.captureBuffer.find(
+          (entry) => entry.type === 'request' && entry.id === res.id,
+        );
         this.appendCapture({
           type: 'response',
           id: res.id,
+          method: matchingRequest?.method,
+          url: matchingRequest?.url,
           status: res.statusCode,
-          headers: res.headers,
+          headers: normalizeHeaders(res.headers),
+          remoteIpAddress: res.remoteIpAddress,
+          remotePort: res.remotePort,
+          timing: buildTiming(res.timingEvents),
           timestamp: Date.now(),
         });
+        void readBodyPreview(res.body).then((body) => this.updateCapture('response', res.id, body));
       });
 
       await server.start(port);

@@ -46,6 +46,23 @@ async function sendRawHttpRequest(port: number, requestText: string): Promise<st
   });
 }
 
+async function waitForCapturedLogs(
+  handlers: ProxyHandlers,
+  urlFilter: string,
+  predicate: (logs: Array<Record<string, any>>) => boolean,
+): Promise<Array<Record<string, any>>> {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const logsData = parseResponse(await handlers.handleProxyGetRequests({ urlFilter }));
+    const logs = logsData.logs as Array<Record<string, any>>;
+    if (predicate(logs)) {
+      return logs;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  const finalData = parseResponse(await handlers.handleProxyGetRequests({ urlFilter }));
+  throw new Error(`Timed out waiting for captured logs: ${JSON.stringify(finalData.logs)}`);
+}
+
 // mockttp 4.4.x has an asn1.js dependency resolution issue on some Linux CI
 // environments that prevents HTTPS proxy startup. Probe once and skip HTTPS
 // tests when the TLS key parser is broken.
@@ -179,6 +196,89 @@ describe('ProxyHandlers (Integration)', () => {
 
       expect(response).toContain('200 OK');
       expect(response).toContain(upstreamBody);
+    } finally {
+      await new Promise((resolve, reject) => {
+        upstream.close((error) => (error ? reject(error) : resolve(undefined)));
+      });
+    }
+  });
+
+  it('captures request and response body previews with timing metadata', async () => {
+    const requestBody = JSON.stringify({ token: 'abc123', action: 'capture' });
+    const upstream = http.createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+      req.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        res.writeHead(202, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ received: body, path: req.url }));
+      });
+    });
+    const upstreamPort = await listen(upstream);
+    const proxyPort = testPort + 8;
+
+    try {
+      await handlers.handleProxyStart({ port: proxyPort, useHttps: false });
+      const ruleRes = await handlers.handleProxyAddRule({
+        action: 'forward',
+        method: 'POST',
+        urlPattern: '/capture-body/',
+      });
+      expect(parseResponse(ruleRes).success).toBe(true);
+
+      const response = await sendRawHttpRequest(
+        proxyPort,
+        [
+          `POST http://127.0.0.1:${upstreamPort}/capture-body HTTP/1.1`,
+          `Host: 127.0.0.1:${upstreamPort}`,
+          'Content-Type: application/json',
+          `Content-Length: ${Buffer.byteLength(requestBody)}`,
+          'Connection: close',
+          '',
+          requestBody,
+        ].join('\r\n'),
+      );
+
+      expect(response).toContain('202 Accepted');
+
+      const logs = await waitForCapturedLogs(
+        handlers,
+        'capture-body',
+        (entries) =>
+          entries.some(
+            (entry) => entry.type === 'request' && entry.bodyTextPreview === requestBody,
+          ) &&
+          entries.some(
+            (entry) =>
+              entry.type === 'response' &&
+              typeof entry.bodyTextPreview === 'string' &&
+              entry.bodyTextPreview.includes('"received"'),
+          ),
+      );
+
+      const requestLog = logs.find((entry) => entry.type === 'request')!;
+      const responseLog = logs.find((entry) => entry.type === 'response')!;
+
+      expect(requestLog).toMatchObject({
+        method: 'POST',
+        url: `http://127.0.0.1:${upstreamPort}/capture-body`,
+        bodyTextPreview: requestBody,
+        bodyEncoding: 'utf8',
+        bodyTruncated: false,
+      });
+      expect(requestLog.bodyBytes).toBe(Buffer.byteLength(requestBody));
+      expect(requestLog.bodyPreviewBytes).toBe(Buffer.byteLength(requestBody));
+      expect(requestLog.timing).toEqual(expect.objectContaining({ startedAt: expect.any(String) }));
+
+      expect(responseLog.status).toBe(202);
+      expect(responseLog.url).toBe(`http://127.0.0.1:${upstreamPort}/capture-body`);
+      expect(responseLog.bodyTextPreview).toContain('"received"');
+      expect(responseLog.timing).toEqual(
+        expect.objectContaining({
+          startedAt: expect.any(String),
+          durationMs: expect.any(Number),
+        }),
+      );
     } finally {
       await new Promise((resolve, reject) => {
         upstream.close((error) => (error ? reject(error) : resolve(undefined)));

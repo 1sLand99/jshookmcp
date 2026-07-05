@@ -34,7 +34,7 @@ const SCORES = {
   platform: [9.1, '16 tools, Phase 2 MCP-safe wrappers, M3 work'],
   process: [9.0, '27 tools, Phase 1 suspend/resume + hollowing dumps + Phase 2 MCP-safe wrappers'],
   'protocol-analysis': [9.1, '20 tools, Phase 2 MCP-safe wrappers, M2 work'],
-  proxy: [8.2, '8 tools, Phase 2 MCP-safe wrappers, body/timing still pending'],
+  proxy: [8.6, '8 tools, Phase 2 MCP-safe wrappers + Phase 3 body/timing capture'],
   sourcemap: [9.1, '6 tools, Phase 2 MCP-safe wrappers'],
   streaming: [8.6, '5 tools, Phase 2 MCP-safe wrappers'],
   'syscall-hook': [8.8, '15 tools, Phase 1 PID/returnValue filters + Phase 2 MCP-safe wrappers'],

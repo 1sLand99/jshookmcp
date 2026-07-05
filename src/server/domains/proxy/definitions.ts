@@ -26,7 +26,10 @@ export const PROXY_TOOLS: Tool[] = [
       .required('action'),
   ),
   tool('proxy_get_requests', (t) =>
-    t.desc('Read captured proxy requests.').string('urlFilter', 'Optional URL filter.').query(),
+    t
+      .desc('Read captured proxy request/response metadata, body previews, and timing.')
+      .string('urlFilter', 'Optional URL filter.')
+      .query(),
   ),
   tool('proxy_clear_logs', (t) =>
     t.desc('Clear all captured proxy request/response logs.').resettable(),
