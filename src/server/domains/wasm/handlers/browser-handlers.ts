@@ -200,6 +200,7 @@ export class BrowserHandlers {
   }
 
   async handleWasmMemoryInspect(args: Record<string, unknown>) {
+    const instanceIndex = argNumber(args, 'instanceIndex', 0);
     const offset = argNumber(args, 'offset', 0);
     const length = Math.min(argNumber(args, 'length', 256), 65536);
     const format = argString(args, 'format', 'both');
@@ -208,7 +209,7 @@ export class BrowserHandlers {
     const page = await this.state.collector.getActivePage();
 
     const memData: WasmMemoryInspectEvalResult = await page.evaluate(
-      (opts: { offset: number; length: number; searchPattern?: string }) => {
+      (opts: { instanceIndex: number; offset: number; length: number; searchPattern?: string }) => {
         const win = window as unknown as {
           __aiHooks?: Record<string, unknown>;
           __wasmInstances?: unknown[];
@@ -225,13 +226,42 @@ export class BrowserHandlers {
           };
         }
 
-        try {
-          const firstInstance = instances[0] as {
-            exports?: { memory?: { buffer?: ArrayBufferLike } };
+        // Always build an instance inventory so the caller can never silently read
+        // the wrong module on a multi-WASM page (DRM/anti-bot/crypto commonly load several).
+        // The memory-buffer probe is defensive: a throwing getter is treated as "no memory"
+        // here, and the real read below surfaces the error from the targeted instance.
+        const availableInstances = instances.map((inst, idx) => {
+          const exportsObj =
+            inst && typeof inst === 'object' && 'exports' in (inst as object)
+              ? ((inst as { exports?: Record<string, unknown> }).exports ?? {})
+              : {};
+          let hasMemory = false;
+          try {
+            hasMemory = !!(exportsObj as { memory?: { buffer?: unknown } }).memory?.buffer;
+          } catch {
+            hasMemory = false;
+          }
+          return {
+            idx,
+            exports: Object.keys(exportsObj),
+            hasMemory,
           };
-          const memory = firstInstance.exports?.memory;
+        });
+
+        try {
+          const targetInstance = instances[opts.instanceIndex] as
+            | { exports?: { memory?: { buffer?: ArrayBufferLike } } }
+            | undefined;
+          if (!targetInstance) {
+            return {
+              error: `instanceIndex ${opts.instanceIndex} out of range (totalInstances: ${instances.length}). Available instances: ${JSON.stringify(availableInstances)}`,
+            };
+          }
+          const memory = targetInstance.exports?.memory;
           if (!memory?.buffer) {
-            return { error: 'WASM module has no exported memory.' };
+            return {
+              error: `WASM instance #${opts.instanceIndex} has no exported memory. Available instances: ${JSON.stringify(availableInstances)}`,
+            };
           }
 
           const buffer = new Uint8Array(memory.buffer);
@@ -295,6 +325,9 @@ export class BrowserHandlers {
             totalMemoryBytes: memory.buffer.byteLength,
             requestedOffset: opts.offset,
             requestedLength: opts.length,
+            instanceIndex: opts.instanceIndex,
+            totalInstances: instances.length,
+            availableInstances,
             data: slice,
             searchResults,
             memoryInfo: memoryEvents[0] || null,
@@ -304,7 +337,7 @@ export class BrowserHandlers {
           return { error: `Failed to read WASM memory: ${message}` };
         }
       },
-      { offset, length, searchPattern },
+      { instanceIndex, offset, length, searchPattern },
     );
 
     if (hasErrorResult(memData)) {
@@ -345,6 +378,9 @@ export class BrowserHandlers {
               success: true,
               totalMemoryPages: memData.totalMemoryPages,
               totalMemoryBytes: memData.totalMemoryBytes,
+              instanceIndex: memData.instanceIndex,
+              totalInstances: memData.totalInstances,
+              availableInstances: memData.availableInstances,
               offset,
               length: data.length,
               hexDump: format !== 'ascii' ? hexDump : undefined,

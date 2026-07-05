@@ -47,11 +47,24 @@ export interface WasmMemorySearchResult {
   offset: number;
 }
 
+/** Inventory entry for one captured WASM instance. */
+export interface WasmInstanceInfo {
+  idx: number;
+  exports: string[];
+  hasMemory: boolean;
+}
+
 export interface WasmMemoryInspectEvalSuccess {
   totalMemoryPages: number;
   totalMemoryBytes: number;
   requestedOffset: number;
   requestedLength: number;
+  /** Which instance was read (0-based). */
+  instanceIndex: number;
+  /** Total number of captured WASM instances on the page. */
+  totalInstances: number;
+  /** Inventory of every instance, so callers can target a different one. */
+  availableInstances: WasmInstanceInfo[];
   data: number[];
   searchResults?: WasmMemorySearchResult[];
   memoryInfo: unknown;

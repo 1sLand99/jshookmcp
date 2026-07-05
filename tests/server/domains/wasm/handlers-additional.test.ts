@@ -1080,6 +1080,99 @@ describe('WasmToolHandlers – additional coverage', () => {
       expect(body.error).toContain('Failed to read WASM memory');
       expect(body.error).toContain('boom');
     });
+
+    // ── multi-instance fixes (instances[0] silent-wrong-read bug) ──
+
+    it('reads the instance specified by instanceIndex on a multi-module page', async () => {
+      const originalWindow = (globalThis as any).window;
+      const bufA = new Uint8Array([0xaa]).buffer;
+      const bufB = new Uint8Array([0xbb, 0xbb]).buffer;
+      const fakeWindow = {
+        __aiHooks: { 'preset-webassembly-full': [] },
+        __wasmInstances: [
+          { exports: { memory: { buffer: bufA }, foo: () => 0 } },
+          { exports: { memory: { buffer: bufB }, bar: () => 0 } },
+        ],
+      } as any;
+      fakeWindow.window = fakeWindow;
+      (globalThis as any).window = fakeWindow;
+
+      page.evaluate.mockImplementation(async (fn: unknown, opts: unknown) =>
+        (fn as (opts: unknown) => unknown)(opts),
+      );
+
+      try {
+        const body = parseJson<any>(
+          await handlers.handleWasmMemoryInspect({ instanceIndex: 1, length: 2 }),
+        );
+        expect(body.success).toBe(true);
+        expect(body.instanceIndex).toBe(1);
+        expect(body.totalInstances).toBe(2);
+        expect(body.availableInstances).toHaveLength(2);
+        expect(body.availableInstances[1]!.exports).toContain('bar');
+        // Buffer B is [0xbb, 0xbb] — proves we read instance #1, not #0
+        expect(body.hexDump).toContain('bb bb');
+      } finally {
+        page.evaluate.mockReset();
+        (globalThis as any).window = originalWindow;
+      }
+    });
+
+    it('includes totalInstances + availableInstances on the default read (no silent wrong module)', async () => {
+      const originalWindow = (globalThis as any).window;
+      const bufA = new Uint8Array([0xaa]).buffer;
+      const bufB = new Uint8Array([0xbb]).buffer;
+      const fakeWindow = {
+        __aiHooks: { 'preset-webassembly-full': [] },
+        __wasmInstances: [
+          { exports: { memory: { buffer: bufA } } },
+          { exports: { memory: { buffer: bufB } } },
+        ],
+      } as any;
+      fakeWindow.window = fakeWindow;
+      (globalThis as any).window = fakeWindow;
+
+      page.evaluate.mockImplementation(async (fn: unknown, opts: unknown) =>
+        (fn as (opts: unknown) => unknown)(opts),
+      );
+
+      try {
+        const body = parseJson<any>(await handlers.handleWasmMemoryInspect({}));
+        expect(body.success).toBe(true);
+        expect(body.instanceIndex).toBe(0);
+        expect(body.totalInstances).toBe(2);
+        expect(body.availableInstances).toHaveLength(2);
+        expect(body.availableInstances[0]!.hasMemory).toBe(true);
+        expect(body.availableInstances[1]!.hasMemory).toBe(true);
+      } finally {
+        page.evaluate.mockReset();
+        (globalThis as any).window = originalWindow;
+      }
+    });
+
+    it('returns an error listing available instances when instanceIndex is out of range', async () => {
+      const originalWindow = (globalThis as any).window;
+      const fakeWindow = {
+        __aiHooks: { 'preset-webassembly-full': [] },
+        __wasmInstances: [{ exports: { memory: { buffer: new Uint8Array([0]).buffer } } }],
+      } as any;
+      fakeWindow.window = fakeWindow;
+      (globalThis as any).window = fakeWindow;
+
+      page.evaluate.mockImplementation(async (fn: unknown, opts: unknown) =>
+        (fn as (opts: unknown) => unknown)(opts),
+      );
+
+      try {
+        const body = parseJson<any>(await handlers.handleWasmMemoryInspect({ instanceIndex: 5 }));
+        expect(body.success).toBe(false);
+        expect(body.error).toContain('out of range');
+        expect(body.error).toContain('totalInstances: 1');
+      } finally {
+        page.evaluate.mockReset();
+        (globalThis as any).window = originalWindow;
+      }
+    });
   });
 
   // ── wasm_memory_inspect — ASCII pattern search (lines 698-716) ──

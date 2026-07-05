@@ -79,7 +79,18 @@ export const wasmTools: Tool[] = [
   ),
   tool('wasm_memory_inspect', (t) =>
     t
-      .desc('Inspect exported WebAssembly.Memory from the current page.')
+      .desc(
+        'Inspect exported WebAssembly.Memory from the current page. ' +
+          'Pages often load multiple WASM modules (crypto/DRM/app) — the response always includes ' +
+          'totalInstances + an instance inventory; pass instanceIndex to target a specific module.',
+      )
+      .number(
+        'instanceIndex',
+        'Which captured WASM instance to read (0-based). Out-of-range returns the instance list.',
+        {
+          default: 0,
+        },
+      )
       .number('offset', 'Starting byte offset to read from', { default: 0 })
       .number('length', 'Number of bytes to read', { default: 256 })
       .enum('format', ['hex', 'ascii', 'both'], 'Output format', { default: 'both' })
