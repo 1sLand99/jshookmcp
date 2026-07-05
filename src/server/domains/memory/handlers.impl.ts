@@ -35,10 +35,15 @@ import { StructureHandlers } from './handlers/structure';
 import { HookHandlers } from './handlers/hooks';
 import { ReadWriteHandlers } from './handlers/readwrite';
 import { IntegrityHandlers } from './handlers/integrity';
-import { FindAccessesHandlers } from './handlers/find-accesses';
+import {
+  FindAccessesHandlers,
+  type DisassemblerFn,
+  type MemoryReaderFn,
+} from './handlers/find-accesses';
 import { RegionHandlers } from './handlers/region-enumerate';
 import { MinidumpHandlers } from './handlers/minidump-parse';
 import { MemoryAuditTrail } from '@modules/process/memory/AuditTrail';
+import { logger } from '@utils/logger';
 
 export class MemoryScanHandlers {
   private readonly sessions: SessionHandlers;
@@ -86,7 +91,13 @@ export class MemoryScanHandlers {
       this.auditTrail,
     );
     this.regions = new RegionHandlers();
-    this.findAccesses = new FindAccessesHandlers(bpEngine, null);
+    this.findAccesses = new FindAccessesHandlers(
+      bpEngine,
+      makeMemoryReader(memCtrl),
+      makeDisassemblerAdapter(),
+      processManager,
+      ctx,
+    );
     this.minidump = new MinidumpHandlers();
   }
 
@@ -235,4 +246,76 @@ export class MemoryScanHandlers {
 
   handleMemoryParseDump = (args: Record<string, unknown>) =>
     this.minidump.handleMemoryParseDump(args);
+}
+
+// ── FindAccessesHandlers dependency adapters ──
+//
+// `makeMemoryReader` wraps the already-injected MemoryController (Win32 koffi
+// ReadProcessMemory). `makeDisassemblerAdapter` wraps the exploit-dev Capstone
+// Disassembler. Both are only exercised when find-accesses runs (Win32-only —
+// the bpEngine is null on other platforms and the handler throws early), so
+// capstone-wasm is never loaded on non-Win32.
+
+/**
+ * Build a MemoryReaderFn over MemoryController.dumpMemory.
+ * Returns hex-encoded bytes ("DE AD BE EF ...") on success, or an error
+ * result on failure — never throws (the handler treats failure as
+ * instructionBytes=null rather than crashing the trace loop).
+ */
+function makeMemoryReader(memCtrl: MemoryController): MemoryReaderFn {
+  return async (pid, address, size) => {
+    try {
+      const buf = await memCtrl.dumpMemory(pid, address, size);
+      const hex = Array.from(buf)
+        .map((b) => b.toString(16).padStart(2, '0').toUpperCase())
+        .join(' ');
+      return { success: true, data: hex };
+    } catch (err) {
+      logger.debug('memory_find_accesses: MemoryController.dumpMemory failed:', err);
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  };
+}
+
+/**
+ * Build a DisassemblerFn adapter over the exploit-dev Capstone Disassembler.
+ *
+ * The Disassembler module is lazy-imported on first call so capstone-wasm is
+ * only loaded when find-accesses actually disassembles a hit (Win32 runtime).
+ *
+ * Architecture defaults to x64 — the overwhelmingly common Win32 target. A
+ * WOW64 (32-bit) process will produce wrong mnemonics; this is a known
+ * limitation (follow-up: detect IsWow64Process and switch to x86).
+ */
+function makeDisassemblerAdapter(): DisassemblerFn {
+  let disasmInstance: import('@server/domains/exploit-dev/utils/disasm').Disassembler | null = null;
+
+  return async (instructionBytes, instructionAddress) => {
+    if (!disasmInstance) {
+      const { Disassembler } = await import('@server/domains/exploit-dev/utils/disasm');
+      disasmInstance = new Disassembler();
+    }
+
+    const buf = Buffer.from(instructionBytes);
+    const addrNum = parseInt(instructionAddress.replace(/^0x/i, ''), 16);
+    if (Number.isNaN(addrNum)) {
+      throw new Error(`Invalid instruction address: ${instructionAddress}`);
+    }
+
+    const instrs = await disasmInstance.disassemble(buf, {
+      arch: 'x64',
+      offset: addrNum,
+      count: 1,
+    });
+
+    if (instrs.length === 0) {
+      throw new Error('Capstone returned no instructions for the given bytes');
+    }
+
+    const first = instrs[0]!;
+    return first.opStr ? `${first.mnemonic} ${first.opStr}` : first.mnemonic;
+  };
 }
