@@ -93,7 +93,7 @@
     "domain": "canvas",
     "dims": {
       "d1_toolCount": 5,
-      "d2_testFiles": 12,
+      "d2_testFiles": 14,
       "d3_coverageExcluded": [
         "src/server/domains/canvas/dependencies.ts",
         "src/server/domains/canvas/handlers.ts",
@@ -102,7 +102,7 @@
         "src/server/domains/canvas/adapters/phaser-adapter.ts",
         "src/server/domains/canvas/adapters"
       ],
-      "d4_bareCatch": 13,
+      "d4_bareCatch": 15,
       "d5_handleSafeRefs": 0,
       "d6_doc": {
         "hasClaude": true,
@@ -201,11 +201,11 @@
       "d1_toolCount": 0,
       "d2_testFiles": 19,
       "d3_coverageExcluded": [],
-      "d4_bareCatch": 6,
+      "d4_bareCatch": 7,
       "d5_handleSafeRefs": 24,
       "d6_doc": {
-        "hasClaude": false,
-        "hasScore": false,
+        "hasClaude": true,
+        "hasScore": true,
         "hasPrereq": false,
         "hasToolDeps": false
       }
@@ -294,7 +294,7 @@
       "d1_toolCount": 34,
       "d2_testFiles": 18,
       "d3_coverageExcluded": ["src/server/domains/memory/handlers.impl.ts"],
-      "d4_bareCatch": 4,
+      "d4_bareCatch": 3,
       "d5_handleSafeRefs": 57,
       "d6_doc": {
         "hasClaude": true,
@@ -552,7 +552,7 @@
         "src/server/domains/wasm/handlers.ts",
         "src/server/domains/wasm/handlers.impl.ts"
       ],
-      "d4_bareCatch": 1,
+      "d4_bareCatch": 2,
       "d5_handleSafeRefs": 0,
       "d6_doc": {
         "hasClaude": true,
