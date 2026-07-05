@@ -12,13 +12,13 @@ const registrations = defineMethodRegistrations<H, (typeof transformTools)[numbe
   depKey: DEP_KEY,
   lookup: t,
   entries: [
-    { tool: 'ast_transform_preview', method: 'handleAstTransformPreview' },
-    { tool: 'ast_transform_chain', method: 'handleAstTransformChain' },
-    { tool: 'ast_transform_apply', method: 'handleAstTransformApply' },
-    { tool: 'crypto_extract_standalone', method: 'handleCryptoExtractStandalone' },
-    { tool: 'crypto_test_harness', method: 'handleCryptoTestHarness' },
-    { tool: 'crypto_compare', method: 'handleCryptoCompare' },
-    { tool: 'transform_workbench', method: 'handleTransformWorkbench' },
+    { tool: 'ast_transform_preview', method: 'handleAstTransformPreviewTool' },
+    { tool: 'ast_transform_chain', method: 'handleAstTransformChainTool' },
+    { tool: 'ast_transform_apply', method: 'handleAstTransformApplyTool' },
+    { tool: 'crypto_extract_standalone', method: 'handleCryptoExtractStandaloneTool' },
+    { tool: 'crypto_test_harness', method: 'handleCryptoTestHarnessTool' },
+    { tool: 'crypto_compare', method: 'handleCryptoCompareTool' },
+    { tool: 'transform_workbench', method: 'handleTransformWorkbenchTool' },
   ],
 });
 

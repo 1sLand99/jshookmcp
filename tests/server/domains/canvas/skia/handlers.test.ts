@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { PageController } from '@server/domains/shared/modules/collector';
+import { ResponseBuilder } from '@server/domains/shared/ResponseBuilder';
 
 vi.mock('@modules/skia-capture/SkiaSceneExtractor', () => {
   const detectSkiaRenderer = vi.fn().mockResolvedValue({
@@ -67,11 +68,33 @@ describe('SkiaCaptureHandlers', () => {
       );
     });
 
+    it('turns wrapper prerequisite failures into structured responses', async () => {
+      const handlers = new SkiaCaptureHandlers({ pageController: null });
+      const result = await handlers.handleSkiaDetectRendererTool({});
+      const body = ResponseBuilder.parse<Record<string, unknown>>(result);
+      expect(body).toMatchObject({
+        success: false,
+        error: 'PageController not available — ensure browser is connected',
+        message: 'PageController not available — ensure browser is connected',
+      });
+    });
+
     it('should call detectRenderer successfully', async () => {
       const handlers = new SkiaCaptureHandlers({ pageController: makeMockPC() });
       const result = await handlers.handleSkiaDetectRenderer({});
       expect(result).toHaveProperty('rendererInfo');
       expect(result).toHaveProperty('detectionComplete', true);
+    });
+
+    it('wraps successful renderer detection output', async () => {
+      const handlers = new SkiaCaptureHandlers({ pageController: makeMockPC() });
+      const result = await handlers.handleSkiaDetectRendererTool({});
+      const body = ResponseBuilder.parse<Record<string, unknown>>(result);
+      expect(body).toMatchObject({
+        success: true,
+        detectionComplete: true,
+      });
+      expect(body.content).toBeUndefined();
     });
   });
 

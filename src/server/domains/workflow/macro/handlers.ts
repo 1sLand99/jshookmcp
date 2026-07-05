@@ -13,6 +13,7 @@ import { BUILTIN_MACROS } from '@server/macros/builtins';
 import { getProjectRoot } from '@utils/outputPaths';
 import type { MCPServerContext } from '@server/MCPServer.context';
 import type { MacroDefinition } from '@server/macros/types';
+import { handleSafe, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
 
 export class MacroToolHandlers {
   private readonly runner: MacroRunner;
@@ -49,6 +50,14 @@ export class MacroToolHandlers {
     }
 
     return this.macros;
+  }
+
+  async handleRunMacroTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleRunMacro(args));
+  }
+
+  async handleListMacrosTool(): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleListMacros());
   }
 
   async handleRunMacro(args: Record<string, unknown>): Promise<unknown> {

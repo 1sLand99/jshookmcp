@@ -9,6 +9,7 @@ import type { CodeCollector } from '@server/domains/shared/modules/collector';
 import { parseProtobufMessage } from '@server/domains/encoding/encoding-protobuf';
 import { decodeMsgPack } from '@server/domains/encoding/encoding-msgpack';
 import { argString, argNumber, argEnum } from '@server/domains/shared/parse-args';
+import { handleSafe, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
 import {
   DECODE_ENCODING_SET,
   DETECT_SOURCE_SET,
@@ -99,6 +100,26 @@ export class EncodingToolHandlers {
     }
 
     return resolveRequestBodyFromActivePage(this.collector, requestId);
+  }
+
+  async handleBinaryDetectFormatTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleBinaryDetectFormat(args));
+  }
+
+  async handleBinaryDecodeTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleBinaryDecode(args));
+  }
+
+  async handleBinaryEncodeTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleBinaryEncode(args));
+  }
+
+  async handleBinaryEntropyAnalysisTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleBinaryEntropyAnalysis(args));
+  }
+
+  async handleProtobufDecodeRawTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleProtobufDecodeRaw(args));
   }
 
   async handleBinaryDetectFormat(args: Record<string, unknown>) {

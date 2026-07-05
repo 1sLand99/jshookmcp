@@ -4,6 +4,7 @@
  * Delegates to handlers/skia-detect.ts for actual implementation.
  */
 import { ToolError } from '@errors/ToolError';
+import { handleSafe, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
 import type { PageController } from '@server/domains/shared/modules/collector';
 import { detectRenderer, dumpScene, correlateObjects } from './skia-detect';
 import type { JSObjectInfo } from '@modules/skia-capture/SkiaObjectCorrelator';
@@ -21,6 +22,18 @@ export class SkiaCaptureHandlers {
 
   constructor(deps: SkiaCaptureDomainDependencies) {
     this.deps = deps;
+  }
+
+  async handleSkiaDetectRendererTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSkiaDetectRenderer(args));
+  }
+
+  async handleSkiaExtractSceneTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSkiaExtractScene(args));
+  }
+
+  async handleSkiaCorrelateObjectsTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSkiaCorrelateObjects(args));
   }
 
   async handleSkiaDetectRenderer(args: Record<string, unknown>): Promise<unknown> {

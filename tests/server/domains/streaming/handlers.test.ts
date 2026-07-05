@@ -129,4 +129,24 @@ describe('StreamingToolHandlers', () => {
     // @ts-expect-error — auto-suppressed [TS18046]
     expect(body.error).toContain('Invalid urlFilter regex');
   });
+
+  it('keeps wrapper responses un-nested for ws connection reads', async () => {
+    const body = parseJson<any>(await handlers.handleWsGetConnectionsTool({}));
+    expect(body.success).toBe(true);
+    expect(body.connections).toEqual([]);
+    expect(body.content).toBeUndefined();
+  });
+
+  it('turns thrown wrapper failures into structured errors', async () => {
+    const failingHandlers = new StreamingToolHandlers({
+      getActivePage: vi.fn().mockRejectedValue(new Error('no active page')),
+    } as any);
+
+    const body = parseJson<any>(await failingHandlers.handleWsMonitorDispatchTool({}));
+    expect(body).toMatchObject({
+      success: false,
+      error: 'no active page',
+      message: 'no active page',
+    });
+  });
 });

@@ -23,13 +23,13 @@ const registrations = defineMethodRegistrations<
   depKey: DEP_KEY,
   lookup: t,
   entries: [
-    { tool: 'page_script_register', method: 'handlePageScriptRegister' },
-    { tool: 'page_script_run', method: 'handlePageScriptRun' },
-    { tool: 'api_probe_batch', method: 'handleApiProbeBatch' },
-    { tool: 'js_bundle_search', method: 'handleJsBundleSearch' },
-    { tool: 'list_extension_workflows', method: 'handleListExtensionWorkflows' },
-    { tool: 'run_extension_workflow', method: 'handleRunExtensionWorkflow' },
-    { tool: 'reverse_session', method: 'handleReverseSession', profiles: ['full'] },
+    { tool: 'page_script_register', method: 'handlePageScriptRegisterTool' },
+    { tool: 'page_script_run', method: 'handlePageScriptRunTool' },
+    { tool: 'api_probe_batch', method: 'handleApiProbeBatchTool' },
+    { tool: 'js_bundle_search', method: 'handleJsBundleSearchTool' },
+    { tool: 'list_extension_workflows', method: 'handleListExtensionWorkflowsTool' },
+    { tool: 'run_extension_workflow', method: 'handleRunExtensionWorkflowTool' },
+    { tool: 'reverse_session', method: 'handleReverseSessionTool', profiles: ['full'] },
   ],
 });
 const macroRegistrations = defineMethodRegistrations<M, (typeof macroTools)[number]['name']>({
@@ -37,8 +37,8 @@ const macroRegistrations = defineMethodRegistrations<M, (typeof macroTools)[numb
   depKey: MACRO_DEP_KEY,
   lookup: t,
   entries: [
-    { tool: 'run_macro', method: 'handleRunMacro', profiles: ['full'] },
-    { tool: 'list_macros', method: 'handleListMacros', profiles: ['full'] },
+    { tool: 'run_macro', method: 'handleRunMacroTool', profiles: ['full'] },
+    { tool: 'list_macros', method: 'handleListMacrosTool', profiles: ['full'] },
   ],
 });
 

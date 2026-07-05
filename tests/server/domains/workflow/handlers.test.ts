@@ -255,6 +255,25 @@ describe('WorkflowHandlers', () => {
     expect(body.workflows[0].id).toBe('workflow.demo.v1');
   });
 
+  it('keeps workflow wrapper responses un-nested', async () => {
+    deps.serverContext.extensionWorkflowsById.set('workflow.demo.v1', {
+      id: 'workflow.demo.v1',
+      displayName: 'Demo Workflow',
+      source: 'fixtures/demo.workflow.ts',
+      description: 'demo description',
+      tags: ['demo'],
+      timeoutMs: 5000,
+      defaultMaxConcurrency: 2,
+    });
+
+    const body = parseJson<ListWorkflowsResponse & { content?: unknown }>(
+      await handlers.handleListExtensionWorkflowsTool(),
+    );
+    expect(body.success).toBe(true);
+    expect(body.count).toBe(1);
+    expect(body.content).toBeUndefined();
+  });
+
   it('executes a loaded extension workflow with node input overrides', async () => {
     const workflow: WorkflowContract = defineWorkflow('workflow.demo.v1', 'Demo Workflow', (w) =>
       w.buildGraph(() => toolStep('demo-node', 'demo_tool', { input: { value: 'base' } })),

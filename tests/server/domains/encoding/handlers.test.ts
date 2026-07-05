@@ -54,6 +54,26 @@ describe('EncodingToolHandlers', () => {
     expect(body.output).toBe(Buffer.from('hello', 'utf8').toString('base64'));
   });
 
+  it('keeps wrapper success responses un-nested', async () => {
+    const body = parseJson<any>(
+      await handlers.handleBinaryEncodeTool({
+        data: 'hello',
+        inputFormat: 'utf8',
+        outputEncoding: 'base64',
+      }),
+    );
+    expect(body.success).toBe(true);
+    expect(body.output).toBe(Buffer.from('hello', 'utf8').toString('base64'));
+    expect(body.content).toBeUndefined();
+  });
+
+  it('keeps wrapper validation responses un-nested', async () => {
+    const body = parseJson<any>(await handlers.handleBinaryDecodeTool({ encoding: 'base64' }));
+    expect(body.success).toBe(false);
+    expect(body.tool).toBe('binary_decode');
+    expect(body.content).toBeUndefined();
+  });
+
   it('returns error for invalid entropy source', async () => {
     const body = parseJson<any>(await handlers.handleBinaryEntropyAnalysis({ source: 'oops' }));
     expect(body.success).toBe(false);

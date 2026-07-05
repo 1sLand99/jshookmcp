@@ -6,6 +6,7 @@
  */
 
 import type { WorkflowHandlersDeps } from './handlers/shared';
+import { handleSafe, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
 import { createWorkflowSharedState } from './handlers/shared';
 import { ScriptHandlers } from './handlers/script-handlers';
 import { ApiHandlers } from './handlers/api-handlers';
@@ -30,6 +31,34 @@ export class WorkflowHandlers {
         ? (toolName, args) => deps.serverContext!.executeToolWithTracking(toolName, args)
         : undefined,
     );
+  }
+
+  async handlePageScriptRegisterTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handlePageScriptRegister(args));
+  }
+
+  async handlePageScriptRunTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handlePageScriptRun(args));
+  }
+
+  async handleListExtensionWorkflowsTool(): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleListExtensionWorkflows());
+  }
+
+  async handleRunExtensionWorkflowTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleRunExtensionWorkflow(args));
+  }
+
+  async handleApiProbeBatchTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleApiProbeBatch(args));
+  }
+
+  async handleJsBundleSearchTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleJsBundleSearch(args));
+  }
+
+  async handleReverseSessionTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleReverseSession(args));
   }
 
   handlePageScriptRegister(args: Record<string, unknown>) {

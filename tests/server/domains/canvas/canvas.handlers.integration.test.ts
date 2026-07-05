@@ -279,6 +279,26 @@ describe('canvas_engine_fingerprint integration', () => {
     expect(parsed.candidates.some((c) => c.engine === 'LayaAir')).toBe(true);
   });
 
+  it('keeps fingerprint wrapper responses un-nested', async () => {
+    pageController.evaluate = vi
+      .fn()
+      .mockResolvedValueOnce([
+        { pattern: 'Laya', adapterId: 'laya', engine: 'LayaAir', present: true, version: '2.14.0' },
+      ])
+      .mockResolvedValueOnce([
+        { id: 'game-canvas', width: 1920, height: 1080, contextType: 'webgl2' },
+      ])
+      .mockResolvedValueOnce(false);
+
+    const result = await handlers.handleFingerprintTool({});
+    const parsed = parseJsonResponse<{ candidates: Array<{ engine: string }>; content?: unknown }>(
+      result,
+    );
+
+    expect(parsed.candidates.some((c) => c.engine === 'LayaAir')).toBe(true);
+    expect(parsed.content).toBeUndefined();
+  });
+
   it('detects PixiJS from global window.PIXI', async () => {
     pageController.evaluate = vi
       .fn()

@@ -62,6 +62,13 @@ describe('MacroToolHandlers', () => {
       expect(data.macros.find((m: any) => m.id === 'custom_macro')).toBeDefined();
     });
 
+    it('keeps list wrapper output un-nested', async () => {
+      const result = (await handlers.handleListMacrosTool()) as any;
+      const data = JSON.parse(result.content[0].text);
+      expect(data.macros).toBeInstanceOf(Array);
+      expect(data.content).toBeUndefined();
+    });
+
     it('should ignore user macro loading errors and fallback to built-ins', async () => {
       vi.spyOn(MacroConfigLoader, 'loadFromDirectory').mockRejectedValueOnce(
         new Error('dir issue'),
@@ -85,6 +92,16 @@ describe('MacroToolHandlers', () => {
     it('should return error if macroId is missing', async () => {
       const result = (await handlers.handleRunMacro({})) as any;
       expect(result.content[0].text).toContain('macroId parameter is required');
+    });
+
+    it('keeps run wrapper validation output un-nested', async () => {
+      const result = (await handlers.handleRunMacroTool({})) as any;
+      const data = JSON.parse(result.content[0].text);
+      expect(data).toMatchObject({
+        ok: false,
+        error: 'macroId parameter is required',
+      });
+      expect(data.content).toBeUndefined();
     });
 
     it('should return error if macro not found', async () => {

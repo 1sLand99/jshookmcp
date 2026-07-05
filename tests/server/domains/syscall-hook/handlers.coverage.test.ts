@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SyscallHookHandlers } from '@server/domains/syscall-hook/handlers.impl';
+import { ResponseBuilder } from '@server/domains/shared/ResponseBuilder';
 
 // ---------------------------------------------------------------------------
 // Helpers — mock creation
@@ -219,6 +220,33 @@ describe('SyscallHookHandlers — coverage expansion', () => {
     it('does not validate pid when not provided at all', async () => {
       const result = await handlers.handleSyscallStartMonitor({ backend: 'etw' });
       expect(result).toMatchObject({ ok: true });
+    });
+  });
+
+  // =========================================================================
+  // MCP-safe wrappers
+  // =========================================================================
+  describe('MCP-safe tool wrappers', () => {
+    it('wraps plain object handler output in a ToolResponse', async () => {
+      const response = await handlers.handleSyscallGetStatsTool();
+      const body = ResponseBuilder.parse<Record<string, unknown>>(response);
+      expect(body).toMatchObject({
+        success: true,
+        ok: true,
+        running: false,
+      });
+      expect(body.content).toBeUndefined();
+    });
+
+    it('turns thrown monitor failures into structured errors', async () => {
+      monitor.captureEvents.mockRejectedValueOnce(new Error('capture failed'));
+      const response = await handlers.handleSyscallCaptureEventsTool({});
+      const body = ResponseBuilder.parse<Record<string, unknown>>(response);
+      expect(body).toMatchObject({
+        success: false,
+        error: 'capture failed',
+        message: 'capture failed',
+      });
     });
   });
 

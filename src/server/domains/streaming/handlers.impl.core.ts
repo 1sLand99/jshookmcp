@@ -6,6 +6,7 @@
  */
 
 import type { CodeCollector } from '@server/domains/shared/modules/collector';
+import { handleSafe, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
 import { createStreamingSharedState, type StreamingSharedState } from './handlers/shared';
 import { WsHandlers } from './handlers/ws-handlers';
 import { SseHandlers } from './handlers/sse-handlers';
@@ -56,6 +57,18 @@ export class StreamingToolHandlers {
 
   // ── WebSocket ──
 
+  async handleWsMonitorDispatchTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleWsMonitorDispatch(args));
+  }
+
+  async handleWsGetFramesTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleWsGetFrames(args));
+  }
+
+  async handleWsGetConnectionsTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleWsGetConnections(args));
+  }
+
   handleWsMonitorDispatch = (args: Record<string, unknown>) => {
     const action = String(args['action'] ?? '');
     return action === 'disable'
@@ -68,6 +81,14 @@ export class StreamingToolHandlers {
   handleWsGetConnections = (args: Record<string, unknown>) => this.ws.handleWsGetConnections(args);
 
   // ── SSE ──
+
+  async handleSseMonitorEnableTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSseMonitorEnable(args));
+  }
+
+  async handleSseGetEventsTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSseGetEvents(args));
+  }
 
   handleSseMonitorEnable = (args: Record<string, unknown>) => this.sse.handleSseMonitorEnable(args);
   handleSseGetEvents = (args: Record<string, unknown>) => this.sse.handleSseGetEvents(args);

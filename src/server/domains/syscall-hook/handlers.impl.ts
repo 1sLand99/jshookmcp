@@ -6,6 +6,7 @@ import {
   type SyscallEvent,
 } from '@modules/syscall-hook';
 import type { EventBus, ServerEventMap } from '@server/EventBus';
+import { handleSafe, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
 import { asJsonResponse } from '@server/domains/shared/response';
 import { checkSyscallPermission } from './permission-check';
 import { DirectNtApiHandlers } from './handlers/direct-nt';
@@ -169,6 +170,66 @@ export class SyscallHookHandlers {
     private directNt = new DirectNtApiHandlers(),
     private ctx?: MCPServerContext,
   ) {}
+
+  async handleSyscallStartMonitorTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSyscallStartMonitor(args));
+  }
+
+  async handleSyscallStopMonitorTool(): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSyscallStopMonitor());
+  }
+
+  async handleSyscallCaptureEventsTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSyscallCaptureEvents(args));
+  }
+
+  async handleSyscallCorrelateJsTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSyscallCorrelateJs(args));
+  }
+
+  async handleSyscallFilterTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSyscallFilter(args));
+  }
+
+  async handleSyscallGetStatsTool(): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSyscallGetStats());
+  }
+
+  async handleSyscallEbpfTraceTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSyscallEbpfTrace(args));
+  }
+
+  async handleSyscallResolveSsnTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSyscallResolveSsn(args));
+  }
+
+  async handleSyscallDirectInvokeTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSyscallDirectInvoke(args));
+  }
+
+  async handleSyscallStackCaptureTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSyscallStackCapture(args));
+  }
+
+  async handleSyscallTraceCompareTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSyscallTraceCompare(args));
+  }
+
+  async handleSyscallTraceExportTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSyscallTraceExport(args));
+  }
+
+  async handleSyscallEbpfAttachTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSyscallEbpfAttach(args));
+  }
+
+  async handleSyscallOriginMapTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSyscallOriginMap(args));
+  }
+
+  async handleSyscallPatternDetectTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSyscallPatternDetect(args));
+  }
 
   async handleSyscallStartMonitor(args: Record<string, unknown>): Promise<unknown> {
     const backend = readBackend(args['backend']);

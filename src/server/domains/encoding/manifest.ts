@@ -16,11 +16,11 @@ const registrations = defineMethodRegistrations<H, (typeof encodingTools)[number
   depKey: DEP_KEY,
   lookup: t,
   entries: [
-    { tool: 'binary_detect_format', method: 'handleBinaryDetectFormat' },
-    { tool: 'binary_decode', method: 'handleBinaryDecode' },
-    { tool: 'binary_encode', method: 'handleBinaryEncode' },
-    { tool: 'binary_entropy_analysis', method: 'handleBinaryEntropyAnalysis' },
-    { tool: 'protobuf_decode_raw', method: 'handleProtobufDecodeRaw' },
+    { tool: 'binary_detect_format', method: 'handleBinaryDetectFormatTool' },
+    { tool: 'binary_decode', method: 'handleBinaryDecodeTool' },
+    { tool: 'binary_encode', method: 'handleBinaryEncodeTool' },
+    { tool: 'binary_entropy_analysis', method: 'handleBinaryEntropyAnalysisTool' },
+    { tool: 'protobuf_decode_raw', method: 'handleProtobufDecodeRawTool' },
   ],
 });
 

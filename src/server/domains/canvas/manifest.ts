@@ -8,7 +8,6 @@ import { canvasTools } from '@server/domains/canvas/definitions';
 import { skiaTools } from '@server/domains/canvas/skia/definitions';
 import type { CanvasToolHandlers } from '@server/domains/canvas/handlers';
 import type { SkiaCaptureHandlers } from '@server/domains/canvas/skia';
-import { asToolResponse } from '@server/domains/shared/response';
 import type { ReverseEvidenceGraph } from '@server/evidence/ReverseEvidenceGraph';
 import type { CanvasDomainDependencies } from '@server/domains/canvas/dependencies';
 
@@ -23,22 +22,21 @@ const registrations = defineMethodRegistrations<H, (typeof canvasTools)[number][
   depKey: DEP_KEY,
   lookup: t,
   entries: [
-    { tool: 'canvas_engine_fingerprint', method: 'handleFingerprint', profiles: ['full'] },
-    { tool: 'canvas_scene_dump', method: 'handleSceneDump', profiles: ['full'] },
-    { tool: 'canvas_pick_object_at_point', method: 'handlePick', profiles: ['full'] },
-    { tool: 'canvas_trace_click_handler', method: 'handleTraceClick', profiles: ['full'] },
-    { tool: 'canvas_scene_search', method: 'handleSceneSearch', profiles: ['full'] },
+    { tool: 'canvas_engine_fingerprint', method: 'handleFingerprintTool', profiles: ['full'] },
+    { tool: 'canvas_scene_dump', method: 'handleSceneDumpTool', profiles: ['full'] },
+    { tool: 'canvas_pick_object_at_point', method: 'handlePickTool', profiles: ['full'] },
+    { tool: 'canvas_trace_click_handler', method: 'handleTraceClickTool', profiles: ['full'] },
+    { tool: 'canvas_scene_search', method: 'handleSceneSearchTool', profiles: ['full'] },
   ],
 });
 const skiaRegistrations = defineMethodRegistrations<SK, (typeof skiaTools)[number]['name']>({
   domain: DOMAIN,
   depKey: SKIA_DEP_KEY,
   lookup: t,
-  wrapResult: asToolResponse,
   entries: [
-    { tool: 'skia_detect_renderer', method: 'handleSkiaDetectRenderer' },
-    { tool: 'skia_extract_scene', method: 'handleSkiaExtractScene' },
-    { tool: 'skia_correlate_objects', method: 'handleSkiaCorrelateObjects' },
+    { tool: 'skia_detect_renderer', method: 'handleSkiaDetectRendererTool' },
+    { tool: 'skia_extract_scene', method: 'handleSkiaExtractSceneTool' },
+    { tool: 'skia_correlate_objects', method: 'handleSkiaCorrelateObjectsTool' },
   ],
 });
 

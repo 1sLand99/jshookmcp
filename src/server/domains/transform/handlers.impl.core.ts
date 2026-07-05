@@ -7,6 +7,7 @@
  */
 
 import type { CodeCollector } from '@server/domains/shared/modules/collector';
+import { handleSafe, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
 import type { TransformSharedState } from './handlers/shared';
 import { createTransformSharedState } from './handlers/shared';
 import { AstHandlers } from './handlers/ast-handlers';
@@ -48,6 +49,34 @@ export class TransformToolHandlers {
     allPassed: boolean;
   }> {
     return this.crypto.runCryptoHarnessProxy(code, functionName, testInputs);
+  }
+
+  async handleAstTransformPreviewTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleAstTransformPreview(args));
+  }
+
+  async handleAstTransformChainTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleAstTransformChain(args));
+  }
+
+  async handleAstTransformApplyTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleAstTransformApply(args));
+  }
+
+  async handleCryptoExtractStandaloneTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleCryptoExtractStandalone(args));
+  }
+
+  async handleCryptoTestHarnessTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleCryptoTestHarness(args));
+  }
+
+  async handleCryptoCompareTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleCryptoCompare(args));
+  }
+
+  async handleTransformWorkbenchTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleTransformWorkbench(args));
   }
 
   handleAstTransformPreview = (args: Record<string, unknown>) =>

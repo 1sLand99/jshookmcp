@@ -35,6 +35,27 @@ describe('TransformToolHandlers', () => {
     expect(body.transformed).toContain('3');
   });
 
+  it('keeps wrapper preview responses un-nested', async () => {
+    const body = parseJson<any>(
+      await handlers.handleAstTransformPreviewTool({
+        code: 'const x = 1 + 2;',
+        transforms: ['constant_fold'],
+        preview: true,
+      }),
+    );
+    expect(body.appliedTransforms).toContain('constant_fold');
+    expect(body.content).toBeUndefined();
+  });
+
+  it('keeps wrapper validation responses un-nested', async () => {
+    const body = parseJson<any>(
+      await handlers.handleAstTransformPreviewTool({ transforms: ['constant_fold'] }),
+    );
+    expect(body.tool).toBe('ast_transform_preview');
+    expect(body.error).toContain('code must be a non-empty string');
+    expect(body.content).toBeUndefined();
+  });
+
   it('creates a named transform chain', async () => {
     const body = parseJson<any>(
       await handlers.handleAstTransformChain({

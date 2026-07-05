@@ -5,6 +5,7 @@
  */
 import type { ToolResponse } from '@server/types';
 import { argNumber } from '@server/domains/shared/parse-args';
+import { handleSafe } from '@server/domains/shared/ResponseBuilder';
 import { asJsonResponse } from '@server/domains/shared/response';
 import type { CanvasDomainDependencies } from '@server/domains/canvas/dependencies';
 import { handleFingerprint } from './handlers/fingerprint';
@@ -22,6 +23,26 @@ export class CanvasToolHandlers {
     this.pageController = deps.pageController;
     this.debuggerManager = deps.debuggerManager;
     this.evidenceStore = deps.evidenceStore;
+  }
+
+  async handleFingerprintTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleFingerprint(args));
+  }
+
+  async handleSceneDumpTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSceneDump(args));
+  }
+
+  async handlePickTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handlePick(args));
+  }
+
+  async handleTraceClickTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleTraceClick(args));
+  }
+
+  async handleSceneSearchTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSceneSearch(args));
   }
 
   async handleFingerprint(args: Record<string, unknown>): Promise<ToolResponse> {

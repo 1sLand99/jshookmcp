@@ -103,7 +103,7 @@
         "src/server/domains/canvas/adapters"
       ],
       "d4_bareCatch": 15,
-      "d5_handleSafeRefs": 0,
+      "d5_handleSafeRefs": 10,
       "d6_doc": {
         "hasClaude": true,
         "hasScore": true,
@@ -186,7 +186,7 @@
       "d2_testFiles": 11,
       "d3_coverageExcluded": ["src/server/domains/encoding/handlers.ts"],
       "d4_bareCatch": 12,
-      "d5_handleSafeRefs": 0,
+      "d5_handleSafeRefs": 6,
       "d6_doc": {
         "hasClaude": true,
         "hasScore": true,
@@ -483,7 +483,7 @@
         "src/server/domains/streaming/handlers/ws-handlers.ts"
       ],
       "d4_bareCatch": 6,
-      "d5_handleSafeRefs": 0,
+      "d5_handleSafeRefs": 6,
       "d6_doc": {
         "hasClaude": true,
         "hasScore": true,
@@ -502,7 +502,7 @@
         "src/server/domains/syscall-hook/handlers.ts"
       ],
       "d4_bareCatch": 6,
-      "d5_handleSafeRefs": 0,
+      "d5_handleSafeRefs": 16,
       "d6_doc": {
         "hasClaude": true,
         "hasScore": true,
@@ -534,7 +534,7 @@
       "d2_testFiles": 15,
       "d3_coverageExcluded": ["src/server/domains/transform/handlers.ts"],
       "d4_bareCatch": 14,
-      "d5_handleSafeRefs": 0,
+      "d5_handleSafeRefs": 8,
       "d6_doc": {
         "hasClaude": true,
         "hasScore": true,
@@ -601,7 +601,7 @@
       "d2_testFiles": 8,
       "d3_coverageExcluded": ["src/server/domains/workflow/handlers.ts"],
       "d4_bareCatch": 7,
-      "d5_handleSafeRefs": 0,
+      "d5_handleSafeRefs": 11,
       "d6_doc": {
         "hasClaude": true,
         "hasScore": true,

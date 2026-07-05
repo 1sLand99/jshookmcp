@@ -16,11 +16,11 @@ const registrations = defineMethodRegistrations<H, (typeof streamingTools)[numbe
   depKey: DEP_KEY,
   lookup: t,
   entries: [
-    { tool: 'ws_monitor', method: 'handleWsMonitorDispatch' },
-    { tool: 'ws_get_frames', method: 'handleWsGetFrames' },
-    { tool: 'ws_get_connections', method: 'handleWsGetConnections' },
-    { tool: 'sse_monitor_enable', method: 'handleSseMonitorEnable' },
-    { tool: 'sse_get_events', method: 'handleSseGetEvents' },
+    { tool: 'ws_monitor', method: 'handleWsMonitorDispatchTool' },
+    { tool: 'ws_get_frames', method: 'handleWsGetFramesTool' },
+    { tool: 'ws_get_connections', method: 'handleWsGetConnectionsTool' },
+    { tool: 'sse_monitor_enable', method: 'handleSseMonitorEnableTool' },
+    { tool: 'sse_get_events', method: 'handleSseGetEventsTool' },
   ],
 });
 
