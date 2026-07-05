@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises';
 import { handleSafe, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
 import { argNumber } from '@server/domains/shared/parse-args';
 import { DetailedDataManager } from '@utils/DetailedDataManager';
@@ -9,6 +10,9 @@ import {
 } from '@modules/webgpu/CDPIntegration';
 import type { MCPServerContext } from '@server/domains/shared/registry';
 import type { WebGPUDomainDependencies } from '../types';
+
+const COMMAND_CAPTURE_TIMEOUT_MS = 5000;
+const COMMAND_CAPTURE_POLL_INTERVAL_MS = 50;
 
 /**
  * Handler for webgpu_capture_commands tool
@@ -45,11 +49,7 @@ export class CommandCaptureHandler {
         const cleanup = await installGPUCommandHook(page, captureCount);
 
         try {
-          // Wait for commands to be captured (or timeout after 5 seconds)
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-
-          // Retrieve captured commands
-          const trace = await getGPUCommandTrace(page);
+          const trace = await this.waitForCapturedCommands(page, captureCount);
 
           // Analyze command patterns
           const analyzed = analyzeCommandTrace(trace);
@@ -85,5 +85,25 @@ export class CommandCaptureHandler {
     } catch {
       return null;
     }
+  }
+
+  private async waitForCapturedCommands(page: any, captureCount: number) {
+    const deadline = Date.now() + COMMAND_CAPTURE_TIMEOUT_MS;
+    let trace = await getGPUCommandTrace(page);
+
+    while (!this.isCaptureComplete(trace, captureCount) && Date.now() < deadline) {
+      const remainingMs = deadline - Date.now();
+      await delay(Math.min(COMMAND_CAPTURE_POLL_INTERVAL_MS, Math.max(remainingMs, 0)));
+      trace = await getGPUCommandTrace(page);
+    }
+
+    return trace;
+  }
+
+  private isCaptureComplete(
+    trace: Awaited<ReturnType<typeof getGPUCommandTrace>>,
+    captureCount: number,
+  ): boolean {
+    return trace.commands.length >= captureCount || trace.totalSubmissions >= captureCount;
   }
 }

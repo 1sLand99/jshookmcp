@@ -3,6 +3,14 @@ import type { MCPServerContext } from '@server/domains/shared/registry';
 import { WebGPUHandlers } from '@server/domains/webgpu/index';
 import { ResponseBuilder } from '@server/domains/shared/ResponseBuilder';
 
+function makeHandlers(page: any): WebGPUHandlers {
+  const ctx = {
+    eventBus: { emit: () => {} },
+    pageController: { getActivePage: async () => page },
+  } as unknown as MCPServerContext;
+  return new WebGPUHandlers(ctx);
+}
+
 describe('webgpu_capture_commands', () => {
   let ctx: MCPServerContext;
   let handlers: WebGPUHandlers;
@@ -40,7 +48,7 @@ describe('webgpu_capture_commands', () => {
       evaluate: vi.fn().mockImplementation(async (fn: any, ..._args: any[]) => {
         // First call installs hook (no return needed)
         // Second call gets trace
-        if (typeof fn === 'function' && String(fn).includes('__webgpuHookState')) {
+        if (typeof fn === 'function' && String(fn).includes('webgpuHookState')) {
           return {
             commands: [
               { type: 'render', drawCalls: 5, passLabel: 'main-pass', timestamp: 1.234 },
@@ -61,33 +69,30 @@ describe('webgpu_capture_commands', () => {
       }),
     };
 
-    ctx.pageController = {
-      getActivePage: async () => mockPage,
-    } as any;
+    handlers = makeHandlers(mockPage);
 
     const response = await handlers.webgpu_capture_commands({
-      captureCount: 10,
+      captureCount: 3,
     });
     const result = ResponseBuilder.parse(response);
 
-    if (result.success === true) {
-      expect(result).toHaveProperty('commands');
-      expect(result.commands).toBeInstanceOf(Array);
-      expect(result.commands.length).toBeGreaterThan(0);
+    expect(result.success).toBe(true);
+    expect(result).toHaveProperty('commands');
+    expect(result.commands).toBeInstanceOf(Array);
+    expect(result.commands.length).toBeGreaterThan(0);
 
-      const types = result.commands.map((c: any) => c.type);
-      expect(types).toContain('render');
-      expect(types).toContain('compute');
-      expect(types).toContain('copy');
-      expect(types).not.toContain('unknown');
-    }
+    const types = result.commands.map((c: any) => c.type);
+    expect(types).toContain('render');
+    expect(types).toContain('compute');
+    expect(types).toContain('copy');
+    expect(types).not.toContain('unknown');
   });
 
   it('should include drawCalls and dispatches metadata', async () => {
     const mockPage = {
       url: () => 'https://example.com/',
       evaluate: vi.fn().mockImplementation(async (fn: any, ..._args: any[]) => {
-        if (typeof fn === 'function' && String(fn).includes('__webgpuHookState')) {
+        if (typeof fn === 'function' && String(fn).includes('webgpuHookState')) {
           return {
             commands: [
               { type: 'render', drawCalls: 10, pipelineLabel: 'opaque-pipeline', timestamp: 1.0 },
@@ -112,24 +117,23 @@ describe('webgpu_capture_commands', () => {
       }),
     };
 
-    ctx.pageController = {
-      getActivePage: async () => mockPage,
-    } as any;
+    handlers = makeHandlers(mockPage);
 
     const response = await handlers.webgpu_capture_commands({
       captureCount: 2,
     });
     const result = ResponseBuilder.parse(response);
 
-    if (result.success === true && result.commands) {
-      const renderCmd = result.commands.find((c: any) => c.type === 'render');
-      const computeCmd = result.commands.find((c: any) => c.type === 'compute');
+    expect(result.success).toBe(true);
+    expect(result.commands).toBeInstanceOf(Array);
 
-      expect(renderCmd).toBeDefined();
-      expect(renderCmd.drawCalls).toBe(10);
+    const renderCmd = result.commands.find((c: any) => c.type === 'render');
+    const computeCmd = result.commands.find((c: any) => c.type === 'compute');
 
-      expect(computeCmd).toBeDefined();
-      expect(computeCmd.dispatches).toMatchObject({ x: 4, y: 4, z: 1 });
-    }
+    expect(renderCmd).toBeDefined();
+    expect(renderCmd.drawCalls).toBe(10);
+
+    expect(computeCmd).toBeDefined();
+    expect(computeCmd.dispatches).toMatchObject({ x: 4, y: 4, z: 1 });
   });
 });
