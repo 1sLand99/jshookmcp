@@ -126,7 +126,25 @@ describe('CanvasToolHandlers', () => {
       expect(resolveAdapter({ adapterId: 'pixi' })?.id).toBe('pixi');
       expect(resolveAdapter({ adapterId: 'phaser' })?.id).toBe('phaser');
       expect(resolveAdapter({ adapterId: 'cocos' })?.id).toBe('cocos');
+      expect(resolveAdapter({ adapterId: 'three' })?.id).toBe('three');
+      expect(resolveAdapter({ adapterId: 'babylon' })?.id).toBe('babylon');
       expect(resolveAdapter({ adapterId: 'unknown' })).toBeNull();
+    });
+
+    it('resolveAdapter returns ThreeJsCanvasAdapter instance for three engine', async () => {
+      const adapter = resolveAdapter({ adapterId: 'three' });
+      expect(adapter).not.toBeNull();
+      expect(adapter?.engine).toBe('Three.js');
+      expect(typeof adapter?.dumpScene).toBe('function');
+      expect(typeof adapter?.pickAt).toBe('function');
+    });
+
+    it('resolveAdapter returns BabylonCanvasAdapter instance for babylon engine', async () => {
+      const adapter = resolveAdapter({ adapterId: 'babylon' });
+      expect(adapter).not.toBeNull();
+      expect(adapter?.engine).toBe('Babylon.js');
+      expect(typeof adapter?.dumpScene).toBe('function');
+      expect(typeof adapter?.pickAt).toBe('function');
     });
 
     it('fingerprintCanvas prefers the engine associated with the requested canvas', async () => {

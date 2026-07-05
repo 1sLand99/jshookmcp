@@ -3,10 +3,12 @@
  *
  * Engine anchor patterns, adapter registry, probe env builder, and shared helpers.
  */
+import { BabylonCanvasAdapter } from '@server/domains/canvas/adapters/babylon-adapter';
 import { CocosCanvasAdapter } from '@server/domains/canvas/adapters/cocos-adapter';
 import { LayaCanvasAdapter } from '@server/domains/canvas/adapters/laya-adapter';
 import { PhaserCanvasAdapter } from '@server/domains/canvas/adapters/phaser-adapter';
 import { PixiJSCanvasAdapter } from '@server/domains/canvas/adapters/pixi-adapter';
+import { ThreeJsCanvasAdapter } from '@server/domains/canvas/adapters/three-adapter';
 import type { PageController } from '@server/domains/canvas/dependencies';
 import type {
   CanvasDetection,
@@ -34,6 +36,8 @@ const adapterFactories: Record<string, () => CanvasEngineAdapter> = {
   pixi: () => new PixiJSCanvasAdapter(),
   phaser: () => new PhaserCanvasAdapter(),
   cocos: () => new CocosCanvasAdapter(),
+  three: () => new ThreeJsCanvasAdapter(),
+  babylon: () => new BabylonCanvasAdapter(),
 };
 
 export function resolveAdapter(

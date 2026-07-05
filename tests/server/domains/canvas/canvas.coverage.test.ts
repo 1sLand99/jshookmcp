@@ -558,6 +558,56 @@ describe('canvas_scene_dump coverage', () => {
 
       expect(parsed.completeness).toBe('partial');
     });
+
+    it('returns honest Unity-unsupported message when unity is detected but no adapter', async () => {
+      // fingerprintCanvas detects unity, resolveAdapter returns null (no unity factory),
+      // partialSceneDump must name Unity as unsupported rather than silently stubbing.
+      const pageController = createSequentialMockPageController(
+        [{ engine: 'UnityWebGL', adapterId: 'unity', version: '2022.3' }],
+        [{ id: 'canvas-0', width: 1920, height: 1080, dpr: 1, contextType: 'webgl2' }],
+      );
+      const handlers = createHandlers({ pageController });
+
+      const result = await handlers.handleSceneDump({});
+      const parsed = parseJsonResponse<{
+        completeness: string;
+        engine: string;
+        adapterId: string;
+        partialReason: string;
+        reason: string;
+        fix?: string;
+      }>(result);
+
+      expect(parsed.completeness).toBe('partial');
+      expect(parsed.engine).toBe('UnityWebGL');
+      expect(parsed.adapterId).toBe('unity');
+      // Honest message names Unity — not the generic "No canvas engine detected".
+      expect(parsed.partialReason).toContain('Unity');
+      expect(parsed.partialReason).not.toContain('No canvas engine detected');
+      expect(parsed.reason).toContain('Unity');
+      expect(parsed.fix).toContain('unityInstance.SendMessage');
+    });
+
+    it('returns honest engine-named message when a non-unity engine lacks an adapter', async () => {
+      const pageController = createSequentialMockPageController(
+        [{ engine: 'MysteryEngine', adapterId: 'mystery', version: undefined }],
+        [{ id: 'canvas-0', width: 800, height: 600, dpr: 1, contextType: 'webgl' }],
+      );
+      const handlers = createHandlers({ pageController });
+
+      const result = await handlers.handleSceneDump({});
+      const parsed = parseJsonResponse<{
+        completeness: string;
+        engine: string;
+        partialReason: string;
+      }>(result);
+
+      expect(parsed.completeness).toBe('partial');
+      expect(parsed.engine).toBe('MysteryEngine');
+      // Honest message names the detected engine so the caller knows it was fingerprinted.
+      expect(parsed.partialReason).toContain('MysteryEngine');
+      expect(parsed.partialReason).not.toContain('No canvas engine detected');
+    });
   });
 
   describe('missing canvasId (falls back to first canvas)', () => {

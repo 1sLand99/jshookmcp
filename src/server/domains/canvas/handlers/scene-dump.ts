@@ -4,7 +4,7 @@
  * Delegates to engine-specific adapter after fingerprinting.
  */
 import type { PageController } from '@server/domains/canvas/dependencies';
-import type { CanvasSceneDump, DumpOpts } from '@server/domains/canvas/types';
+import type { CanvasDetection, CanvasSceneDump, DumpOpts } from '@server/domains/canvas/types';
 import { createStub } from '@server/domains/shared/capabilities';
 import { fingerprintCanvas, resolveAdapter, buildEnv } from './shared';
 
@@ -21,20 +21,46 @@ export async function handleSceneDump(
 
   const detection = await fingerprintCanvas(pageController, canvasId);
   if (!detection) {
-    return partialSceneDump(pageController, canvasId);
+    return partialSceneDump(pageController, canvasId, null);
   }
 
   const adapter = resolveAdapter(detection);
   if (!adapter) {
-    return partialSceneDump(pageController, canvasId);
+    return partialSceneDump(pageController, canvasId, detection);
   }
 
   return adapter.dumpScene(buildEnv(pageController), opts);
 }
 
+/**
+ * Build an honest adapter-missing message naming the detected engine.
+ *
+ * - Unity: scene tree extraction is unsupported; give the page_evaluate SendMessage hint.
+ * - Other detected-but-unsupported engines: name them explicitly so the caller knows the
+ *   engine was fingerprinted (not silently stubbed as "no engine").
+ */
+function adapterMissingMessage(detection: CanvasDetection): {
+  reason: string;
+  fix: string;
+} {
+  if (detection.adapterId === 'unity') {
+    return {
+      reason:
+        'Unity WebGL adapter not yet available; the engine was detected but scene tree extraction is unsupported.',
+      fix: 'Use page_evaluate with unityInstance.SendMessage to inspect the Unity runtime manually.',
+    };
+  }
+  const engineLabel = detection.engine || detection.adapterId || 'unknown engine';
+  return {
+    reason: `${engineLabel} was fingerprinted but no scene-dump adapter is registered for adapterId "${detection.adapterId}". Only DOM canvas metadata returned.`,
+    fix: 'Use page_evaluate to inspect the engine directly, or request an adapter for this engine.',
+  };
+}
+
 async function partialSceneDump(
   pageController: PageController,
   canvasId?: string,
+  detection: CanvasDetection | null = null,
 ): Promise<CanvasSceneDump> {
   const canvases = await pageController.evaluate<
     Array<{
@@ -72,19 +98,36 @@ async function partialSceneDump(
     contextType: 'unknown',
   }) as CanvasSceneDump['canvas'];
 
+  // Two honest paths:
+  // 1. No engine detected at all → generic "No canvas engine detected".
+  // 2. Engine detected but adapter missing (e.g. Unity, or an unsupported adapterId)
+  //    → name the engine explicitly so the caller knows it was fingerprinted.
+  const noAdapter = detection !== null;
+  const detectedEngine = detection?.engine ?? 'unknown';
+  const detectedVersion = detection?.version;
+  const detectedAdapterId = detection?.adapterId;
+
+  const reason = noAdapter
+    ? adapterMissingMessage(detection!).reason
+    : 'No canvas engine detected — only DOM canvas metadata returned';
+  const fix = noAdapter
+    ? adapterMissingMessage(detection!).fix
+    : 'Ensure a supported canvas engine is loaded (Pixi, Phaser, Laya, Cocos, Three.js, Babylon.js)';
+
   const stubData = createStub({
     tool: 'canvas_scene_dump',
     stubType: 'partial',
-    reason: 'No canvas engine detected — only DOM canvas metadata returned',
-    fix: 'Ensure a supported canvas engine is loaded (Pixi, Phaser, Laya, Cocos)',
+    reason,
+    fix,
     data: {
-      engine: 'unknown',
-      version: undefined,
+      engine: detectedEngine,
+      version: detectedVersion,
+      adapterId: detectedAdapterId,
       canvas: canvasData,
       sceneTree: null,
       totalNodes: 0,
       completeness: 'partial' as const, // Keep for backward compatibility
-      partialReason: 'No canvas engine detected — only DOM canvas metadata returned',
+      partialReason: reason,
     },
   });
 
@@ -92,6 +135,7 @@ async function partialSceneDump(
   return {
     engine: stubData.engine as string,
     version: stubData.version as string | undefined,
+    adapterId: stubData.adapterId as string | undefined,
     canvas: stubData.canvas as CanvasSceneDump['canvas'],
     sceneTree: stubData.sceneTree as CanvasSceneDump['sceneTree'],
     totalNodes: stubData.totalNodes as number,
