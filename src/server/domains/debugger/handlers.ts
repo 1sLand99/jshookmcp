@@ -302,6 +302,17 @@ export class DebuggerToolHandlers {
         if (action === 'set') return this.breakpointException.handleBreakpointSetOnException(args);
         break;
       }
+      case 'function': {
+        switch (action) {
+          case 'set':
+            return this.breakpointBasic.handleBreakpointSetOnFunction(args);
+          case 'remove':
+            return this.breakpointBasic.handleBreakpointRemove(args);
+          case 'list':
+            return this.breakpointBasic.handleBreakpointList(args);
+        }
+        break;
+      }
     }
     return {
       content: [
@@ -311,8 +322,7 @@ export class DebuggerToolHandlers {
             success: false,
             error:
               `Invalid breakpoint action/type: ${action}/${type}. Valid types: code, xhr, event, ` +
-              `event_category, ` +
-              `exception. Valid actions: set, remove, list.`,
+              `event_category, exception, function. Valid actions: set, remove, list.`,
           }),
         },
       ],

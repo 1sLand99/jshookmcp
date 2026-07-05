@@ -87,7 +87,19 @@ describe('debugger tool definitions', () => {
     it('breakpoint has type enum with all consolidated types', async () => {
       const tool = DEBUGGER_CORE_TOOLS.find((t) => t.name === 'breakpoint')!;
       const typeProp = tool.inputSchema.properties!.type as Record<string, unknown>;
-      expect(typeProp.enum).toEqual(['code', 'xhr', 'event', 'event_category', 'exception']);
+      expect(typeProp.enum).toEqual([
+        'code',
+        'function',
+        'xhr',
+        'event',
+        'event_category',
+        'exception',
+      ]);
+    });
+
+    it('breakpoint exposes functionName for type=function', async () => {
+      const tool = DEBUGGER_CORE_TOOLS.find((t) => t.name === 'breakpoint')!;
+      expect(tool.inputSchema.properties).toHaveProperty('functionName');
     });
 
     it('breakpoint has action enum', async () => {

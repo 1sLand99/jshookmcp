@@ -6,6 +6,7 @@ describe('BreakpointBasicHandlers', () => {
   const debuggerManager = {
     setBreakpointByUrl: vi.fn(),
     setBreakpoint: vi.fn(),
+    setBreakpointOnFunctionCall: vi.fn(),
     removeBreakpoint: vi.fn(),
     listBreakpoints: vi.fn(),
   };
@@ -79,6 +80,56 @@ describe('BreakpointBasicHandlers', () => {
 
     await expect(handlers.handleBreakpointSet({ lineNumber: 1 })).rejects.toThrow(
       'Either url or scriptId must be provided',
+    );
+  });
+
+  it('sets a breakpoint on a function name (type=function)', async () => {
+    debuggerManager.setBreakpointOnFunctionCall.mockResolvedValueOnce({
+      breakpointId: 'bp_fn_1',
+      functionName: 'decrypt',
+    });
+    const handlers = new BreakpointBasicHandlers({ debuggerManager } as any);
+
+    const body = parseJson<any>(
+      await handlers.handleBreakpointSetOnFunction({ functionName: 'decrypt' }),
+    );
+
+    expect(debuggerManager.setBreakpointOnFunctionCall).toHaveBeenCalledWith('decrypt');
+    expect(body).toEqual({
+      success: true,
+      breakpoint: {
+        breakpointId: 'bp_fn_1',
+        type: 'function',
+        functionName: 'decrypt',
+      },
+    });
+  });
+
+  it('trims whitespace before resolving the function name', async () => {
+    debuggerManager.setBreakpointOnFunctionCall.mockResolvedValueOnce({
+      breakpointId: 'bp_fn_2',
+      functionName: 'decrypt',
+    });
+    const handlers = new BreakpointBasicHandlers({ debuggerManager } as any);
+
+    await handlers.handleBreakpointSetOnFunction({ functionName: '  decrypt  ' });
+
+    expect(debuggerManager.setBreakpointOnFunctionCall).toHaveBeenCalledWith('decrypt');
+  });
+
+  it('throws when functionName is missing for type=function', async () => {
+    const handlers = new BreakpointBasicHandlers({ debuggerManager } as any);
+
+    await expect(handlers.handleBreakpointSetOnFunction({})).rejects.toThrow(
+      'functionName is required for type=function',
+    );
+  });
+
+  it('throws when functionName is empty/whitespace for type=function', async () => {
+    const handlers = new BreakpointBasicHandlers({ debuggerManager } as any);
+
+    await expect(handlers.handleBreakpointSetOnFunction({ functionName: '   ' })).rejects.toThrow(
+      'functionName is required for type=function',
     );
   });
 

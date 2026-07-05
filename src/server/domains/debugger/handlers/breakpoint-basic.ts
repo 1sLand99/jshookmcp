@@ -69,6 +69,35 @@ export class BreakpointBasicHandlers {
     };
   }
 
+  async handleBreakpointSetOnFunction(args: Record<string, unknown>) {
+    const functionName = argString(args, 'functionName', '').trim();
+    if (!functionName) {
+      throw new Error('functionName is required for type=function');
+    }
+
+    const result = await this.deps.debuggerManager.setBreakpointOnFunctionCall(functionName);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(
+            {
+              success: true,
+              breakpoint: {
+                breakpointId: result.breakpointId,
+                type: 'function',
+                functionName: result.functionName,
+              },
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+    };
+  }
+
   async handleBreakpointRemove(args: Record<string, unknown>) {
     const breakpointId = argString(args, 'breakpointId', '');
 

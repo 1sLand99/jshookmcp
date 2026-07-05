@@ -22,7 +22,7 @@ export const DEBUGGER_CORE_TOOLS: Tool[] = [
   tool('breakpoint', (t) =>
     t
       .desc(
-        `Manage breakpoints: code (line/script), XHR (URL pattern), event listener, event category, and exception breakpoints.
+        `Manage breakpoints: code (line/script), function-name, XHR (URL pattern), event listener, event category, and exception breakpoints.
 
 Actions:
 - set: Create a breakpoint. Type determines required params.
@@ -31,6 +31,7 @@ Actions:
 
 Types & params:
 - code: lineNumber (required), scriptId?, columnNumber?, condition?, logMessage? (logpoint: logs without pausing)
+- function: functionName (required for set) — resolves via globalThis lookup and breaks whenever that function is called
 - xhr: urlPattern (required for set)
 - event: eventName (required for set), targetName?
 - event_category: category (required for set)
@@ -39,7 +40,7 @@ Types & params:
       .enum('action', ['set', 'remove', 'list'], 'Breakpoint operation')
       .enum(
         'type',
-        ['code', 'xhr', 'event', 'event_category', 'exception'],
+        ['code', 'function', 'xhr', 'event', 'event_category', 'exception'],
         'Breakpoint type (default: code)',
         { default: 'code' },
       )
@@ -51,6 +52,10 @@ Types & params:
       .string(
         'logMessage',
         'Log message template for logpoints e.g. "x={x}" (type=code, logs without pausing)',
+      )
+      .string(
+        'functionName',
+        'Function name to break on (used with type=function). Resolved via globalThis lookup, breaks on every call to that function.',
       )
       .string('urlPattern', 'URL pattern with wildcards (type=xhr, action=set)')
       .string('eventName', 'Event name e.g. "click" (type=event, action=set)')

@@ -21,6 +21,7 @@ import {
   removeBreakpointCore,
   setBreakpointByUrlCore,
   setBreakpointCore,
+  setBreakpointOnFunctionCallCore,
 } from '@modules/debugger/DebuggerManager.impl.core.breakpoints';
 import {
   evaluateOnCallFrameCore,
@@ -431,6 +432,12 @@ export class DebuggerManager {
     logMessage?: string;
   }): Promise<BreakpointInfo> {
     return setBreakpointCore(this, params);
+  }
+
+  async setBreakpointOnFunctionCall(
+    functionName: string,
+  ): Promise<{ breakpointId: string; functionName: string }> {
+    return setBreakpointOnFunctionCallCore(this, functionName);
   }
 
   async removeBreakpoint(breakpointId: string): Promise<void> {

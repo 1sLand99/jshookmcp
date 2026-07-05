@@ -174,6 +174,81 @@ export async function setBreakpointCore(
   }
 }
 
+export async function setBreakpointOnFunctionCallCore(
+  ctx: unknown,
+  functionName: string,
+): Promise<{ breakpointId: string; functionName: string }> {
+  const coreCtx = asBreakpointsCoreContext(ctx);
+
+  if (!coreCtx.enabled || !coreCtx.cdpSession) {
+    try {
+      await coreCtx.ensureSession();
+    } catch (err) {
+      logger.warn(
+        `Debugger auto-reconnect failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new PrerequisiteError(
+        'Debugger is not enabled and auto-reconnect failed. Call init() or enable() first.',
+      );
+    }
+  }
+
+  if (!functionName) {
+    throw new Error('functionName parameter is required');
+  }
+
+  try {
+    // Resolve the function reference via globalThis lookup. The bare name is
+    // evaluated in the global context; returnByValue:false keeps the handle.
+    const evalResult = await coreCtx.cdpSession!.send<{
+      result?: { objectId?: string; type?: string; subtype?: string; description?: string };
+      exceptionDetails?: unknown;
+    }>('Runtime.evaluate', {
+      expression: functionName,
+      returnByValue: false,
+    });
+
+    if (evalResult?.exceptionDetails) {
+      throw new Error(
+        `Function '${functionName}' not found in global scope. Ensure the script defining it has loaded, or use type=code with a scriptId.`,
+      );
+    }
+
+    const objectId = evalResult?.result?.objectId;
+    const resultType = evalResult?.result?.type;
+    if (!objectId || resultType !== 'function') {
+      throw new Error(
+        `Function '${functionName}' not found in global scope (resolved as ${
+          resultType ?? 'undefined'
+        }). Ensure the script defining it has loaded, or use type=code with a scriptId.`,
+      );
+    }
+
+    const bpResult = await coreCtx.cdpSession!.send<SetBreakpointResult>(
+      'Debugger.setBreakpointOnFunctionCall',
+      { objectId },
+    );
+
+    const breakpointInfo: BreakpointInfo = {
+      breakpointId: bpResult.breakpointId,
+      location: { lineNumber: 0 },
+      enabled: true,
+      hitCount: 0,
+      createdAt: Date.now(),
+    };
+    coreCtx.breakpoints.set(bpResult.breakpointId, breakpointInfo);
+
+    logger.info(`Breakpoint set on function: ${functionName}`, {
+      breakpointId: bpResult.breakpointId,
+    });
+
+    return { breakpointId: bpResult.breakpointId, functionName };
+  } catch (error: unknown) {
+    logger.error(`Failed to set breakpoint on function '${functionName}':`, error);
+    throw error;
+  }
+}
+
 export async function removeBreakpointCore(ctx: unknown, breakpointId: string): Promise<void> {
   const coreCtx = asBreakpointsCoreContext(ctx);
 
