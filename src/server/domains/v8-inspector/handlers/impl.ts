@@ -69,6 +69,9 @@ export class V8InspectorHandlers {
       v8_turbofan_inspect: (toolArgs) => this.v8_turbofan_inspect(toolArgs),
       v8_function_retained: (toolArgs) => this.v8_function_retained(toolArgs),
       v8_turbofan_graph: (toolArgs) => this.v8_turbofan_graph(toolArgs),
+      v8_heap_sampling: (toolArgs) => this.v8_heap_sampling(toolArgs),
+      v8_allocation_track: (toolArgs) => this.v8_allocation_track(toolArgs),
+      v8_weakrefs_inspect: (toolArgs) => this.v8_weakrefs_inspect(toolArgs),
     };
 
     const handler = dispatchTable[toolName];
@@ -94,6 +97,33 @@ export class V8InspectorHandlers {
     const { handleTurbofanGraph } =
       await import('@server/domains/v8-inspector/handlers/turbofan-graph');
     return handleTurbofanGraph(args);
+  }
+
+  async v8_heap_sampling(args: ToolArgs): Promise<ToolResponse> {
+    return handleSafe(async () => {
+      requirePageController(this.deps.ctx);
+      const { handleHeapSampling } =
+        await import('@server/domains/v8-inspector/handlers/heap-sampling');
+      return handleHeapSampling(args, createPageGetter(this.deps.ctx));
+    });
+  }
+
+  async v8_allocation_track(args: ToolArgs): Promise<ToolResponse> {
+    return handleSafe(async () => {
+      requirePageController(this.deps.ctx);
+      const { handleAllocationTrack } =
+        await import('@server/domains/v8-inspector/handlers/allocation-track');
+      return handleAllocationTrack(args, createPageGetter(this.deps.ctx));
+    });
+  }
+
+  async v8_weakrefs_inspect(args: ToolArgs): Promise<ToolResponse> {
+    return handleSafe(async () => {
+      requirePageController(this.deps.ctx);
+      const { handleWeakRefsInspect } =
+        await import('@server/domains/v8-inspector/handlers/weakrefs-inspect');
+      return handleWeakRefsInspect(args, createPageGetter(this.deps.ctx));
+    });
   }
 
   async v8_function_retained(args: ToolArgs): Promise<ToolResponse> {

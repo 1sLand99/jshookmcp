@@ -219,4 +219,48 @@ export const v8InspectorTools: Tool[] = [
       })
       .query(),
   ),
+  tool('v8_heap_sampling', (t) =>
+    t
+      .desc(
+        'Collect a V8 allocation sampling profile via CDP HeapProfiler. ' +
+          'Starts sampling for a capture window (default 5s), then returns the aggregated ' +
+          'allocation call tree: per-function self/total bytes + sample count, sorted by ' +
+          'total bytes allocated. Useful for finding hot allocation sites without a full ' +
+          'heap snapshot. Requires browser/page CDP context.',
+      )
+      .number('durationMs', 'Sampling capture window in ms (default: 5000, max: 60000)', {
+        default: 5000,
+      })
+      .number('topN', 'Number of top allocation sites to return (default: 50)', { default: 50 })
+      .query(),
+  ),
+  tool('v8_allocation_track', (t) =>
+    t
+      .desc(
+        'Track live V8 allocations via CDP HeapProfiler object tracking. ' +
+          'Starts allocation tracking for a capture window (default 3s), then returns ' +
+          'currently-live objects seen during the window with their allocation stack ' +
+          '(top frame + size). Useful for finding objects that survive GC during a specific ' +
+          'interaction. Requires browser/page CDP context and V8 natives for full stack resolution.',
+      )
+      .number('durationMs', 'Tracking capture window in ms (default: 3000, max: 30000)', {
+        default: 3000,
+      })
+      .number('topN', 'Number of top live objects to return (default: 50)', { default: 50 })
+      .query(),
+  ),
+  tool('v8_weakrefs_inspect', (t) =>
+    t
+      .desc(
+        'Enumerate WeakRef and FinalizationRegistry instances in the page via Runtime.evaluate. ' +
+          'Inspects registered finalization callbacks and live WeakRef targets, reporting ' +
+          'how many WeakRefs are dereferenced vs cleared and which FinalizationRegistry ' +
+          'callbacks have pending entries. Useful for diagnosing cleanup logic in long-lived ' +
+          'pages. Requires browser/page CDP context.',
+      )
+      .number('scanDepth', 'Prototype chain scan depth for WeakRef discovery (default: 5)', {
+        default: 5,
+      })
+      .query(),
+  ),
 ];
