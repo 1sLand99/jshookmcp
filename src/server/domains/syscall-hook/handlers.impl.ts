@@ -305,20 +305,93 @@ export class SyscallHookHandlers {
       };
     }
 
+    const pid = readNumber(args['pid']);
+    if (args['pid'] !== undefined && args['pid'] !== null && pid === undefined) {
+      return {
+        ok: false,
+        error: 'pid must be a number when provided',
+      };
+    }
+
+    const returnValueMin = readNumber(args['returnValueMin']);
+    if (
+      args['returnValueMin'] !== undefined &&
+      args['returnValueMin'] !== null &&
+      returnValueMin === undefined
+    ) {
+      return {
+        ok: false,
+        error: 'returnValueMin must be a number when provided',
+      };
+    }
+
+    const returnValueMax = readNumber(args['returnValueMax']);
+    if (
+      args['returnValueMax'] !== undefined &&
+      args['returnValueMax'] !== null &&
+      returnValueMax === undefined
+    ) {
+      return {
+        ok: false,
+        error: 'returnValueMax must be a number when provided',
+      };
+    }
+
+    const rawErrorOnly = readBoolean(args['errorOnly']);
+    if (
+      args['errorOnly'] !== undefined &&
+      args['errorOnly'] !== null &&
+      rawErrorOnly === undefined
+    ) {
+      return {
+        ok: false,
+        error: 'errorOnly must be a boolean when provided',
+      };
+    }
+    const errorOnly = rawErrorOnly ?? false;
+
+    // monitor.captureEvents only supports name + pid filtering natively
+    const monitorFilter: EventFilter = {};
+    if (names && names.length > 0) {
+      monitorFilter.name = names;
+    }
+    if (pid !== undefined) {
+      monitorFilter.pid = pid;
+    }
+
     const monitor = this.ensureMonitor();
     const events = await monitor.captureEvents(
-      names && names.length > 0
-        ? {
-            name: names,
-          }
+      monitorFilter.name !== undefined || monitorFilter.pid !== undefined
+        ? monitorFilter
         : undefined,
     );
+
+    // Post-filters for returnValue (not supported by SyscallMonitor.matchesFilter)
+    let filtered = events;
+    if (returnValueMin !== undefined) {
+      filtered = filtered.filter(
+        (e) => typeof e.returnValue === 'number' && e.returnValue >= returnValueMin,
+      );
+    }
+    if (returnValueMax !== undefined) {
+      filtered = filtered.filter(
+        (e) => typeof e.returnValue === 'number' && e.returnValue <= returnValueMax,
+      );
+    }
+    if (errorOnly) {
+      filtered = filtered.filter((e) => typeof e.returnValue === 'number' && e.returnValue < 0);
+    }
 
     return {
       ok: true,
       names,
-      events,
-      count: events.length,
+      pid,
+      returnValueMin,
+      returnValueMax,
+      errorOnly,
+      events: filtered,
+      count: filtered.length,
+      totalBeforeFilters: events.length,
     };
   }
 

@@ -68,6 +68,16 @@ export const syscallHookToolDefinitions: Tool[] = [
     t
       .desc('Filter captured syscall events by name, PID, or return value.')
       .array('names', { type: 'string' }, 'Syscall names to keep')
+      .number('pid', 'Restrict events to a specific process ID')
+      .number('returnValueMin', 'Keep events whose returnValue >= this value')
+      .number('returnValueMax', 'Keep events whose returnValue <= this value')
+      .boolean(
+        'errorOnly',
+        'Keep only events with returnValue < 0 (syscalls returning an error code)',
+        {
+          default: false,
+        },
+      )
       .query(),
   ),
   tool('syscall_get_stats', (t) => t.desc('Get syscall monitoring statistics.').query()),

@@ -644,6 +644,175 @@ describe('SyscallHookHandlers — coverage expansion', () => {
         error: 'names must be an array of strings when provided',
       });
     });
+
+    // -----------------------------------------------------------------------
+    // PID filter — monitor.captureEvents receives { name?, pid }
+    // -----------------------------------------------------------------------
+    it('passes pid through to monitor.captureEvents', async () => {
+      monitor.captureEvents.mockResolvedValueOnce([]);
+      const result = await handlers.handleSyscallFilter({ pid: 100 });
+      expect(monitor.captureEvents).toHaveBeenCalledWith({ pid: 100 });
+      expect(result).toMatchObject({ ok: true, pid: 100 });
+    });
+
+    it('combines names + pid in monitor filter', async () => {
+      monitor.captureEvents.mockResolvedValueOnce([]);
+      const result = await handlers.handleSyscallFilter({ names: ['openat'], pid: 100 });
+      expect(monitor.captureEvents).toHaveBeenCalledWith({ name: ['openat'], pid: 100 });
+      expect(result).toMatchObject({ ok: true, names: ['openat'], pid: 100 });
+    });
+
+    it('returns error when pid is not a number', async () => {
+      const result = await handlers.handleSyscallFilter({ pid: 'abc' });
+      expect(result).toMatchObject({
+        ok: false,
+        error: 'pid must be a number when provided',
+      });
+    });
+
+    it('accepts null pid (treated as not provided)', async () => {
+      monitor.captureEvents.mockResolvedValueOnce([]);
+      const result = await handlers.handleSyscallFilter({ pid: null });
+      expect(monitor.captureEvents).toHaveBeenCalledWith(undefined);
+      expect(result).toMatchObject({ ok: true, pid: undefined });
+    });
+
+    // -----------------------------------------------------------------------
+    // returnValueMin / returnValueMax post-filters
+    // -----------------------------------------------------------------------
+    it('filters events by returnValueMin', async () => {
+      const events = [
+        validSyscallEvent({ returnValue: 10 }),
+        validSyscallEvent({ returnValue: 50 }),
+        validSyscallEvent({ returnValue: 100 }),
+      ];
+      monitor.captureEvents.mockResolvedValueOnce(events);
+      const result = await handlers.handleSyscallFilter({ returnValueMin: 20 });
+      const filtered = (result as { events: { returnValue?: number }[] }).events;
+      expect(filtered).toHaveLength(2);
+      expect(filtered.every((e) => (e.returnValue ?? 0) >= 20)).toBe(true);
+      expect(result).toMatchObject({
+        ok: true,
+        returnValueMin: 20,
+        count: 2,
+        totalBeforeFilters: 3,
+      });
+    });
+
+    it('filters events by returnValueMax', async () => {
+      const events = [
+        validSyscallEvent({ returnValue: 10 }),
+        validSyscallEvent({ returnValue: 50 }),
+        validSyscallEvent({ returnValue: 100 }),
+      ];
+      monitor.captureEvents.mockResolvedValueOnce(events);
+      const result = await handlers.handleSyscallFilter({ returnValueMax: 80 });
+      const filtered = (result as { events: { returnValue?: number }[] }).events;
+      expect(filtered).toHaveLength(2);
+      expect(filtered.every((e) => (e.returnValue ?? 0) <= 80)).toBe(true);
+    });
+
+    it('filters events by returnValueMin and returnValueMax (range)', async () => {
+      const events = [
+        validSyscallEvent({ returnValue: 10 }),
+        validSyscallEvent({ returnValue: 50 }),
+        validSyscallEvent({ returnValue: 100 }),
+      ];
+      monitor.captureEvents.mockResolvedValueOnce(events);
+      const result = await handlers.handleSyscallFilter({
+        returnValueMin: 20,
+        returnValueMax: 80,
+      });
+      const filtered = (result as { events: { returnValue?: number }[] }).events;
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0]?.returnValue).toBe(50);
+    });
+
+    it('skips events without returnValue when returnValue filter is set', async () => {
+      const events = [
+        validSyscallEvent({ returnValue: 50 }),
+        validSyscallEvent({ returnValue: undefined }),
+      ];
+      monitor.captureEvents.mockResolvedValueOnce(events);
+      const result = await handlers.handleSyscallFilter({ returnValueMin: 0 });
+      const filtered = (result as { events: { returnValue?: number }[] }).events;
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0]?.returnValue).toBe(50);
+    });
+
+    it('returns error when returnValueMin is not a number', async () => {
+      const result = await handlers.handleSyscallFilter({ returnValueMin: 'high' });
+      expect(result).toMatchObject({
+        ok: false,
+        error: 'returnValueMin must be a number when provided',
+      });
+    });
+
+    it('returns error when returnValueMax is not a number', async () => {
+      const result = await handlers.handleSyscallFilter({ returnValueMax: false });
+      expect(result).toMatchObject({
+        ok: false,
+        error: 'returnValueMax must be a number when provided',
+      });
+    });
+
+    // -----------------------------------------------------------------------
+    // errorOnly — keep only events with returnValue < 0
+    // -----------------------------------------------------------------------
+    it('filters events with errorOnly (returnValue < 0)', async () => {
+      const events = [
+        validSyscallEvent({ returnValue: -1 }),
+        validSyscallEvent({ returnValue: 0 }),
+        validSyscallEvent({ returnValue: 5 }),
+      ];
+      monitor.captureEvents.mockResolvedValueOnce(events);
+      const result = await handlers.handleSyscallFilter({ errorOnly: true });
+      const filtered = (result as { events: { returnValue?: number }[] }).events;
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0]?.returnValue).toBe(-1);
+      expect(result).toMatchObject({ ok: true, errorOnly: true });
+    });
+
+    it('defaults errorOnly to false when not provided', async () => {
+      const events = [
+        validSyscallEvent({ returnValue: -1 }),
+        validSyscallEvent({ returnValue: 5 }),
+      ];
+      monitor.captureEvents.mockResolvedValueOnce(events);
+      const result = await handlers.handleSyscallFilter({});
+      expect(result).toMatchObject({ ok: true, errorOnly: false });
+      expect((result as { count: number }).count).toBe(2);
+    });
+
+    it('returns error when errorOnly is not a boolean', async () => {
+      const result = await handlers.handleSyscallFilter({ errorOnly: 'yes' });
+      expect(result).toMatchObject({
+        ok: false,
+        error: 'errorOnly must be a boolean when provided',
+      });
+    });
+
+    // -----------------------------------------------------------------------
+    // Combined: pid (monitor-side) + errorOnly (post-filter)
+    // -----------------------------------------------------------------------
+    it('combines pid filter with errorOnly post-filter', async () => {
+      const events = [
+        validSyscallEvent({ pid: 100, returnValue: -1 }),
+        validSyscallEvent({ pid: 100, returnValue: 0 }),
+        validSyscallEvent({ pid: 200, returnValue: -1 }),
+      ];
+      // monitor.captureEvents already filters by pid; we mock the post-pid set
+      monitor.captureEvents.mockResolvedValueOnce([
+        validSyscallEvent({ pid: 100, returnValue: -1 }),
+        validSyscallEvent({ pid: 100, returnValue: 0 }),
+      ]);
+      const result = await handlers.handleSyscallFilter({ pid: 100, errorOnly: true });
+      expect(monitor.captureEvents).toHaveBeenCalledWith({ pid: 100 });
+      const filtered = (result as { events: { returnValue?: number }[] }).events;
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0]?.returnValue).toBe(-1);
+      void events; // events array kept for clarity of intent
+    });
   });
 
   // =========================================================================
