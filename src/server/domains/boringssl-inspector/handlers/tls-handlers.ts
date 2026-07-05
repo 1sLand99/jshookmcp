@@ -154,7 +154,6 @@ export class BoringsslInspectorTlsHandlers extends BoringsslInspectorBaseHandler
 
   async handleParseHandshake(args: Record<string, unknown>): Promise<ToolResponse> {
     const rawHex = argString(args, 'rawHex') ?? null;
-    const decrypt = args.decrypt === true;
     if (!rawHex) {
       return asJsonResponse({
         success: false,
@@ -189,16 +188,10 @@ export class BoringsslInspectorTlsHandlers extends BoringsslInspectorBaseHandler
         ? parseClientHello(payload)
         : undefined;
 
-    const decryptedPreviewHex = decrypt
-      ? (() => {
-          const decrypted = this.keyLogExtractor.decryptPayload(
-            normalizedHex,
-            this.keyLogExtractor.parseKeyLog(),
-          );
-          return decrypted ? decrypted.subarray(0, 16).toString('hex').toUpperCase() : null;
-        })()
-      : undefined;
-
+    // Note: this tool no longer attempts in-line decryption. The previous
+    // `decrypt:true` path called a no-op stub that returned the ciphertext
+    // unchanged (silently misleading). For payload decryption, use the
+    // `tls_decrypt_payload` tool with explicit keyHex + nonceHex + authTagHex.
     return asJsonResponse({
       success: true,
       record: {
@@ -224,7 +217,6 @@ export class BoringsslInspectorTlsHandlers extends BoringsslInspectorBaseHandler
             }),
       },
       sni: clientHello?.serverName ? { serverName: clientHello.serverName } : undefined,
-      ...(decryptedPreviewHex !== undefined ? { decryptedPreviewHex } : {}),
     });
   }
 

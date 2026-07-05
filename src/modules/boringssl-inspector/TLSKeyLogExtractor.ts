@@ -136,21 +136,17 @@ export class TLSKeyLogExtractor {
   }
 
   decryptPayload(encryptedHex: string, secrets: KeyLogEntry[]): Buffer | null {
-    const normalizedPayload = normalizeHex(encryptedHex);
-    if (!isHex(normalizedPayload) || secrets.length === 0) {
-      return null;
-    }
-
-    const hasSecretMaterial = secrets.some((entry) => entry.secret.length > 0);
-    if (!hasSecretMaterial) {
-      return null;
-    }
-
-    try {
-      return Buffer.from(normalizedPayload, 'hex');
-    } catch {
-      return null;
-    }
+    // Removed: the previous implementation was a no-op stub that returned the
+    // ciphertext bytes unchanged (Buffer.from(hex) without createDecipheriv),
+    // causing tls_parse_handshake({decrypt:true}) to report encrypted bytes as
+    // "decryptedPreviewHex". Decryption is intentionally NOT reimplemented here
+    // — TLS record decryption needs the per-record nonce + AAD that this
+    // instance method's signature does not carry. Use the standalone
+    // `decryptPayload(encryptedHex, keyHex, nonceHex, algorithm, authTagHex)`
+    // exported below (exposed via the `tls_decrypt_payload` tool) instead.
+    void encryptedHex;
+    void secrets;
+    return null;
   }
 
   summarizeKeyLog(path?: string): KeyLogSummary {

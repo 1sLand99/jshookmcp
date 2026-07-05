@@ -288,6 +288,22 @@ describe('BoringsslInspectorHandlers', () => {
       const parsed = JSON.parse(content);
       expect(parsed.success).toBe(false);
     });
+
+    // Regression: the previous implementation called a no-op decryptPayload stub
+    // when `decrypt:true` was passed and reported ciphertext bytes as
+    // "decryptedPreviewHex". The arg is removed and the field must never appear.
+    it('never returns a fabricated decryptedPreviewHex (decrypt stub removed)', async () => {
+      const sni = buildClientHelloWithSNI(TEST_HOSTS.root);
+      const result = await handlers.handleParseHandshake({
+        rawHex: sni.toString('hex'),
+        decrypt: true,
+      } as Record<string, unknown>);
+      const content = (result as { content: Array<{ text: string }> }).content[0]?.text ?? '';
+      const parsed = JSON.parse(content);
+
+      expect(parsed.success).toBe(true);
+      expect(parsed.decryptedPreviewHex).toBeUndefined();
+    });
   });
 
   describe('handleCipherSuites', () => {

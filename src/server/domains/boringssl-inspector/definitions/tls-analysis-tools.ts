@@ -86,15 +86,11 @@ export const tlsAnalysisTools: Tool[] = [
   ),
   objectTool(
     'tls_parse_handshake',
-    'Parse TLS handshake metadata from raw hex.',
+    'Parse TLS handshake metadata from raw hex. For payload decryption, use tls_decrypt_payload with explicit keyHex/nonceHex/authTagHex.',
     {
       rawHex: {
         type: 'string',
         description: 'Hex-encoded TLS handshake record',
-      },
-      decrypt: {
-        type: 'boolean',
-        description: 'Attempt payload decryption using the loaded keylog',
       },
     },
     ['rawHex'],
