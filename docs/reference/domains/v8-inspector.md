@@ -20,7 +20,7 @@ V8 检查器域，提供堆快照分析、CPU 分析和内存检查。
 - v8-inspector + browser
 - v8-inspector + debugger
 
-## 工具清单（16）
+## 工具清单（19）
 
 | 工具 | 说明 |
 | --- | --- |
@@ -40,3 +40,6 @@ V8 检查器域，提供堆快照分析、CPU 分析和内存检查。
 | `v8_function_retained` | 查找被匹配名称模式的函数所保留的所有堆对象。遍历支配树找到构造函数/类名匹配给定模式的对象，返回每个对象及其保留链。用于理解特定函数/类持有哪些对象存活。 |
 | `v8_object_compare` | 按浅大小/保留大小、类名和属性数比较堆对象。同快照模式（仅 objectIds）做全配对比较（n-choose-2）。跨快照模式（anotherSnapshotId + anotherObjectIds）做逐对 A[i]↔B[i] 比较。用于追踪对象增长、查找内存回归候选或对比泄漏与健康对象。 |
 | `v8_wasm_inspect` | 检查页面中的 WebAssembly 模块和垃圾回收的 WASM 对象。发现 .wasm 脚本资源，检测 WASM GC（struct/array/ref-types）可用性，枚举特性标志（gc/threads/simd）。支持可选 scriptId 过滤器检查特定 WASM 模块。需要浏览器/页面 CDP 上下文。 |
+| `v8_heap_sampling` | 通过 CDP HeapProfiler 收集 V8 分配采样 profile。在采集窗口内（默认 5 秒）启动采样，返回聚合的分配调用树：每个函数的 self/total 字节 + 采样数，按总分配字节排序。用于定位热点分配站点而无需完整堆快照。需要浏览器/页面 CDP 上下文。 |
+| `v8_allocation_track` | 通过 CDP HeapProfiler 对象追踪跟踪 V8 实时分配。在采集窗口内（默认 3 秒）启动分配追踪，返回窗口期间仍存活的已分配对象（顶部帧 + 大小）。用于发现在特定交互期间经历 GC 仍存活的对象。需要浏览器/页面 CDP 上下文，完整栈解析需 V8 natives。 |
+| `v8_weakrefs_inspect` | 通过 Runtime.evaluate 枚举页面中的 WeakRef 和 FinalizationRegistry 实例。检查已注册的终结回调和存活的 WeakRef 目标，报告多少 WeakRef 已 deref、多少已清除，以及哪些 FinalizationRegistry 有待处理条目。用于诊断长生命周期页面的清理逻辑。需要浏览器/页面 CDP 上下文。 |

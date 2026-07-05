@@ -75,9 +75,9 @@ describe('handleHeapSampling', () => {
     expect(r.success).toBe(true);
     expect(r.sites).toHaveLength(2);
     // bigAlloc must sort first (higher totalSize).
-    expect(r.sites[0].functionName).toBe('bigAlloc');
-    expect(r.sites[0].totalSize).toBe(10000);
-    expect(r.sites[1].functionName).toBe('smallAlloc');
+    expect(r.sites[0]!.functionName).toBe('bigAlloc');
+    expect(r.sites[0]!.totalSize).toBe(10000);
+    expect(r.sites[1]!.functionName).toBe('smallAlloc');
     expect(r.totalSampledBytes).toBe(10100);
     expect(session.detach).toHaveBeenCalled();
   });
@@ -137,8 +137,8 @@ describe('handleAllocationTrack', () => {
     expect(r.success).toBe(true);
     expect(r.allocations).toHaveLength(3);
     // Sorted by size descending — 50000 first.
-    expect(r.allocations[0].sizeBytes).toBe(50000);
-    expect(r.allocations[1].sizeBytes).toBe(5000);
+    expect(r.allocations[0]!.sizeBytes).toBe(50000);
+    expect(r.allocations[1]!.sizeBytes).toBe(5000);
     expect(r.totalLiveBytes).toBe(55500);
     // lastSeenObjectId listener registered + torn down.
     expect(on).toHaveBeenCalledWith('HeapProfiler.lastSeenObjectId', expect.any(Function));

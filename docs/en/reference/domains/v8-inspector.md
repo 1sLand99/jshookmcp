@@ -20,7 +20,7 @@ V8 inspector domain providing heap snapshot analysis, CPU profiling, and memory 
 - v8-inspector + browser
 - v8-inspector + debugger
 
-## Full tool list (16)
+## Full tool list (19)
 
 | Tool | Description |
 | --- | --- |
@@ -40,3 +40,6 @@ V8 inspector domain providing heap snapshot analysis, CPU profiling, and memory 
 | `v8_function_retained` | Find all heap objects retained by functions matching a name pattern. Walks the dominator tree to find objects whose constructor/class name matches the given pattern, then returns each with its retainer chain. Useful for understanding which objects a specific function/class is holding alive. |
 | `v8_object_compare` | Compare heap objects by shallow/retained size, class name, and property count. Same-snapshot mode (objectIds only) does all-pairs comparison (n-choose-2). Cross-snapshot mode (anotherSnapshotId + anotherObjectIds) does pairwise A[i]↔B[i] comparison. Use to track object growth over time, find memory regression candidates, or compare leaked vs healthy objects of the same class. |
 | `v8_wasm_inspect` | Inspect WebAssembly modules and garbage-collected WASM objects in the page. Discovers .wasm script resources via performance.getEntriesByType, detects WASM GC (struct/array/ref-types) availability, and enumerates feature flags (gc/threads/simd). Supports optional scriptId filter to inspect a specific WASM module. Requires browser/page CDP context. Note: structural type enumeration (includeStructs) requires Chrome ≥ M119 with --enable-features=WebAssemblyGC; absent that, returns gcAvailable flag and script-level summary only. |
+| `v8_heap_sampling` | Collect a V8 allocation sampling profile via CDP HeapProfiler. Starts sampling for a capture window (default 5s), then returns the aggregated allocation call tree: per-function self/total bytes + sample count, sorted by total bytes allocated. Useful for finding hot allocation sites without a full heap snapshot. Requires browser/page CDP context. |
+| `v8_allocation_track` | Track live V8 allocations via CDP HeapProfiler object tracking. Starts allocation tracking for a capture window (default 3s), then returns currently-live objects seen during the window with their allocation stack (top frame + size). Useful for finding objects that survive GC during a specific interaction. Requires browser/page CDP context and V8 natives for full stack resolution. |
+| `v8_weakrefs_inspect` | Enumerate WeakRef and FinalizationRegistry instances in the page via Runtime.evaluate. Inspects registered finalization callbacks and live WeakRef targets, reporting how many WeakRefs are dereferenced vs cleared and which FinalizationRegistry callbacks have pending entries. Useful for diagnosing cleanup logic in long-lived pages. Requires browser/page CDP context. |
