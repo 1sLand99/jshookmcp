@@ -17,7 +17,10 @@ const SCORES = {
   browser: [8.9, '69 tools, 73 scan-counted tests, prior audit'],
   canvas: [9.4, '8 tools, Phase 0 adapters + Phase 2 MCP-safe wrappers'],
   coordination: [8.9, '10 tools, Phase 3 persisted handoffs and insights'],
-  'cross-domain': [8.6, '6 tools, Phase 2 MCP-safe wrappers'],
+  'cross-domain': [
+    9.0,
+    '6 tools, live-state hydration, edge filtering, expanded workflow classifier',
+  ],
   'dart-inspector': [9.0, '12 tools, 17 tests, handleSafe pattern reference'],
   debugger: [8.7, '19 tools, 50 tests, Phase 2 run-to-location one-shot breakpoints'],
   encoding: [9.6, '5 tools, Phase 3 magic signatures + base32/base58/base85/compression codecs'],

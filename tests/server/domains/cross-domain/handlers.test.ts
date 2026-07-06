@@ -7,6 +7,7 @@ import {
   resetIdCounter,
 } from '@server/domains/cross-domain/handlers/evidence-graph-bridge';
 import { CrossDomainWorkflowClassifier } from '@server/domains/cross-domain/handlers';
+import { WORKFLOWS } from '@server/domains/cross-domain/workflows/missions';
 import {
   ReverseEvidenceGraph,
   resetIdCounter as _resetGraphIdCounter,
@@ -201,6 +202,17 @@ describe('CrossDomainHandlers', () => {
   });
 
   describe('CrossDomainWorkflowClassifier', () => {
+    it('ships expanded workflow templates for common cross-domain reverse tasks', async () => {
+      expect(Object.keys(WORKFLOWS)).toEqual(
+        expect.arrayContaining([
+          'WORKFLOW_NETWORK_V8_INITIATOR',
+          'WORKFLOW_DEBUGGER_V8_CONTEXT',
+          'WORKFLOW_WASM_MEMORY_TRACE',
+          'WORKFLOW_GRAPHQL_API_REPLAY',
+        ]),
+      );
+    });
+
     it('reports expanded v5 domain support', async () => {
       const ctx = {
         enabledDomains: new Set(['webgpu', 'trace']),
@@ -212,6 +224,42 @@ describe('CrossDomainHandlers', () => {
       expect(capabilities.supportedDomains).toContain('webgpu');
       expect(capabilities.supportedDomains).toContain('trace');
       expect(capabilities.availableDomains).toEqual(['trace', 'webgpu']);
+    });
+
+    it('suggests the network/V8 workflow for request signing goals', async () => {
+      const ctx = {
+        enabledDomains: new Set(['cross-domain', 'network', 'v8-inspector']),
+        selectedTools: [],
+        resolveEnabledDomains: () => new Set<string>(),
+      };
+      const classifier = new CrossDomainWorkflowClassifier(ctx as any, true);
+
+      const suggestion = classifier.suggestWorkflow(
+        'find the JS function that signs fetch API requests',
+        true,
+      );
+
+      expect(suggestion.id).toBe('network-v8-initiator');
+      expect(suggestion.requiredDomains).toEqual(['network', 'v8-inspector', 'cross-domain']);
+      expect(suggestion.coverage).toBe(1);
+    });
+
+    it('suggests the debugger/V8 workflow for breakpoint scope goals', async () => {
+      const ctx = {
+        enabledDomains: new Set(['debugger', 'v8-inspector']),
+        selectedTools: [],
+        resolveEnabledDomains: () => new Set<string>(),
+      };
+      const classifier = new CrossDomainWorkflowClassifier(ctx as any, true);
+
+      const suggestion = classifier.suggestWorkflow(
+        'pause at a breakpoint and inspect stack scope variables',
+        true,
+      );
+
+      expect(suggestion.id).toBe('debugger-v8-pause-context');
+      expect(suggestion.requiredDomains).toEqual(['debugger', 'v8-inspector']);
+      expect(suggestion.coverage).toBe(1);
     });
   });
 

@@ -112,7 +112,7 @@ export class CrossDomainWorkflowClassifier {
   } {
     const normalizedGoal = goal.toLowerCase();
     const scored = Object.entries(WORKFLOWS).map(([workflowKey, workflow]) => {
-      const keywordScore = this.scoreWorkflowGoal(normalizedGoal, workflowKey, workflow);
+      const keywordScore = this.scoreWorkflowGoal(normalizedGoal, workflow);
       const evaluation = this.evaluateWorkflow(workflow);
       return { workflowKey, workflow, keywordScore, evaluation };
     });
@@ -207,6 +207,14 @@ export class CrossDomainWorkflowClassifier {
     if (toolName.startsWith('transform_')) return ['transform'];
     if (toolName.startsWith('sourcemap_')) return ['sourcemap'];
     if (toolName.startsWith('debugger_')) return ['debugger'];
+    if (
+      toolName === 'breakpoint' ||
+      toolName === 'get_call_stack' ||
+      toolName === 'get_scope_variables_enhanced' ||
+      toolName === 'get_object_properties'
+    ) {
+      return ['debugger'];
+    }
     if (toolName.startsWith('memory_')) return ['memory'];
     if (toolName.startsWith('process_')) return ['process'];
     if (toolName.startsWith('protocol_') || toolName.startsWith('proto_'))
@@ -266,25 +274,52 @@ export class CrossDomainWorkflowClassifier {
 
   private scoreWorkflowGoal(
     normalizedGoal: string,
-    workflowKey: string,
     workflow: CrossDomainWorkflowDefinition,
   ): number {
     let score = 0;
-    if (workflowKey === 'WORKFLOW_REVERSE_OBFUSCATED') {
-      if (normalizedGoal.includes('obfus') || normalizedGoal.includes('api')) score += 3;
-      if (normalizedGoal.includes('tls') || normalizedGoal.includes('pin')) score += 2;
+
+    const goalTokens = tokenizeForWorkflowScoring(normalizedGoal);
+    for (const keyword of workflow.keywords) {
+      const normalizedKeyword = keyword.toLowerCase();
+      if (normalizedGoal.includes(normalizedKeyword)) {
+        score += normalizedKeyword.includes(' ') ? 4 : 3;
+        continue;
+      }
+      if (goalTokens.has(normalizedKeyword)) {
+        score += 3;
+        continue;
+      }
+      if (
+        normalizedKeyword.length >= 4 &&
+        [...goalTokens].some(
+          (token) =>
+            token.length >= 4 &&
+            (token.includes(normalizedKeyword) || normalizedKeyword.includes(token)),
+        )
+      ) {
+        score += 1;
+      }
     }
-    if (workflowKey === 'WORKFLOW_GAME_CANVAS_SKIA') {
-      if (normalizedGoal.includes('canvas') || normalizedGoal.includes('game')) score += 3;
-      if (normalizedGoal.includes('skia') || normalizedGoal.includes('scene')) score += 2;
+
+    for (const displayToken of tokenizeForWorkflowScoring(workflow.displayName.toLowerCase())) {
+      if (goalTokens.has(displayToken)) {
+        score += 1;
+      }
     }
-    if (workflowKey === 'WORKFLOW_BINARY_NATIVE_HOOK') {
-      if (normalizedGoal.includes('binary') || normalizedGoal.includes('native')) score += 3;
-      if (normalizedGoal.includes('hook') || normalizedGoal.includes('frida')) score += 2;
+
+    const workflowDomains = new Set<string>();
+    for (const step of workflow.steps) {
+      for (const domain of this.inferDomainsForTool(step.tool)) {
+        workflowDomains.add(domain);
+      }
     }
-    if (score === 0 && workflow.displayName.toLowerCase().includes(normalizedGoal)) {
-      score += 1;
+    for (const domain of workflowDomains) {
+      const spacedDomain = domain.replaceAll('-', ' ');
+      if (normalizedGoal.includes(domain) || normalizedGoal.includes(spacedDomain)) {
+        score += 1;
+      }
     }
+
     return score;
   }
 
@@ -455,6 +490,10 @@ export class CrossDomainHandlers {
   async handleEvidenceStats(): Promise<ToolResponse> {
     return asJsonResponse(this.evidenceBridge.getStats());
   }
+}
+
+function tokenizeForWorkflowScoring(value: string): Set<string> {
+  return new Set(value.split(/[^a-z0-9+#.-]+/i).filter((token) => token.length > 1));
 }
 
 function edgeConfidence(edge: EvidenceGraphSnapshot['edges'][number]): number {
