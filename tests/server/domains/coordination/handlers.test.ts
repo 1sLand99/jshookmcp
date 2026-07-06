@@ -131,6 +131,44 @@ describe('CoordinationHandlers', () => {
     expect(body.totalByCategory['security']).toBe(1);
   });
 
+  it('clamps and filters tagged session insights', async () => {
+    await handlers.handleAppendSessionInsight({
+      category: 'security',
+      content: 'token in localStorage',
+      confidence: 1.7,
+      tags: ['auth', 'storage', 'auth'],
+      severity: 'high',
+      toolSource: 'browser',
+    });
+    await handlers.handleAppendSessionInsight({
+      category: 'note',
+      content: 'low signal observation',
+      confidence: 0.3,
+      tags: ['storage'],
+      severity: 'low',
+      toolSource: 'coordination',
+    });
+
+    const context = (await handlers.handleGetTaskContext({
+      tag: 'auth',
+      severity: 'high',
+      minConfidence: 0.9,
+    })) as unknown as GetTaskContextResponse;
+
+    expect(context.sessionInsights).toHaveLength(1);
+    expect(context.summary?.totalInsights).toBe(2);
+    expect((context.summary as any)?.returnedInsights).toBe(1);
+    expect(context.sessionInsights?.[0]).toEqual(
+      expect.objectContaining({
+        category: 'security',
+        confidence: 1,
+        tags: ['auth', 'storage'],
+        severity: 'high',
+        toolSource: 'browser',
+      }),
+    );
+  });
+
   it('handleGetTaskContext returns all handoffs and insights when taskId is omitted', async () => {
     await handlers.handleCreateTaskHandoff({ description: 'active task' });
     const completedTask = (await handlers.handleCreateTaskHandoff({
@@ -163,6 +201,9 @@ describe('CoordinationHandlers', () => {
       category: 'finding',
       content: 'token lives in storage',
       confidence: 0.8,
+      tags: ['auth', 'storage'],
+      severity: 'medium',
+      toolSource: 'browser',
     });
 
     expect(notify).toHaveBeenCalledTimes(2);
@@ -184,6 +225,13 @@ describe('CoordinationHandlers', () => {
     expect(restoredContext.active?.[0]?.taskId).toBe(created.taskId);
     expect(restoredContext.active?.[0]?.description).toBe('persist me');
     expect(restoredContext.sessionInsights?.[0]?.content).toBe('token lives in storage');
+    expect(restoredContext.sessionInsights?.[0]).toEqual(
+      expect.objectContaining({
+        tags: ['auth', 'storage'],
+        severity: 'medium',
+        toolSource: 'browser',
+      }),
+    );
     expect((restoredContext.sessionInsights?.[0] as any)?.sourceTaskId).toBe(created.taskId);
   });
 

@@ -19,7 +19,7 @@ const SCORES = {
   'boringssl-inspector': [9.2, '28 tools, Phase 0 honesty fix + Phase 2 MCP-safe wrappers'],
   browser: [8.9, '69 tools, 73 scan-counted tests, prior audit'],
   canvas: [9.4, '8 tools, Phase 0 adapters + Phase 2 MCP-safe wrappers'],
-  coordination: [8.9, '10 tools, Phase 3 persisted handoffs and insights'],
+  coordination: [9.0, '10 tools, persisted handoffs/insights + tagged insight filtering'],
   'cross-domain': [
     9.0,
     '6 tools, live-state hydration, edge filtering, expanded workflow classifier',

@@ -23,5 +23,16 @@ describe('coordination domain definitions', () => {
   it('should expose optional taskId for get_task_context', async () => {
     const tool = getTool('get_task_context');
     expect(tool?.inputSchema.properties).toHaveProperty('taskId');
+    expect(tool?.inputSchema.properties).toHaveProperty('category');
+    expect(tool?.inputSchema.properties).toHaveProperty('tag');
+    expect(tool?.inputSchema.properties).toHaveProperty('severity');
+    expect(tool?.inputSchema.properties).toHaveProperty('minConfidence');
+  });
+
+  it('should expose session insight retrieval metadata', async () => {
+    const tool = getTool('append_session_insight');
+    expect(tool?.inputSchema.properties).toHaveProperty('tags');
+    expect(tool?.inputSchema.properties).toHaveProperty('severity');
+    expect(tool?.inputSchema.properties).toHaveProperty('toolSource');
   });
 });

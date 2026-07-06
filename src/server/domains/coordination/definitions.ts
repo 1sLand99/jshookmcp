@@ -26,6 +26,14 @@ export const coordinationTools: Tool[] = [
     t
       .desc('Read persisted task handoff context and session insights.')
       .string('taskId', 'Optional task ID to read a single handoff')
+      .string('category', 'Optional session insight category filter')
+      .string('tag', 'Optional session insight tag filter')
+      .string('severity', 'Optional session insight severity filter')
+      .string('sourceTaskId', 'Optional source handoff id filter for session insights')
+      .number('minConfidence', 'Minimum confidence for returned session insights', {
+        minimum: 0,
+        maximum: 1,
+      })
       .query(),
   ),
   tool('append_session_insight', (t) =>
@@ -34,6 +42,9 @@ export const coordinationTools: Tool[] = [
       .string('category', 'Insight category')
       .string('content', 'The insight content')
       .number('confidence', 'Confidence level 0.0-1.0', { minimum: 0, maximum: 1, default: 1 })
+      .array('tags', { type: 'string' }, 'Optional tags for retrieval and grouping')
+      .string('severity', 'Optional severity: info, low, medium, high, or critical')
+      .string('toolSource', 'Optional tool or domain that produced the insight')
       .required('category', 'content'),
   ),
 

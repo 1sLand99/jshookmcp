@@ -38,6 +38,9 @@ export interface SessionInsight {
   category: string;
   content: string;
   confidence: number;
+  tags?: string[];
+  severity?: 'info' | 'low' | 'medium' | 'high' | 'critical';
+  toolSource?: string;
   timestamp: number;
   sourceTaskId?: string;
 }
@@ -78,7 +81,7 @@ export class CoordinationHandlers {
       schemaVersion: 1,
       savedAt: new Date().toISOString(),
       handoffs: [...this.handoffs.entries()].map(([id, handoff]) => [id, cloneHandoff(handoff)]),
-      insights: this.insights.map((insight) => ({ ...insight })),
+      insights: this.insights.map((insight) => cloneInsight(insight)),
     };
   }
 
@@ -102,7 +105,7 @@ export class CoordinationHandlers {
 
     const restoredInsights = (snapshot.insights ?? [])
       .filter((value): value is SessionInsight => isSessionInsight(value))
-      .map((insight) => ({ ...insight }));
+      .map((insight) => cloneInsight(insight));
 
     this.handoffs.clear();
     for (const [id, handoff] of restoredHandoffs) {
@@ -242,22 +245,17 @@ export class CoordinationHandlers {
     const handoffs = [...this.handoffs.values()].map((h) => this.serializeHandoff(h));
     const active = handoffs.filter((h) => h.status !== 'completed');
     const completed = handoffs.filter((h) => h.status === 'completed');
+    const sessionInsights = this.filterInsights(args).map((i) => this.serializeInsight(i));
 
     return {
       active,
       completed,
-      sessionInsights: this.insights.map((i) => ({
-        id: i.id,
-        category: i.category,
-        content: i.content,
-        confidence: i.confidence,
-        timestamp: new Date(i.timestamp).toISOString(),
-        sourceTaskId: i.sourceTaskId,
-      })),
+      sessionInsights,
       summary: {
         totalActive: active.length,
         totalCompleted: completed.length,
         totalInsights: this.insights.length,
+        returnedInsights: sessionInsights.length,
       },
     };
   }
@@ -271,7 +269,10 @@ export class CoordinationHandlers {
   async handleAppendSessionInsight(args: Record<string, unknown>): Promise<unknown> {
     const category = args.category as string;
     const content = args.content as string;
-    const confidence = (args.confidence as number) ?? 1.0;
+    const confidence = clampConfidence(args.confidence);
+    const tags = readStringArray(args.tags);
+    const severity = readSeverity(args.severity);
+    const toolSource = typeof args.toolSource === 'string' ? args.toolSource : undefined;
 
     // Find the most recent in-progress handoff as source context
     const activeHandoff = [...this.handoffs.values()].find(
@@ -283,6 +284,9 @@ export class CoordinationHandlers {
       category,
       content,
       confidence,
+      tags,
+      severity,
+      toolSource,
       timestamp: Date.now(),
       sourceTaskId: activeHandoff?.id,
     };
@@ -293,6 +297,10 @@ export class CoordinationHandlers {
     return {
       insightId: insight.id,
       category: insight.category,
+      confidence: insight.confidence,
+      tags: insight.tags,
+      severity: insight.severity,
+      toolSource: insight.toolSource,
       totalInsights: this.insights.length,
       totalByCategory: this.getInsightCountByCategory(),
     };
@@ -317,6 +325,40 @@ export class CoordinationHandlers {
       keyFindings: h.keyFindings,
       artifacts: h.artifacts,
     };
+  }
+
+  private serializeInsight(i: SessionInsight): Record<string, unknown> {
+    return {
+      id: i.id,
+      category: i.category,
+      content: i.content,
+      confidence: i.confidence,
+      tags: i.tags,
+      severity: i.severity,
+      toolSource: i.toolSource,
+      timestamp: new Date(i.timestamp).toISOString(),
+      sourceTaskId: i.sourceTaskId,
+    };
+  }
+
+  private filterInsights(args: Record<string, unknown>): SessionInsight[] {
+    const category = typeof args.category === 'string' ? args.category : undefined;
+    const tag = typeof args.tag === 'string' ? args.tag : undefined;
+    const severity = readSeverity(args.severity);
+    const sourceTaskId = typeof args.sourceTaskId === 'string' ? args.sourceTaskId : undefined;
+    const minConfidence =
+      typeof args.minConfidence === 'number' && Number.isFinite(args.minConfidence)
+        ? clampConfidence(args.minConfidence)
+        : undefined;
+
+    return this.insights.filter((insight) => {
+      if (category && insight.category !== category) return false;
+      if (tag && !insight.tags?.includes(tag)) return false;
+      if (severity && insight.severity !== severity) return false;
+      if (sourceTaskId && insight.sourceTaskId !== sourceTaskId) return false;
+      if (minConfidence !== undefined && insight.confidence < minConfidence) return false;
+      return true;
+    });
   }
 
   private getInsightCountByCategory(): Record<string, number> {
@@ -523,6 +565,13 @@ function cloneHandoff(handoff: TaskHandoff): TaskHandoff {
   };
 }
 
+function cloneInsight(insight: SessionInsight): SessionInsight {
+  return {
+    ...insight,
+    tags: insight.tags ? [...insight.tags] : undefined,
+  };
+}
+
 function isTaskHandoff(value: unknown): value is TaskHandoff {
   if (!value || typeof value !== 'object') return false;
   const handoff = value as Partial<TaskHandoff>;
@@ -548,6 +597,9 @@ function isSessionInsight(value: unknown): value is SessionInsight {
     typeof insight.content === 'string' &&
     typeof insight.confidence === 'number' &&
     typeof insight.timestamp === 'number' &&
+    isOptionalStringArray(insight.tags) &&
+    (insight.severity === undefined || isInsightSeverity(insight.severity)) &&
+    (insight.toolSource === undefined || typeof insight.toolSource === 'string') &&
     (insight.sourceTaskId === undefined || typeof insight.sourceTaskId === 'string')
   );
 }
@@ -561,5 +613,30 @@ function isHandoffStatus(value: unknown): value is TaskHandoff['status'] {
 function isOptionalStringArray(value: unknown): value is string[] | undefined {
   return (
     value === undefined || (Array.isArray(value) && value.every((item) => typeof item === 'string'))
+  );
+}
+
+function readStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const items = value.filter((item): item is string => typeof item === 'string' && item.length > 0);
+  return items.length > 0 ? [...new Set(items)] : undefined;
+}
+
+function clampConfidence(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 1.0;
+  return Math.min(1, Math.max(0, value));
+}
+
+function readSeverity(value: unknown): SessionInsight['severity'] | undefined {
+  return isInsightSeverity(value) ? value : undefined;
+}
+
+function isInsightSeverity(value: unknown): value is NonNullable<SessionInsight['severity']> {
+  return (
+    value === 'info' ||
+    value === 'low' ||
+    value === 'medium' ||
+    value === 'high' ||
+    value === 'critical'
   );
 }
