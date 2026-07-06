@@ -20,7 +20,7 @@
 - native-emulator + binary-instrument
 - native-emulator + dart-inspector
 
-## 工具清单（21）
+## 工具清单（22）
 
 | 工具 | 说明 |
 | --- | --- |
@@ -28,6 +28,7 @@
 | `nemu_create_session` | 创建一个隔离的 ARM64 仿真器会话并返回 sessionId。每个会话独占自己的 CPU 寄存器、栈和 JNI 对象表，并发分析互不干扰。用完用 nemu_destroy_session 销毁，空闲会话会自动过期。 |
 | `nemu_destroy_session` | 销毁一个仿真器会话并释放其内存（已映射的库、栈、JNI 表）。 |
 | `nemu_list_sessions` | 列出活动的仿真器会话及其创建和最近使用时间。 |
+| `nemu_session_info` | 在不执行 native 代码的情况下检查一个仿真器会话，返回时间戳、导出符号、未解析导入、构造器故障和活动会话数。 |
 | `nemu_load_library` | 从文件路径将一个 AArch64 ELF 共享库（.so）加载进会话，映射段并解析导出符号。是 list_symbols / call_symbol / call_jni_export 的前置步骤。 |
 | `nemu_load_library_chain` | 加载依赖库链并解析跨库导入符号。先传入依赖库路径数组 dependencyPaths（按序加载），再传入主库路径 primaryPath。各依赖库的导出符号对主库及后续依赖可见。适用于 FFmpeg 风格的多库加载场景，如 libijkplayer.so 调用 libijkffmpeg.so 和 libijksdl.so 的导出函数。 |
 | `nemu_inspect_imports` | 在仿真前检查 AArch64 ELF .so 的动态导入重定位信息，列出导入符号、GOT 偏移，并标注每个导入在内置 bionic 桩中是否有支持。无需手写 readelf/Capstone 脚本即可诊断 PLT/GOT NULL 间接调用失败。 |

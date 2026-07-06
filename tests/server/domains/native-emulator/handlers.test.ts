@@ -238,6 +238,31 @@ describe('NativeEmulatorHandlers — happy path', () => {
     expect(list.count).toBe(1);
   });
 
+  it('reports session info without executing native code', async () => {
+    const sessionId = await freshSession();
+    const beforeLoad = payload(await handlers.handleSessionInfo({ sessionId }));
+    expect(beforeLoad.success).toBe(true);
+    expect(beforeLoad.sessionId).toBe(sessionId);
+    expect(beforeLoad.symbols).toEqual([]);
+    expect(beforeLoad.symbolCount).toBe(0);
+    expect(beforeLoad.diagnostics).toEqual({
+      unresolvedImports: [],
+      constructorFaults: [],
+    });
+
+    await handlers.handleLoadLibrary({ sessionId, soPath });
+    const afterLoad = payload(await handlers.handleSessionInfo({ sessionId }));
+    expect(afterLoad.symbols).toEqual(['add_two']);
+    expect(afterLoad.symbolCount).toBe(1);
+    expect(afterLoad.activeSessions).toBe(1);
+    expect(typeof afterLoad.createdAt).toBe('number');
+    expect(typeof afterLoad.lastUsedAt).toBe('number');
+    expect(afterLoad.diagnostics).toEqual({
+      unresolvedImports: [],
+      constructorFaults: [],
+    });
+  });
+
   it('loads a .so by path and lists its symbols', async () => {
     const sessionId = await freshSession();
     const loaded = payload(await handlers.handleLoadLibrary({ sessionId, soPath }));

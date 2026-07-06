@@ -45,6 +45,7 @@ describe('native-emulator manifest', () => {
     expect(registeredNames).toEqual(definedNames);
     expect(registeredNames).toContain('nemu_disassemble');
     expect(registeredNames).toContain('nemu_inspect_imports');
+    expect(registeredNames).toContain('nemu_session_info');
     expect(registeredNames).toContain('nemu_alloc_memory');
     expect(registeredNames).toContain('nemu_read_memory');
     expect(registeredNames).toContain('nemu_write_memory');

@@ -16,6 +16,7 @@ const registrations = defineMethodRegistrations<H, (typeof nativeEmulatorTools)[
     { tool: 'nemu_create_session', method: 'handleCreateSession' },
     { tool: 'nemu_destroy_session', method: 'handleDestroySession' },
     { tool: 'nemu_list_sessions', method: 'handleListSessions' },
+    { tool: 'nemu_session_info', method: 'handleSessionInfo' },
     { tool: 'nemu_load_library', method: 'handleLoadLibrary' },
     { tool: 'nemu_load_library_chain', method: 'handleLoadLibraryChain' },
     { tool: 'nemu_inspect_imports', method: 'handleInspectImports' },

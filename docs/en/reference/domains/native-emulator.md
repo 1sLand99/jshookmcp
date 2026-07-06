@@ -20,7 +20,7 @@ In-process, dependency-free self-built ARM64 interpreter for emulating Android `
 - native-emulator + binary-instrument
 - native-emulator + dart-inspector
 
-## Full tool list (21)
+## Full tool list (22)
 
 | Tool | Description |
 | --- | --- |
@@ -28,6 +28,7 @@ In-process, dependency-free self-built ARM64 interpreter for emulating Android `
 | `nemu_create_session` | Create an isolated ARM64 emulator session and return its sessionId. Each session owns its own CPU registers, guest stack, and JNI object table, so concurrent analyses never interfere. Destroy it with nemu_destroy_session when done; idle sessions auto-expire. |
 | `nemu_destroy_session` | Destroy an emulator session and free its memory (mapped library, stack, JNI tables). |
 | `nemu_list_sessions` | List active emulator sessions with their creation and last-use timestamps. |
+| `nemu_session_info` | Inspect one emulator session without executing native code. Returns timestamps, exported symbols, unresolved imports, constructor faults, and active session count. |
 | `nemu_load_library` | Load an AArch64 ELF shared object (.so) from a filesystem path into a session, mapping its segments and resolving exported symbols. Prerequisite for list_symbols / call_symbol / call_jni_export. |
 | `nemu_load_library_chain` | Load a chain of dependent libraries into a session, resolving inter-library imports. Pass dependency .so paths as dependencyPaths (loaded first in order), then the primary .so path. Each dependency exports are visible to the primary and later dependencies. Use this for FFmpeg-style multi-library loads where libijkplayer.so calls exports from libijkffmpeg.so and libijksdl.so. |
 | `nemu_inspect_imports` | Inspect an AArch64 ELF .so before emulation and list imported symbols from dynamic relocations, including GOT offsets and whether each import is backed by the built-in bionic stubs. Use this to diagnose PLT/GOT NULL indirect-call failures without writing ad-hoc readelf/Capstone scripts. |

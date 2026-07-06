@@ -149,6 +149,22 @@ export class NativeEmulatorHandlers {
     }));
   }
 
+  handleSessionInfo(args: ToolArgs): Promise<ToolResponse> {
+    return handleSafe(async () => {
+      const session = this.requireSession(args);
+      const symbols = session.emulator.engine.exportedSymbolNames();
+      return {
+        sessionId: session.id,
+        createdAt: session.createdAt,
+        lastUsedAt: session.lastUsedAt,
+        activeSessions: this.sessions.count(),
+        symbols,
+        symbolCount: symbols.length,
+        diagnostics: nativeDiagnostics(session),
+      };
+    });
+  }
+
   handleLoadLibrary(args: ToolArgs): Promise<ToolResponse> {
     return handleSafe(async () => {
       const session = this.requireSession(args);

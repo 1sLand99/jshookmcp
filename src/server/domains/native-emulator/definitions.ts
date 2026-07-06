@@ -41,6 +41,15 @@ export const nativeEmulatorTools: Tool[] = [
   tool('nemu_list_sessions', (t) =>
     t.desc('List active emulator sessions with their creation and last-use timestamps.').query(),
   ),
+  tool('nemu_session_info', (t) =>
+    t
+      .desc(
+        'Inspect one emulator session without executing native code. Returns timestamps, exported symbols, unresolved imports, constructor faults, and active session count.',
+      )
+      .string('sessionId', 'Session id returned by nemu_create_session')
+      .required('sessionId')
+      .query(),
+  ),
   tool('nemu_load_library', (t) =>
     t
       .desc(

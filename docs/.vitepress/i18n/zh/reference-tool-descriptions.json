@@ -570,5 +570,6 @@
   "debugger_capture_hit": "等待下一次调试器暂停，并一次性捕获调用栈和可选的顶部调用帧作用域变量。",
   "adb_screenrecord": "通过 adb shell screenrecord 录制短 MP4 屏幕视频并拉取到本地。",
   "update_task_handoff": "更新 Task Handoff 的状态或元数据，但不把任务标记为完成。",
-  "cross_domain_evidence_query": "按 URL、堆地址、函数、脚本、节点类型、元数据或证据链查询共享跨域证据图。"
+  "cross_domain_evidence_query": "按 URL、堆地址、函数、脚本、节点类型、元数据或证据链查询共享跨域证据图。",
+  "nemu_session_info": "在不执行 native 代码的情况下检查一个仿真器会话，返回时间戳、导出符号、未解析导入、构造器故障和活动会话数。"
 }
