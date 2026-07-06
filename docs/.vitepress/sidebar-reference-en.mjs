@@ -21,6 +21,7 @@ export const referenceSidebarItems = [
   { text: 'Maintenance', link: '/en/reference/domains/maintenance' },
   { text: 'Memory', link: '/en/reference/domains/memory' },
   { text: 'Mojo IPC', link: '/en/reference/domains/mojo-ipc' },
+  { text: 'Native Bridge', link: '/en/reference/domains/native-bridge' },
   { text: 'Native Emulator', link: '/en/reference/domains/native-emulator' },
   { text: 'Network', link: '/en/reference/domains/network' },
   { text: 'Platform', link: '/en/reference/domains/platform' },

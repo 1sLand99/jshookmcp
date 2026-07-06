@@ -32,8 +32,8 @@ const SCORES = {
   memory: [9.7, '34 tools, E5 parity, Phase 0 find_accesses wired readMemory+capstone+pid'],
   'mojo-ipc': [8.6, '5 tools, Phase 2 MCP-safe wrappers'],
   'native-bridge': [
-    8.4,
-    '4 tools, Phase 3 capability advertisement + IDA/Ghidra parity, externalized manifest gap remains',
+    9.5,
+    '6 tools, runtime DomainManifest registration + Rizin/Binary Ninja bridge parity',
   ],
   'native-emulator': [9.0, '21 tools, 64 tests, E4 finale'],
   network: [9.0, '37 tools, 37 scan-counted tests'],

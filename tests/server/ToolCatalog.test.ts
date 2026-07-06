@@ -69,18 +69,21 @@ describe('ToolCatalog', () => {
     }
   });
 
-  it('externalized bridge tools are not present in built-in ToolCatalog', () => {
-    const migratedBridgeTools = [
+  it('native bridge tools are registered in the full ToolCatalog', () => {
+    const nativeBridgeTools = [
       'native_bridge_status',
       'ghidra_bridge',
       'ida_bridge',
+      'rizin_bridge',
+      'binary_ninja_bridge',
       'native_symbol_sync',
     ] as const;
 
     const allNames = new Set(allTools.map((tool) => tool.name));
-    for (const toolName of migratedBridgeTools) {
-      expect(allNames.has(toolName)).toBe(false);
-      expect(getToolDomain(toolName)).toBeNull();
+    for (const toolName of nativeBridgeTools) {
+      expect(allNames.has(toolName)).toBe(true);
+      expect(getToolDomain(toolName)).toBe('native-bridge');
+      expect(getToolMinimalTier(toolName)).toBe('full');
     }
   });
 

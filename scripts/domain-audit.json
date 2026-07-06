@@ -326,11 +326,11 @@
   "native-bridge": {
     "domain": "native-bridge",
     "dims": {
-      "d1_toolCount": 4,
-      "d2_testFiles": 3,
+      "d1_toolCount": 6,
+      "d2_testFiles": 4,
       "d3_coverageExcluded": [],
       "d4_bareCatch": 0,
-      "d5_handleSafeRefs": 5,
+      "d5_handleSafeRefs": 7,
       "d6_doc": {
         "hasClaude": true,
         "hasScore": true,

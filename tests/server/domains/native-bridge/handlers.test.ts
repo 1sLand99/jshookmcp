@@ -24,6 +24,18 @@ describe('NativeBridgeHandlers', () => {
       ).not.toThrow();
     });
 
+    it('accepts explicit Rizin and Binary Ninja loopback endpoints', async () => {
+      expect(
+        () =>
+          new NativeBridgeHandlers(
+            'http://127.0.0.1:18080',
+            'http://127.0.0.1:18081',
+            'http://127.0.0.1:18082',
+            'http://127.0.0.1:18083',
+          ),
+      ).not.toThrow();
+    });
+
     it('rejects external Ghidra endpoint', async () => {
       expect(
         () => new NativeBridgeHandlers('http://evil.com:18080', 'http://127.0.0.1:18081'),
@@ -38,6 +50,28 @@ describe('NativeBridgeHandlers', () => {
 
     it('rejects non-http protocol', async () => {
       expect(() => new NativeBridgeHandlers('ftp://127.0.0.1:18080')).toThrow(/http\/https/);
+    });
+
+    it('rejects external Rizin and Binary Ninja endpoints', async () => {
+      expect(
+        () =>
+          new NativeBridgeHandlers(
+            'http://127.0.0.1:18080',
+            'http://127.0.0.1:18081',
+            'http://192.168.1.10:18082',
+            'http://127.0.0.1:18083',
+          ),
+      ).toThrow(/Rizin.*loopback/);
+
+      expect(
+        () =>
+          new NativeBridgeHandlers(
+            'http://127.0.0.1:18080',
+            'http://127.0.0.1:18081',
+            'http://127.0.0.1:18082',
+            'http://example.com:18083',
+          ),
+      ).toThrow(/Binary Ninja.*loopback/);
     });
 
     it('uses defaults when no args provided', async () => {
@@ -77,6 +111,14 @@ describe('NativeBridgeHandlers', () => {
     it('handleNativeSymbolSync rejects missing source', async () => {
       const result = parseJson<any>(await handlers.handleNativeSymbolSync({}));
       expect(result.success).toBe(false);
+    });
+
+    it('new bridge handlers require action', async () => {
+      const rizin = parseJson<any>(await handlers.handleRizinBridge({}));
+      const binaryNinja = parseJson<any>(await handlers.handleBinaryNinjaBridge({}));
+
+      expect(rizin.error).toContain('action');
+      expect(binaryNinja.error).toContain('action');
     });
   });
 
@@ -178,6 +220,27 @@ describe('NativeBridgeHandlers', () => {
       expect(result.success).toBe(true);
       const ghidraResult = result.backends[0];
       expect(ghidraResult.endpoint).toBe('http://127.0.0.1:18080');
+    });
+
+    it('ignores endpoint override for Rizin status args', async () => {
+      const handlers = new NativeBridgeHandlers();
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          status: 200,
+          json: () => Promise.resolve({ version: 'rizin-bridge' }),
+        }),
+      );
+
+      const result = parseJson<any>(
+        await handlers.handleNativeBridgeStatus({
+          backend: 'rizin',
+          rizinEndpoint: 'http://evil.com:9999',
+        }),
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.backends[0].endpoint).toBe('http://127.0.0.1:18082');
     });
   });
 
@@ -293,6 +356,117 @@ describe('NativeBridgeHandlers', () => {
       expect(fetchMock).toHaveBeenCalledWith(
         'http://127.0.0.1:18081/segments',
         expect.objectContaining({ method: 'GET' }),
+      );
+    });
+  });
+
+  /* ── Rizin and Binary Ninja bridge actions ─────────────────────── */
+
+  describe('additional backend actions', () => {
+    it('routes Rizin run_command to the command endpoint', async () => {
+      const handlers = new NativeBridgeHandlers();
+      const fetchMock = vi.fn().mockResolvedValue({
+        status: 200,
+        json: () => Promise.resolve({ stdout: 'entry0' }),
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const result = parseJson<any>(
+        await handlers.handleRizinBridge({
+          action: 'run_command',
+          command: 'aflj',
+        }),
+      );
+
+      expect(result).toMatchObject({ success: true, action: 'run_command' });
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://127.0.0.1:18082/commands/run',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ command: 'aflj' }),
+        }),
+      );
+    });
+
+    it('routes Rizin disassembly requests by function name', async () => {
+      const handlers = new NativeBridgeHandlers();
+      const fetchMock = vi.fn().mockResolvedValue({
+        status: 200,
+        json: () => Promise.resolve('push rbp'),
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const result = parseJson<any>(
+        await handlers.handleRizinBridge({
+          action: 'disassemble_function',
+          functionName: 'sym.main',
+        }),
+      );
+
+      expect(result.disassembly).toBe('push rbp');
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://127.0.0.1:18082/functions/sym.main/disassemble',
+        expect.objectContaining({ method: 'GET' }),
+      );
+    });
+
+    it('routes Binary Ninja decompile and type queries', async () => {
+      const handlers = new NativeBridgeHandlers();
+      const fetchMock = vi.fn((url: string) => {
+        if (url.endsWith('/decompile')) {
+          return Promise.resolve({
+            status: 200,
+            json: () => Promise.resolve('int main() { return 0; }'),
+          });
+        }
+        if (url.endsWith('/types')) {
+          return Promise.resolve({
+            status: 200,
+            json: () => Promise.resolve([{ name: 'MyStruct' }]),
+          });
+        }
+        return Promise.reject(new Error(`unexpected url: ${url}`));
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const decompiled = parseJson<any>(
+        await handlers.handleBinaryNinjaBridge({
+          action: 'decompile_function',
+          functionName: 'main',
+        }),
+      );
+      const types = parseJson<any>(
+        await handlers.handleBinaryNinjaBridge({
+          action: 'get_types',
+        }),
+      );
+
+      expect(decompiled.decompiled).toContain('main');
+      expect(types.types).toEqual([{ name: 'MyStruct' }]);
+    });
+
+    it('exports symbols from Rizin and Binary Ninja endpoints', async () => {
+      const handlers = new NativeBridgeHandlers();
+      const fetchMock = vi.fn().mockResolvedValue({
+        status: 200,
+        json: () => Promise.resolve([{ name: 'main' }]),
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const rizin = parseJson<any>(await handlers.handleNativeSymbolSync({ source: 'rizin' }));
+      const binaryNinja = parseJson<any>(
+        await handlers.handleNativeSymbolSync({ source: 'binaryninja' }),
+      );
+
+      expect(rizin.success).toBe(true);
+      expect(binaryNinja.success).toBe(true);
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://127.0.0.1:18082/symbols/export',
+        expect.objectContaining({ method: 'POST' }),
+      );
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://127.0.0.1:18083/symbols/export',
+        expect.objectContaining({ method: 'POST' }),
       );
     });
   });

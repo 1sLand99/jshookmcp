@@ -8,6 +8,10 @@ import {
 import { handleSafe, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
 import { asJsonResponse, serializeError } from '@server/domains/shared/response';
 export * from './definitions';
+export { default } from './manifest';
+
+const RIZIN_BRIDGE_ENDPOINT = 'http://127.0.0.1:18082';
+const BINARY_NINJA_BRIDGE_ENDPOINT = 'http://127.0.0.1:18083';
 
 interface BridgeResponse {
   status: number;
@@ -37,7 +41,33 @@ const IDA_ACTIONS = [
   'get_segments',
 ] as const;
 
-type BridgeBackend = 'ghidra' | 'ida';
+const RIZIN_ACTIONS = [
+  'status',
+  'open_binary',
+  'analyze',
+  'list_functions',
+  'disassemble_function',
+  'run_command',
+  'get_xrefs',
+  'search_strings',
+  'get_segments',
+] as const;
+
+const BINARY_NINJA_ACTIONS = [
+  'status',
+  'open_binary',
+  'list_functions',
+  'decompile_function',
+  'disassemble_function',
+  'run_script',
+  'get_xrefs',
+  'search_strings',
+  'get_strings',
+  'get_segments',
+  'get_types',
+] as const;
+
+type BridgeBackend = 'ghidra' | 'ida' | 'rizin' | 'binaryninja';
 
 // ── Helpers ──
 
@@ -109,7 +139,16 @@ async function checkBridgeCapabilities(
 }
 
 function getStaticActions(backend: BridgeBackend): string[] {
-  return [...(backend === 'ghidra' ? GHIDRA_ACTIONS : IDA_ACTIONS)];
+  switch (backend) {
+    case 'ghidra':
+      return [...GHIDRA_ACTIONS];
+    case 'ida':
+      return [...IDA_ACTIONS];
+    case 'rizin':
+      return [...RIZIN_ACTIONS];
+    case 'binaryninja':
+      return [...BINARY_NINJA_ACTIONS];
+  }
 }
 
 function parseCapabilityActions(data: unknown): string[] {
@@ -151,13 +190,24 @@ function validateLoopbackEndpoint(endpoint: string, label: string): void {
 export class NativeBridgeHandlers {
   private readonly ghidraEndpoint: string;
   private readonly idaEndpoint: string;
+  private readonly rizinEndpoint: string;
+  private readonly binaryNinjaEndpoint: string;
 
-  constructor(ghidraEndpoint = GHIDRA_BRIDGE_ENDPOINT, idaEndpoint = IDA_BRIDGE_ENDPOINT) {
+  constructor(
+    ghidraEndpoint = GHIDRA_BRIDGE_ENDPOINT,
+    idaEndpoint = IDA_BRIDGE_ENDPOINT,
+    rizinEndpoint = RIZIN_BRIDGE_ENDPOINT,
+    binaryNinjaEndpoint = BINARY_NINJA_BRIDGE_ENDPOINT,
+  ) {
     // Validate endpoints are loopback only (SSRF protection)
     validateLoopbackEndpoint(ghidraEndpoint, 'Ghidra bridge');
     validateLoopbackEndpoint(idaEndpoint, 'IDA bridge');
+    validateLoopbackEndpoint(rizinEndpoint, 'Rizin bridge');
+    validateLoopbackEndpoint(binaryNinjaEndpoint, 'Binary Ninja bridge');
     this.ghidraEndpoint = ghidraEndpoint;
     this.idaEndpoint = idaEndpoint;
+    this.rizinEndpoint = rizinEndpoint;
+    this.binaryNinjaEndpoint = binaryNinjaEndpoint;
   }
 
   /** Endpoints are fixed at construction; user args cannot override them. */
@@ -167,6 +217,14 @@ export class NativeBridgeHandlers {
 
   private getIdaEndpoint(_args: Record<string, unknown>): string {
     return this.idaEndpoint;
+  }
+
+  private getRizinEndpoint(_args: Record<string, unknown>): string {
+    return this.rizinEndpoint;
+  }
+
+  private getBinaryNinjaEndpoint(_args: Record<string, unknown>): string {
+    return this.binaryNinjaEndpoint;
   }
 
   handleNativeBridgeStatusTool(args: Record<string, unknown>): Promise<ToolResponse> {
@@ -179,6 +237,14 @@ export class NativeBridgeHandlers {
 
   handleIdaBridgeTool(args: Record<string, unknown>): Promise<ToolResponse> {
     return handleSafe(() => this.handleIdaBridge(args));
+  }
+
+  handleRizinBridgeTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(() => this.handleRizinBridge(args));
+  }
+
+  handleBinaryNinjaBridgeTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(() => this.handleBinaryNinjaBridge(args));
   }
 
   handleNativeSymbolSyncTool(args: Record<string, unknown>): Promise<ToolResponse> {
@@ -195,11 +261,19 @@ export class NativeBridgeHandlers {
     if (backend === 'ida' || backend === 'all') {
       results.push(await checkBridgeHealth(this.getIdaEndpoint(args), 'ida'));
     }
+    if (backend === 'rizin' || backend === 'all') {
+      results.push(await checkBridgeHealth(this.getRizinEndpoint(args), 'rizin'));
+    }
+    if (backend === 'binaryninja' || backend === 'all') {
+      results.push(await checkBridgeHealth(this.getBinaryNinjaEndpoint(args), 'binaryninja'));
+    }
 
     return asJsonResponse({
       success: true,
       backends: results,
-      hint: 'Install bridge servers: Ghidra → ghidra_bridge (pip install ghidra_bridge), IDA → ida_bridge',
+      hint:
+        'Install bridge servers: Ghidra → ghidra_bridge, IDA → ida_bridge, ' +
+        'Rizin → local rizin/r2 bridge, Binary Ninja → local Binary Ninja bridge',
     });
   }
 
@@ -417,13 +491,262 @@ export class NativeBridgeHandlers {
     }
   }
 
-  async handleNativeSymbolSync(args: Record<string, unknown>) {
-    const source = args.source as string;
-    if (!source || !['ghidra', 'ida'].includes(source)) {
-      return toErrorResponse('native_symbol_sync', new Error('source must be "ghidra" or "ida"'));
+  async handleRizinBridge(args: Record<string, unknown>) {
+    const action = args.action as string;
+    const endpoint = this.getRizinEndpoint(args);
+
+    if (!action) {
+      return toErrorResponse('rizin_bridge', new Error('action is required'));
     }
 
-    const endpoint = source === 'ghidra' ? this.getGhidraEndpoint(args) : this.getIdaEndpoint(args);
+    try {
+      switch (action) {
+        case 'status':
+          return asJsonResponse(await checkBridgeHealth(endpoint, 'rizin'));
+
+        case 'open_binary': {
+          const binaryPath = args.binaryPath as string;
+          if (!binaryPath) throw new Error('binaryPath is required for open_binary');
+          const { status, data } = await bridgeFetch(
+            endpoint,
+            '/binary/open',
+            'POST',
+            JSON.stringify({ binaryPath }),
+          );
+          return asJsonResponse({ success: status < 300, action, result: data });
+        }
+
+        case 'analyze': {
+          const { status, data } = await bridgeFetch(
+            endpoint,
+            '/analysis/run',
+            'POST',
+            JSON.stringify({ level: args.analysisLevel ?? 'default' }),
+          );
+          return asJsonResponse({ success: status < 300, action, result: data });
+        }
+
+        case 'list_functions': {
+          const { status, data } = await bridgeFetch(endpoint, '/functions');
+          return asJsonResponse({ success: status < 300, action, functions: data });
+        }
+
+        case 'disassemble_function': {
+          const name = args.functionName as string;
+          if (!name) throw new Error('functionName is required for disassemble_function');
+          const { status, data } = await bridgeFetch(
+            endpoint,
+            `/functions/${encodeURIComponent(name)}/disassemble`,
+          );
+          return asJsonResponse({
+            success: status < 300,
+            action,
+            functionName: name,
+            disassembly: data,
+          });
+        }
+
+        case 'run_command': {
+          const command = args.command as string;
+          if (!command) throw new Error('command is required for run_command');
+          const { status, data } = await bridgeFetch(
+            endpoint,
+            '/commands/run',
+            'POST',
+            JSON.stringify({ command }),
+          );
+          return asJsonResponse({ success: status < 300, action, result: data });
+        }
+
+        case 'get_xrefs': {
+          const name = args.functionName as string;
+          if (!name) throw new Error('functionName is required for get_xrefs');
+          const { status, data } = await bridgeFetch(
+            endpoint,
+            `/xrefs/${encodeURIComponent(name)}`,
+          );
+          return asJsonResponse({ success: status < 300, action, symbol: name, xrefs: data });
+        }
+
+        case 'search_strings': {
+          const pattern = args.searchPattern as string;
+          const { status, data } = await bridgeFetch(
+            endpoint,
+            '/strings',
+            'POST',
+            JSON.stringify({ pattern: pattern ?? '' }),
+          );
+          return asJsonResponse({ success: status < 300, action, strings: data });
+        }
+
+        case 'get_segments': {
+          const { status, data } = await bridgeFetch(endpoint, '/segments');
+          return asJsonResponse({ success: status < 300, action, segments: data });
+        }
+
+        default:
+          return asJsonResponse({
+            success: true,
+            guide: {
+              what: 'Rizin/r2 is an open-source reverse engineering framework.',
+              actions: [...RIZIN_ACTIONS],
+              bridgeSetup: [
+                'Start a loopback HTTP bridge that translates these routes to rizin/r2 commands',
+                'Default endpoint: http://127.0.0.1:18082',
+              ],
+              links: ['https://rizin.re/', 'https://github.com/rizinorg/rizin'],
+            },
+          });
+      }
+    } catch (error) {
+      return toErrorResponse('rizin_bridge', error, { action, endpoint });
+    }
+  }
+
+  async handleBinaryNinjaBridge(args: Record<string, unknown>) {
+    const action = args.action as string;
+    const endpoint = this.getBinaryNinjaEndpoint(args);
+
+    if (!action) {
+      return toErrorResponse('binary_ninja_bridge', new Error('action is required'));
+    }
+
+    try {
+      switch (action) {
+        case 'status':
+          return asJsonResponse(await checkBridgeHealth(endpoint, 'binaryninja'));
+
+        case 'open_binary': {
+          const binaryPath = args.binaryPath as string;
+          if (!binaryPath) throw new Error('binaryPath is required for open_binary');
+          const { status, data } = await bridgeFetch(
+            endpoint,
+            '/binary/open',
+            'POST',
+            JSON.stringify({ binaryPath }),
+          );
+          return asJsonResponse({ success: status < 300, action, result: data });
+        }
+
+        case 'list_functions': {
+          const { status, data } = await bridgeFetch(endpoint, '/functions');
+          return asJsonResponse({ success: status < 300, action, functions: data });
+        }
+
+        case 'decompile_function': {
+          const name = args.functionName as string;
+          if (!name) throw new Error('functionName is required for decompile_function');
+          const { status, data } = await bridgeFetch(
+            endpoint,
+            `/functions/${encodeURIComponent(name)}/decompile`,
+          );
+          return asJsonResponse({
+            success: status < 300,
+            action,
+            functionName: name,
+            decompiled: data,
+          });
+        }
+
+        case 'disassemble_function': {
+          const name = args.functionName as string;
+          if (!name) throw new Error('functionName is required for disassemble_function');
+          const { status, data } = await bridgeFetch(
+            endpoint,
+            `/functions/${encodeURIComponent(name)}/disassemble`,
+          );
+          return asJsonResponse({
+            success: status < 300,
+            action,
+            functionName: name,
+            disassembly: data,
+          });
+        }
+
+        case 'run_script': {
+          const scriptPath = args.scriptPath as string;
+          if (!scriptPath) throw new Error('scriptPath is required for run_script');
+          const { status, data } = await bridgeFetch(
+            endpoint,
+            '/script/run',
+            'POST',
+            JSON.stringify({ scriptPath, args: args.scriptArgs ?? [] }),
+          );
+          return asJsonResponse({ success: status < 300, action, result: data });
+        }
+
+        case 'get_xrefs': {
+          const name = args.functionName as string;
+          if (!name) throw new Error('functionName is required for get_xrefs');
+          const { status, data } = await bridgeFetch(
+            endpoint,
+            `/xrefs/${encodeURIComponent(name)}`,
+          );
+          return asJsonResponse({ success: status < 300, action, symbol: name, xrefs: data });
+        }
+
+        case 'get_strings': {
+          const { status, data } = await bridgeFetch(endpoint, '/strings');
+          return asJsonResponse({ success: status < 300, action, strings: data });
+        }
+
+        case 'search_strings': {
+          const pattern = args.searchPattern as string;
+          const { status, data } = await bridgeFetch(
+            endpoint,
+            '/strings',
+            'POST',
+            JSON.stringify({ pattern: pattern ?? '' }),
+          );
+          return asJsonResponse({ success: status < 300, action, strings: data });
+        }
+
+        case 'get_segments': {
+          const { status, data } = await bridgeFetch(endpoint, '/segments');
+          return asJsonResponse({ success: status < 300, action, segments: data });
+        }
+
+        case 'get_types': {
+          const { status, data } = await bridgeFetch(endpoint, '/types');
+          return asJsonResponse({ success: status < 300, action, types: data });
+        }
+
+        default:
+          return asJsonResponse({
+            success: true,
+            guide: {
+              what: 'Binary Ninja is a commercial reverse engineering platform.',
+              actions: [...BINARY_NINJA_ACTIONS],
+              bridgeSetup: [
+                'Run a Binary Ninja plugin that exposes the loopback HTTP bridge routes',
+                'Default endpoint: http://127.0.0.1:18083',
+              ],
+              links: ['https://binary.ninja/'],
+            },
+          });
+      }
+    } catch (error) {
+      return toErrorResponse('binary_ninja_bridge', error, { action, endpoint });
+    }
+  }
+
+  async handleNativeSymbolSync(args: Record<string, unknown>) {
+    const source = args.source as string;
+    if (!source || !['ghidra', 'ida', 'rizin', 'binaryninja'].includes(source)) {
+      return toErrorResponse(
+        'native_symbol_sync',
+        new Error('source must be one of: ghidra, ida, rizin, binaryninja'),
+      );
+    }
+
+    const endpoint =
+      source === 'ghidra'
+        ? this.getGhidraEndpoint(args)
+        : source === 'ida'
+          ? this.getIdaEndpoint(args)
+          : source === 'rizin'
+            ? this.getRizinEndpoint(args)
+            : this.getBinaryNinjaEndpoint(args);
 
     try {
       const { status, data } = await bridgeFetch(

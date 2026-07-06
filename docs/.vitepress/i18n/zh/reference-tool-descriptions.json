@@ -556,5 +556,11 @@
   "sse_export_capture": "将已捕获的 SSE 事件导出到 artifacts/captures，支持 JSON 或 NDJSON 格式。",
   "instrumentation_session_export": "待补充中文：Export an instrumentation session snapshot to an artifacts JSON file.",
   "extension_install": "从内联清单、本地包目录、本地模块文件或远程模块 URL 安装/注册扩展。",
-  "extension_info": "读取已安装扩展的清单详情，不导入或执行插件代码。"
+  "extension_info": "读取已安装扩展的清单详情，不导入或执行插件代码。",
+  "native_bridge_status": "检查本地原生分析 bridge 后端的健康状态与能力列表。",
+  "ghidra_bridge": "向 Ghidra headless 分析 bridge 发送命令。",
+  "ida_bridge": "向 IDA Pro 插件 bridge 发送命令。",
+  "rizin_bridge": "向本地 Rizin/r2 分析 bridge 发送命令。",
+  "binary_ninja_bridge": "向本地 Binary Ninja 分析 bridge 发送命令。",
+  "native_symbol_sync": "从已连接的原生分析后端导出并同步符号。"
 }

@@ -424,6 +424,30 @@ const META = {
     ],
     enCombos: ['native-emulator + binary-instrument', 'native-emulator + dart-inspector'],
   },
+  'native-bridge': {
+    zhTitle: '原生桥接',
+    zhSummary:
+      '原生分析工具桥接域，通过本地 loopback HTTP bridge 对接 Ghidra、IDA、Rizin/r2 与 Binary Ninja，用于函数枚举、反编译/反汇编、字符串搜索、交叉引用与符号同步。',
+    zhScenarios: [
+      '检查本地反汇编器 bridge 健康状态',
+      '打开二进制并枚举函数/段/字符串',
+      '通过 Ghidra/IDA/Binary Ninja 反编译函数',
+      '通过 Rizin/r2 执行分析命令',
+      '在多后端之间同步原生符号',
+    ],
+    zhCombos: ['native-bridge + binary-instrument', 'native-bridge + process'],
+    enTitle: 'Native Bridge',
+    enSummary:
+      'Native analysis bridge domain for local loopback HTTP bridges to Ghidra, IDA, Rizin/r2, and Binary Ninja, covering function listing, decompilation/disassembly, string search, xrefs, and symbol sync.',
+    enScenarios: [
+      'Check local disassembler bridge health',
+      'Open binaries and list functions, segments, and strings',
+      'Decompile functions through Ghidra, IDA, or Binary Ninja',
+      'Run analysis commands through Rizin/r2',
+      'Synchronize native symbols across backends',
+    ],
+    enCombos: ['native-bridge + binary-instrument', 'native-bridge + process'],
+  },
   'extension-registry': {
     zhTitle: '扩展注册',
     zhSummary: '扩展注册域，管理和发现社区扩展。',
@@ -517,7 +541,8 @@ const META = {
   },
   'exploit-dev': {
     zhTitle: '漏洞开发',
-    zhSummary: '二进制漏洞利用开发域，提供 ROP/JOP gadget 搜索、shellcode 编码、保护机制检测与偏移计算。',
+    zhSummary:
+      '二进制漏洞利用开发域，提供 ROP/JOP gadget 搜索、shellcode 编码、保护机制检测与偏移计算。',
     zhScenarios: ['ROP 链构建', 'Shellcode 编码与混淆', '二进制保护检测', '缓冲区溢出偏移计算'],
     zhCombos: ['exploit-dev + binary-instrument', 'exploit-dev + memory'],
     enTitle: 'Exploit Development',
@@ -533,7 +558,8 @@ const META = {
   },
   webgpu: {
     zhTitle: 'WebGPU',
-    zhSummary: 'WebGPU 逆向分析域，支持 GPU 适配器信息、shader 编译反汇编、计时侧信道分析与内存布局检查。',
+    zhSummary:
+      'WebGPU 逆向分析域，支持 GPU 适配器信息、shader 编译反汇编、计时侧信道分析与内存布局检查。',
     zhScenarios: ['GPU 硬件指纹识别', 'WGSL shader 分析', 'GPU 侧信道攻击检测', 'GPU 命令队列捕获'],
     zhCombos: ['webgpu + browser', 'webgpu + instrumentation'],
     enTitle: 'WebGPU',

@@ -30,6 +30,7 @@
 | `maintenance` | 维护 | workflow, full | 运维与维护域，覆盖缓存、token 预算、环境诊断、产物清理、扩展管理与安全沙箱执行。 |
 | `memory` | 内存 | full | 面向原生内存扫描、指针链分析、结构体推断与断点观测的内存分析域。 |
 | `mojo-ipc` | Mojo IPC | full | Mojo IPC 监控域，用于 Chromium 内部进程间通信分析。 |
+| `native-bridge` | 原生桥接 | full | 原生分析工具桥接域，通过本地 loopback HTTP bridge 对接 Ghidra、IDA、Rizin/r2 与 Binary Ninja，用于函数枚举、反编译/反汇编、字符串搜索、交叉引用与符号同步。 |
 | `native-emulator` | 原生仿真 | full | 进程内、零外部依赖的自研 ARM64 解释器，用于仿真执行 Android `.so`：加载共享库、注册模拟 Java 方法、调用导出函数或 `Java_*` JNI 入口，以还原签名/加密算法。无需真机、JVM 或 Frida。会话隔离且显式管理（create→…→destroy），空闲自动过期防泄漏。libapp.so（Flutter Dart AOT）不在此执行，应交给 Dart 层。 |
 | `network` | 网络 | workflow, full | 请求捕获、响应体读取、HAR 导出、请求重放与性能追踪。 |
 | `platform` | 平台 | full | 宿主平台与包格式分析域，覆盖 miniapp、asar、Electron。 |

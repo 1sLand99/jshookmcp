@@ -30,6 +30,7 @@ The following tool domains are available:
 | `maintenance` | Maintenance | workflow, full | Operations and maintenance domain covering cache hygiene, token budget, environment diagnostics, artifact cleanup, extension management, and secure sandbox execution. |
 | `memory` | Memory | full | Memory analysis domain for native scans, pointer-chain discovery, structure inference, and breakpoint-based observation. |
 | `mojo-ipc` | Mojo IPC | full | Mojo IPC monitoring domain for Chromium inter-process communication analysis. |
+| `native-bridge` | Native Bridge | full | Native analysis bridge domain for local loopback HTTP bridges to Ghidra, IDA, Rizin/r2, and Binary Ninja, covering function listing, decompilation/disassembly, string search, xrefs, and symbol sync. |
 | `native-emulator` | Native Emulator | full | In-process, dependency-free self-built ARM64 interpreter for emulating Android `.so` libraries: load a shared object, register mock Java methods, and invoke exported or `Java_*` JNI functions to recover signing/crypto algorithms — no device, JVM, or Frida. Sessions are isolated and explicitly managed (create → … → destroy) with idle auto-expiry. libapp.so (Flutter Dart AOT) is not executable here and routes to the Dart layer. |
 | `network` | Network | workflow, full | Request capture, response extraction, HAR export, safe replay, and performance tracing. |
 | `platform` | Platform | full | Platform and package analysis domain covering miniapps, ASAR archives, and Electron apps. |

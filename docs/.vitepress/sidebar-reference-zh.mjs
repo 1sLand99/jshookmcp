@@ -21,6 +21,7 @@ export const referenceSidebarItems = [
   { text: '维护', link: '/reference/domains/maintenance' },
   { text: '内存', link: '/reference/domains/memory' },
   { text: 'Mojo IPC', link: '/reference/domains/mojo-ipc' },
+  { text: '原生桥接', link: '/reference/domains/native-bridge' },
   { text: '原生仿真', link: '/reference/domains/native-emulator' },
   { text: '网络', link: '/reference/domains/network' },
   { text: '平台', link: '/reference/domains/platform' },
