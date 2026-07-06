@@ -1,5 +1,6 @@
 import type { DomainManifest, MCPServerContext } from '@server/domains/shared/registry';
 import { defineMethodRegistrations, toolLookup } from '@server/domains/shared/registry';
+import type { ArtifactCategory } from '@utils/artifacts';
 import {
   tokenBudgetTools,
   cacheTools,
@@ -62,6 +63,8 @@ const coreRegistrations = defineMethodRegistrations<
           retentionDays: args.retentionDays as number | undefined,
           maxTotalBytes: args.maxTotalBytes as number | undefined,
           dryRun: args.dryRun as boolean | undefined,
+          categories: args.categories as ArtifactCategory[] | undefined,
+          excludeCategories: args.excludeCategories as ArtifactCategory[] | undefined,
         },
       ],
     },

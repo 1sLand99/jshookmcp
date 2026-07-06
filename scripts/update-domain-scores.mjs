@@ -52,7 +52,10 @@ const SCORES = {
     9.2,
     '16 tools, session snapshot export to artifacts, operation status/stop lifecycle, strict type and artifact limit validation',
   ],
-  maintenance: [9.2, '13 tools, sandbox hardening plus category-aware artifact retention cleanup'],
+  maintenance: [
+    9.3,
+    '13 tools, sandbox hardening plus category-aware artifact retention cleanup with manifest category routing',
+  ],
   memory: [9.7, '34 tools, E5 parity, Phase 0 find_accesses wired readMemory+capstone+pid'],
   'mojo-ipc': [
     9.2,

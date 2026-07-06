@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import manifest from '@server/domains/maintenance/manifest';
 import { CoreMaintenanceHandlers, SandboxToolHandlers } from '@server/domains/maintenance/index';
 
@@ -39,5 +39,30 @@ describe('maintenance manifest', () => {
     expect(sandboxReg).toBeDefined();
     expect(sandboxReg?.domain).toBe('maintenance');
     expect(sandboxReg?.profiles).toEqual(['full']);
+  });
+
+  it('forwards cleanup_artifacts category filters through the manifest binding', async () => {
+    const cleanupReg = manifest.registrations.find(
+      (r) => (r.tool as { name: string }).name === 'cleanup_artifacts',
+    );
+    const handleCleanupArtifacts = vi.fn(async () => ({ ok: true }));
+
+    await cleanupReg?.bind({
+      coreMaintenanceHandlers: { handleCleanupArtifacts },
+    })({
+      retentionDays: 7,
+      maxTotalBytes: 1024,
+      dryRun: true,
+      categories: ['traces', 'har'],
+      excludeCategories: ['tmp'],
+    });
+
+    expect(handleCleanupArtifacts).toHaveBeenCalledWith({
+      retentionDays: 7,
+      maxTotalBytes: 1024,
+      dryRun: true,
+      categories: ['traces', 'har'],
+      excludeCategories: ['tmp'],
+    });
   });
 });
