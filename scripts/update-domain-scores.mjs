@@ -8,8 +8,8 @@ import path from 'node:path';
 
 const SCORES = {
   'adb-bridge': [
-    9.1,
-    '23 tools, install/input/proc maps/root/screenshot/screenrecord + port forward lifecycle',
+    9.2,
+    '23 tools, install/input/proc maps/root/screenshot/screenrecord + port forward lifecycle and strict mapping validation',
   ],
   analysis: [
     9.8,

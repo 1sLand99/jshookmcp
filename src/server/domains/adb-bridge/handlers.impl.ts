@@ -271,6 +271,23 @@ const PORT_MAPPING_ACTIONS = new Set(['add', 'remove', 'remove_all', 'list'] as 
 const PORT_MAPPING_DIRECTIONS = new Set(['forward', 'reverse'] as const);
 
 type PortMappingDirection = typeof PORT_MAPPING_DIRECTIONS extends Set<infer T> ? T : never;
+type PortMappingAction = typeof PORT_MAPPING_ACTIONS extends Set<infer T> ? T : never;
+
+function requirePortMappingAction(args: Record<string, unknown>): PortMappingAction {
+  const action = argEnum(args, 'action', PORT_MAPPING_ACTIONS);
+  if (!action) {
+    throw new Error('Missing required port mapping action: add, remove, remove_all, or list');
+  }
+  return action;
+}
+
+function requirePortMappingDirection(args: Record<string, unknown>): PortMappingDirection {
+  const direction = argEnum(args, 'direction', PORT_MAPPING_DIRECTIONS);
+  if (!direction) {
+    throw new Error('Missing required port mapping direction: forward or reverse');
+  }
+  return direction;
+}
 
 function parseAdbPortMappings(
   stdout: string,
@@ -869,8 +886,8 @@ export class ADBBridgeHandlers {
   async handlePortForward(args: Record<string, unknown>): Promise<ToolResponse> {
     return this.run('adb_port_forward', async () => {
       const serial = argStringRequired(args, 'serial');
-      const action = argEnum(args, 'action', PORT_MAPPING_ACTIONS, 'list');
-      const direction = argEnum(args, 'direction', PORT_MAPPING_DIRECTIONS, 'forward');
+      const action = requirePortMappingAction(args);
+      const direction = requirePortMappingDirection(args);
       const adb = await this.resolveAdb();
 
       if (action === 'list') {

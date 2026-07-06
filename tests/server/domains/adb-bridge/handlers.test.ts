@@ -308,6 +308,32 @@ describe('ADBBridgeHandlers', () => {
     ]);
   });
 
+  it('rejects port mapping requests without an action before resolving adb', async () => {
+    const result = await handlers.handlePortForwardTool({
+      serial: 'emulator-5554',
+      direction: 'forward',
+    });
+    const parsed = ResponseBuilder.parse<Record<string, unknown>>(result);
+
+    expect(parsed.success).toBe(false);
+    expect(parsed.message).toContain('Missing required port mapping action');
+    expect(probeCommand).not.toHaveBeenCalled();
+    expect(execFile).not.toHaveBeenCalled();
+  });
+
+  it('rejects port mapping requests without a direction before resolving adb', async () => {
+    const result = await handlers.handlePortForwardTool({
+      serial: 'emulator-5554',
+      action: 'list',
+    });
+    const parsed = ResponseBuilder.parse<Record<string, unknown>>(result);
+
+    expect(parsed.success).toBe(false);
+    expect(parsed.message).toContain('Missing required port mapping direction');
+    expect(probeCommand).not.toHaveBeenCalled();
+    expect(execFile).not.toHaveBeenCalled();
+  });
+
   it('lists adb reverse mappings with normalized local and remote endpoints', async () => {
     mockExecFile([{ stdout: 'emulator-5554 tcp:9000 tcp:7000\n' }]);
 
