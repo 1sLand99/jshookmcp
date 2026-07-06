@@ -71,8 +71,8 @@ const SCORES = {
   sourcemap: [9.1, '6 tools, Phase 2 MCP-safe wrappers'],
   streaming: [9.1, '7 tools, Phase 2 MCP-safe wrappers + Phase 3 payload/export/metadata'],
   'syscall-hook': [
-    9.0,
-    '15 tools, PID/return filters, MCP-safe wrappers, richer strace fd/path decoding',
+    9.1,
+    '15 tools, PID/return filters, MCP-safe wrappers, richer strace fd/path decoding, bounded capture summaries',
   ],
   trace: [
     9.2,

@@ -155,6 +155,34 @@ function cloneSyscallEvent(event: SyscallEvent): SyscallEvent {
   };
 }
 
+function summarizeSyscallEvents(events: SyscallEvent[]): Record<string, unknown> {
+  const bySyscall: Record<string, number> = {};
+  const byPid: Record<string, number> = {};
+  let errorCount = 0;
+  let totalDuration = 0;
+  let durationCount = 0;
+
+  for (const event of events) {
+    bySyscall[event.syscall] = (bySyscall[event.syscall] ?? 0) + 1;
+    byPid[String(event.pid)] = (byPid[String(event.pid)] ?? 0) + 1;
+    if (typeof event.returnValue === 'number' && event.returnValue < 0) {
+      errorCount++;
+    }
+    if (typeof event.duration === 'number' && Number.isFinite(event.duration)) {
+      totalDuration += event.duration;
+      durationCount++;
+    }
+  }
+
+  return {
+    total: events.length,
+    bySyscall,
+    byPid,
+    errorCount,
+    averageDuration: durationCount > 0 ? totalDuration / durationCount : undefined,
+  };
+}
+
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -316,12 +344,69 @@ export class SyscallHookHandlers {
   async handleSyscallCaptureEvents(args: Record<string, unknown>): Promise<unknown> {
     const monitor = this.ensureMonitor();
     const filter = readFilter(args['filter']);
+    const minTimestamp = readNumber(args['minTimestamp']);
+    if (
+      args['minTimestamp'] !== undefined &&
+      args['minTimestamp'] !== null &&
+      minTimestamp === undefined
+    ) {
+      return {
+        ok: false,
+        error: 'minTimestamp must be a number when provided',
+      };
+    }
+    const maxTimestamp = readNumber(args['maxTimestamp']);
+    if (
+      args['maxTimestamp'] !== undefined &&
+      args['maxTimestamp'] !== null &&
+      maxTimestamp === undefined
+    ) {
+      return {
+        ok: false,
+        error: 'maxTimestamp must be a number when provided',
+      };
+    }
+    const rawLimit = readNumber(args['limit']);
+    if (args['limit'] !== undefined && args['limit'] !== null) {
+      if (rawLimit === undefined || !Number.isInteger(rawLimit) || rawLimit < 1) {
+        return {
+          ok: false,
+          error: 'limit must be a positive integer when provided',
+        };
+      }
+    }
+    const includeSummary = readBoolean(args['includeSummary']) ?? true;
+    if (
+      args['includeSummary'] !== undefined &&
+      args['includeSummary'] !== null &&
+      readBoolean(args['includeSummary']) === undefined
+    ) {
+      return {
+        ok: false,
+        error: 'includeSummary must be a boolean when provided',
+      };
+    }
 
-    const events = await monitor.captureEvents(filter);
+    const capturedEvents = await monitor.captureEvents(filter);
+    let events = capturedEvents;
+    if (minTimestamp !== undefined) {
+      events = events.filter((event) => event.timestamp >= minTimestamp);
+    }
+    if (maxTimestamp !== undefined) {
+      events = events.filter((event) => event.timestamp <= maxTimestamp);
+    }
+    const totalAfterTimeFilter = events.length;
+    if (rawLimit !== undefined && events.length > rawLimit) {
+      events = events.slice(events.length - rawLimit);
+    }
+
     return {
       ok: true,
       events,
       count: events.length,
+      totalBeforePostFilters: capturedEvents.length,
+      totalAfterTimeFilter,
+      summary: includeSummary ? summarizeSyscallEvents(events) : undefined,
       stats: monitor.getStats(),
     };
   }

@@ -55,6 +55,14 @@ export const syscallHookToolDefinitions: Tool[] = [
           },
         },
       })
+      .number('minTimestamp', 'Return only events with timestamp >= this value')
+      .number('maxTimestamp', 'Return only events with timestamp <= this value')
+      .number('limit', 'Maximum number of most recent events to return after filters', {
+        minimum: 1,
+      })
+      .boolean('includeSummary', 'Include aggregate counts by syscall and PID', {
+        default: true,
+      })
       .query(),
   ),
   tool('syscall_correlate_js', (t) =>

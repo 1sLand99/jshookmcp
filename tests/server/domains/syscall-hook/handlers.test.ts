@@ -62,6 +62,54 @@ describe('SyscallHookHandlers', () => {
     expect(result).toMatchObject({ ok: true, count: 1 });
   });
 
+  it('captures syscall events with time filters, recent limit, and summary', async () => {
+    monitor.captureEvents.mockResolvedValueOnce([
+      { syscall: 'openat', pid: 1, timestamp: 1, args: [], returnValue: 3, duration: 1 },
+      { syscall: 'read', pid: 1, timestamp: 2, args: [], returnValue: 16, duration: 3 },
+      { syscall: 'read', pid: 2, timestamp: 3, args: [], returnValue: -1, duration: 5 },
+    ]);
+
+    const result = (await handlers.handleSyscallCaptureEvents({
+      minTimestamp: 2,
+      limit: 1,
+    })) as any;
+
+    expect(result.count).toBe(1);
+    expect(result.totalBeforePostFilters).toBe(3);
+    expect(result.totalAfterTimeFilter).toBe(2);
+    expect(result.events[0].timestamp).toBe(3);
+    expect(result.summary).toMatchObject({
+      total: 1,
+      bySyscall: { read: 1 },
+      byPid: { '2': 1 },
+      errorCount: 1,
+      averageDuration: 5,
+    });
+  });
+
+  it('can omit syscall capture summaries', async () => {
+    monitor.captureEvents.mockResolvedValueOnce([
+      { syscall: 'read', pid: 1, timestamp: 1, args: [] },
+    ]);
+
+    const result = (await handlers.handleSyscallCaptureEvents({
+      includeSummary: false,
+    })) as any;
+
+    expect(result.count).toBe(1);
+    expect(result.summary).toBeUndefined();
+  });
+
+  it('rejects invalid syscall capture limits', async () => {
+    const result = await handlers.handleSyscallCaptureEvents({ limit: 0 });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'limit must be a positive integer when provided',
+    });
+    expect(monitor.captureEvents).not.toHaveBeenCalled();
+  });
+
   it('correlates js calls from syscall events', async () => {
     mapper.map.mockReturnValueOnce({
       syscall: { syscall: 'openat', pid: 1, timestamp: 1, args: [] },
