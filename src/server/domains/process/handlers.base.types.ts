@@ -110,10 +110,13 @@ export function parseOptionalStringArg(value: unknown, name: string): string | u
 }
 
 export function normalizePatternType(value: unknown): MemoryPatternType {
+  if (value === undefined || value === null || value === '') {
+    return 'hex';
+  }
   if (typeof value === 'string' && MEMORY_PATTERN_TYPES.has(value as MemoryPatternType)) {
     return value as MemoryPatternType;
   }
-  return 'hex';
+  throw new Error(`patternType must be one of: ${[...MEMORY_PATTERN_TYPES].join(', ')}`);
 }
 
 export function getOptionalPid(value: unknown): number | undefined {

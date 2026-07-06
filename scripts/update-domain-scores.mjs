@@ -69,8 +69,8 @@ const SCORES = {
   ],
   platform: [9.3, '16 tools, Phase 3 ASAR integrity SHA256/SHA512 algorithm awareness'],
   process: [
-    9.1,
-    '27 tools, Phase 1 suspend/resume + hollowing dumps + MCP-safe wrappers + thread diagnostics',
+    9.2,
+    '27 tools, Phase 1 suspend/resume + hollowing dumps + MCP-safe wrappers + thread diagnostics + strict memory pattern type validation',
   ],
   'protocol-analysis': [
     9.6,

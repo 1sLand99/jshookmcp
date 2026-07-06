@@ -415,14 +415,16 @@ describe('ProcessToolHandlersMemory — additional coverage', () => {
       expect(body.message).toBe('Memory operations not available');
     });
 
-    it('normalizes unknown patternType to hex', async () => {
+    it('rejects unknown patternType for memory scan', async () => {
       state.scanMemory.mockResolvedValue({ success: true, addresses: [], error: undefined });
 
       const body = parseJson<ProcessFindResponse>(
         await handler.handleMemoryScan({ pid: 1234, pattern: 'AA', patternType: 'unknown' }),
       );
 
-      expect(body.patternType).toBe('hex');
+      expect(body.success).toBe(false);
+      expect(body.error).toContain('patternType must be one of');
+      expect(state.scanMemory).not.toHaveBeenCalled();
     });
 
     it('accepts int32 patternType', async () => {
@@ -667,6 +669,21 @@ describe('ProcessToolHandlersMemory — additional coverage', () => {
 
       expect(body.success).toBe(false);
       expect(body.error).toContain('addresses[0]');
+    });
+
+    it('rejects unknown patternType for filtered memory scan', async () => {
+      const body = parseJson<ProcessFindResponse>(
+        await handler.handleMemoryScanFiltered({
+          pid: 1234,
+          pattern: 'AA',
+          addresses: ['0x1000'],
+          patternType: 'unknown',
+        }),
+      );
+
+      expect(body.success).toBe(false);
+      expect(body.error).toContain('patternType must be one of');
+      expect(state.scanMemoryFiltered).not.toHaveBeenCalled();
     });
   });
 
