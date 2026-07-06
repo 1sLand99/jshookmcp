@@ -211,6 +211,43 @@ describe('ProxyHandlers (Integration)', () => {
     expect(parseResponse(await handlers.handleProxyStatus({})).running).toBe(true);
   });
 
+  it('uses exact method matching for non-canonical HTTP verbs', async () => {
+    const builder = {
+      thenPassThrough: vi.fn(async () => ({ id: 'patch-endpoint' })),
+      thenCloseConnection: vi.fn(async () => ({ id: 'patch-endpoint' })),
+      thenReply: vi.fn(async () => ({ id: 'patch-endpoint' })),
+    };
+    const server = {
+      forGet: vi.fn(() => builder),
+      forPost: vi.fn(() => builder),
+      forPut: vi.fn(() => builder),
+      forDelete: vi.fn(() => builder),
+      forMethod: vi.fn(() => builder),
+      forAnyRequest: vi.fn(() => builder),
+      stop: vi.fn(async () => undefined),
+    };
+    (handlers as any).server = server;
+
+    const data = parseResponse(
+      await handlers.handleProxyAddRule({
+        action: 'block',
+        method: 'PATCH',
+        urlPattern: '/patch-only/',
+      }),
+    );
+
+    expect(data.success).toBe(true);
+    expect(server.forMethod).toHaveBeenCalledWith('PATCH', /patch-only/);
+    expect(server.forAnyRequest).not.toHaveBeenCalled();
+    expect(builder.thenCloseConnection).toHaveBeenCalledOnce();
+    expect(data.rule).toMatchObject({
+      endpointId: 'patch-endpoint',
+      action: 'block',
+      method: 'PATCH',
+      urlPattern: '/patch-only/',
+    });
+  });
+
   it('requires a running proxy to clear rules', async () => {
     const result = await handlers.handleProxyClearRules({});
     const data = parseAnyResponse(result);

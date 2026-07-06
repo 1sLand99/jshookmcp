@@ -19,7 +19,9 @@ export const PROXY_TOOLS: Tool[] = [
     t
       .desc('Add an interception rule: forward, mock response, or block.')
       .string('action', 'Rule action: forward, mock_response, or block.')
-      .string('method', 'HTTP method to match.', { default: 'GET' })
+      .string('method', 'HTTP method to match. Use ANY, ALL, or * to match every method.', {
+        default: 'GET',
+      })
       .string('urlPattern', 'URL matcher string or regex literal.')
       .number('mockStatus', 'Response status for mock_response.', { default: 200 })
       .string('mockBody', 'Response body for mock_response.')

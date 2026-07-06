@@ -431,6 +431,7 @@ export class ProxyHandlers {
         forPost: (m: RegExp) => unknown;
         forPut: (m: RegExp) => unknown;
         forDelete: (m: RegExp) => unknown;
+        forMethod?: (method: string, m: RegExp) => unknown;
         forAnyRequest: () => unknown;
       };
       let builder: {
@@ -442,7 +443,15 @@ export class ProxyHandlers {
       else if (method === 'POST') builder = server.forPost(matcher) as typeof builder;
       else if (method === 'PUT') builder = server.forPut(matcher) as typeof builder;
       else if (method === 'DELETE') builder = server.forDelete(matcher) as typeof builder;
-      else builder = server.forAnyRequest() as typeof builder;
+      else if (method === 'ANY' || method === '*' || method === 'ALL') {
+        builder = server.forAnyRequest() as typeof builder;
+      } else if (typeof server.forMethod === 'function') {
+        builder = server.forMethod(method, matcher) as typeof builder;
+      } else {
+        return ResponseBuilder.error(
+          `Proxy server does not support method-specific rules for ${method}`,
+        );
+      }
 
       let endpoint: { id: string };
       if (action === 'forward') {
