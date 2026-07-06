@@ -24,6 +24,7 @@ const registrations = [
       { tool: 'debugger_lifecycle', method: 'handleDebuggerLifecycle' },
       { tool: 'debugger_pause', method: 'handleDebuggerPause' },
       { tool: 'debugger_resume', method: 'handleDebuggerResume' },
+      { tool: 'debugger_run_to_location', method: 'handleDebuggerRunToLocation' },
       { tool: 'debugger_step', method: 'handleDebuggerStep' },
       { tool: 'breakpoint', method: 'handleBreakpoint' },
       { tool: 'get_call_stack', method: 'handleGetCallStack' },
@@ -94,6 +95,12 @@ const manifest = {
       { condition: 'Browser must be launched', fix: 'Call browser_launch or browser_attach first' },
     ],
     breakpoint: [
+      {
+        condition: 'Browser must be launched',
+        fix: 'Call browser_launch and debugger_lifecycle(enable) first',
+      },
+    ],
+    debugger_run_to_location: [
       {
         condition: 'Browser must be launched',
         fix: 'Call browser_launch and debugger_lifecycle(enable) first',

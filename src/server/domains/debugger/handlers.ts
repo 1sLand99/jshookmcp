@@ -110,6 +110,10 @@ export class DebuggerToolHandlers {
     return this.debuggerControl.handleDebuggerResume(args);
   }
 
+  async handleDebuggerRunToLocation(args: Record<string, unknown>) {
+    return this.debuggerControl.handleDebuggerRunToLocation(args);
+  }
+
   // ── Debugger Stepping ──
   async handleDebuggerStepInto(args: Record<string, unknown>) {
     return this.debuggerStepping.handleDebuggerStepInto(args);

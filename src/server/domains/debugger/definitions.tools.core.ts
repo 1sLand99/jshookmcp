@@ -11,6 +11,23 @@ export const DEBUGGER_CORE_TOOLS: Tool[] = [
   ),
   tool('debugger_pause', (t) => t.desc('Pause execution at the next statement.')),
   tool('debugger_resume', (t) => t.desc('Resume execution.')),
+  tool('debugger_run_to_location', (t) =>
+    t
+      .desc(
+        'Run execution until a source location by setting a temporary code breakpoint, resuming, waiting for pause, and removing the breakpoint.',
+      )
+      .string('url', 'Script URL (alternative to scriptId)')
+      .string('scriptId', 'Script ID (alternative to url)')
+      .number('lineNumber', 'Line number 0-based', { minimum: 0 })
+      .number('columnNumber', 'Column number 0-based', { minimum: 0 })
+      .string('condition', 'Optional conditional expression for the temporary breakpoint')
+      .number('timeout', 'Timeout in milliseconds (default: 30000)', {
+        default: 30000,
+        minimum: 1000,
+        maximum: 120000,
+      })
+      .required('lineNumber'),
+  ),
   tool('debugger_step', (t) =>
     t
       .desc(

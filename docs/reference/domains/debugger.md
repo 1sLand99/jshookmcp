@@ -21,13 +21,14 @@
 - debugger + browser
 - debugger + instrumentation
 
-## 工具清单（18）
+## 工具清单（19）
 
 | 工具 | 说明 |
 | --- | --- |
 | `debugger_lifecycle` | 管理调试器生命周期（启用或禁用）。 |
 | `debugger_pause` | 在下一条语句处暂停执行。 |
 | `debugger_resume` | 恢复执行。 |
+| `debugger_run_to_location` | 通过设置临时代码断点并恢复执行，等待调试器在指定源码位置暂停，随后自动移除该断点。 |
 | `debugger_step` | 单步执行代码（进入/跳过/跳出）。 |
 | `breakpoint` | 管理断点：代码断点（行号/脚本）、函数名断点、XHR 断点（URL 模式）、事件监听断点、事件类别断点和异常断点。 |
 | `get_call_stack` | 获取当前调用栈（仅在断点暂停时可用）。 |

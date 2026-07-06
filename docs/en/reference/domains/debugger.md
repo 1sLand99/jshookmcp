@@ -21,13 +21,14 @@ CDP-based debugging domain covering breakpoints, stepping, call stacks, watches,
 - debugger + browser
 - debugger + instrumentation
 
-## Full tool list (18)
+## Full tool list (19)
 
 | Tool | Description |
 | --- | --- |
 | `debugger_lifecycle` | Enable or disable the CDP debugger session. |
 | `debugger_pause` | Pause execution at the next statement. |
 | `debugger_resume` | Resume execution. |
+| `debugger_run_to_location` | Run execution until a source location by setting a temporary code breakpoint, resuming, waiting for pause, and removing the breakpoint. |
 | `debugger_step` | Step execution: into (enter next call), over (skip next call), out (exit current function). |
 | `breakpoint` | Manage breakpoints: code (line/script), function-name, XHR (URL pattern), event listener, event category, and exception breakpoints. |
 | `get_call_stack` | Get the current call stack. |

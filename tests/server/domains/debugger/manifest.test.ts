@@ -100,6 +100,7 @@ describe('debugger manifest', () => {
       'debugger_lifecycle',
       'debugger_pause',
       'debugger_resume',
+      'debugger_run_to_location',
       'debugger_step',
       'breakpoint',
       'get_call_stack',

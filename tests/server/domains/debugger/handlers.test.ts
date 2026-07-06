@@ -19,6 +19,7 @@ const {
     handleDebuggerLifecycle: vi.fn(async (args) => ({ from: 'control-lifecycle', args })),
     handleDebuggerPause: vi.fn(async (args) => ({ from: 'control-pause', args })),
     handleDebuggerResume: vi.fn(async (args) => ({ from: 'control-resume', args })),
+    handleDebuggerRunToLocation: vi.fn(async (args) => ({ from: 'control-run-to', args })),
   },
   debuggerStepping: {
     handleDebuggerStepInto: vi.fn(async (args) => ({ from: 'step-into', args })),
@@ -283,6 +284,15 @@ describe('DebuggerToolHandlers', () => {
         args,
       });
       expect(debuggerControl.handleDebuggerResume).toHaveBeenCalledWith(args);
+    });
+
+    it('delegates handleDebuggerRunToLocation', async () => {
+      const args = { url: 'app.js', lineNumber: 10 };
+      await expect(handlers.handleDebuggerRunToLocation(args)).resolves.toEqual({
+        from: 'control-run-to',
+        args,
+      });
+      expect(debuggerControl.handleDebuggerRunToLocation).toHaveBeenCalledWith(args);
     });
   });
 
@@ -634,6 +644,7 @@ describe('DebuggerToolHandlers', () => {
       'handleDebuggerLifecycle',
       'handleDebuggerPause',
       'handleDebuggerResume',
+      'handleDebuggerRunToLocation',
       'handleDebuggerStepInto',
       'handleDebuggerStepOver',
       'handleDebuggerStepOut',
@@ -669,8 +680,8 @@ describe('DebuggerToolHandlers', () => {
       'handleBlackboxList',
     ];
 
-    it('has exactly 36 public handler methods', async () => {
-      expect(allMethods).toHaveLength(36);
+    it('has exactly 37 public handler methods', async () => {
+      expect(allMethods).toHaveLength(37);
     });
 
     it.each(allMethods)('%s is a function on the instance', (method) => {

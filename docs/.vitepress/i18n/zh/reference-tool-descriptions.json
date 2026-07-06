@@ -564,5 +564,6 @@
   "binary_ninja_bridge": "向本地 Binary Ninja 分析 bridge 发送命令。",
   "native_symbol_sync": "从已连接的原生分析后端导出并同步符号。",
   "proxy_list_rules": "列出当前 handler 跟踪的活动代理拦截规则。",
-  "proxy_clear_rules": "在保持代理运行的情况下清空当前活动拦截规则。"
+  "proxy_clear_rules": "在保持代理运行的情况下清空当前活动拦截规则。",
+  "debugger_run_to_location": "通过设置临时代码断点并恢复执行，等待调试器在指定源码位置暂停，随后自动移除该断点。"
 }

@@ -17,8 +17,8 @@ describe('debugger tool definitions', () => {
     });
 
     it('contains the expected number of core tools', async () => {
-      // 12 core tools defined in definitions.tools.core.ts
-      expect(DEBUGGER_CORE_TOOLS).toHaveLength(12);
+      // 13 core tools defined in definitions.tools.core.ts
+      expect(DEBUGGER_CORE_TOOLS).toHaveLength(13);
     });
 
     it.each(DEBUGGER_CORE_TOOLS.map((tool) => [tool.name, tool]))(
@@ -46,6 +46,7 @@ describe('debugger tool definitions', () => {
       'debugger_lifecycle',
       'debugger_pause',
       'debugger_resume',
+      'debugger_run_to_location',
       'debugger_step',
       'breakpoint',
       'get_call_stack',
@@ -131,6 +132,18 @@ describe('debugger tool definitions', () => {
       expect(tool.inputSchema.required).toBeUndefined();
       const timeoutProp = tool.inputSchema.properties!.timeout as Record<string, unknown>;
       expect(timeoutProp.type).toBe('number');
+      expect(timeoutProp.default).toBe(30000);
+    });
+
+    it('debugger_run_to_location requires lineNumber and accepts source selectors', async () => {
+      const tool = DEBUGGER_CORE_TOOLS.find((t) => t.name === 'debugger_run_to_location')!;
+      expect(tool.inputSchema.required).toContain('lineNumber');
+      expect(tool.inputSchema.properties).toHaveProperty('url');
+      expect(tool.inputSchema.properties).toHaveProperty('scriptId');
+      expect(tool.inputSchema.properties).toHaveProperty('columnNumber');
+      expect(tool.inputSchema.properties).toHaveProperty('condition');
+      expect(tool.inputSchema.properties).toHaveProperty('timeout');
+      const timeoutProp = tool.inputSchema.properties!.timeout as Record<string, unknown>;
       expect(timeoutProp.default).toBe(30000);
     });
 

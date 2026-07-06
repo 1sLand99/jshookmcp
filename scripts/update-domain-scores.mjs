@@ -19,7 +19,7 @@ const SCORES = {
   coordination: [8.9, '10 tools, Phase 3 persisted handoffs and insights'],
   'cross-domain': [8.6, '6 tools, Phase 2 MCP-safe wrappers'],
   'dart-inspector': [9.0, '12 tools, 17 tests, handleSafe pattern reference'],
-  debugger: [8.5, '18 tools, 50 tests, Phase 1 function breakpoints'],
+  debugger: [8.7, '19 tools, 50 tests, Phase 2 run-to-location one-shot breakpoints'],
   encoding: [9.6, '5 tools, Phase 3 magic signatures + base32/base58/base85/compression codecs'],
   'exploit-dev': [9.3, '20 tools, Phase 0 capstone x64 one-gadget scan, CLAUDE.md created'],
   'extension-registry': [

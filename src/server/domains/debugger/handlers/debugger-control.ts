@@ -1,10 +1,14 @@
 import type { DebuggerManager } from '@server/domains/shared/modules';
 import type { RuntimeInspector } from '@server/domains/shared/modules';
+import { argNumber, argNumberRequired, argString } from '@server/domains/shared/parse-args';
 
 interface DebuggerControlHandlersDeps {
   debuggerManager: DebuggerManager;
   runtimeInspector: RuntimeInspector;
 }
+
+type PausedState = Awaited<ReturnType<DebuggerManager['waitForPaused']>>;
+type BreakpointInfo = Awaited<ReturnType<DebuggerManager['setBreakpoint']>>;
 
 export class DebuggerControlHandlers {
   constructor(private deps: DebuggerControlHandlersDeps) {}
@@ -120,5 +124,176 @@ export class DebuggerControlHandlers {
         },
       ],
     };
+  }
+
+  async handleDebuggerRunToLocation(args: Record<string, unknown>) {
+    const url = argString(args, 'url');
+    const scriptId = argString(args, 'scriptId');
+    const lineNumber = argNumberRequired(args, 'lineNumber');
+    const columnNumber = argNumber(args, 'columnNumber');
+    const condition = argString(args, 'condition');
+    const timeout = argNumber(args, 'timeout', 30000);
+
+    if (!url && !scriptId) {
+      throw new Error('Either url or scriptId must be provided');
+    }
+
+    const temporaryBreakpoint = url
+      ? await this.deps.debuggerManager.setBreakpointByUrl({
+          url,
+          lineNumber,
+          columnNumber,
+          condition,
+        })
+      : await this.deps.debuggerManager.setBreakpoint({
+          scriptId: scriptId!,
+          lineNumber,
+          columnNumber,
+          condition,
+        });
+
+    const previousPausedAt = this.deps.debuggerManager.getPausedState()?.timestamp;
+    let pausedState: PausedState | undefined;
+    let runError: unknown;
+
+    try {
+      await this.deps.debuggerManager.resume();
+      pausedState = await this.waitForNewPausedState(timeout, previousPausedAt);
+    } catch (error) {
+      runError = error;
+    }
+
+    const cleanup = await this.removeTemporaryBreakpoint(temporaryBreakpoint.breakpointId);
+    if (runError) {
+      return this.runToLocationFailure(runError, temporaryBreakpoint, cleanup);
+    }
+
+    if (!cleanup.removed) {
+      throw new Error(cleanup.error ?? 'Failed to remove temporary breakpoint');
+    }
+
+    const topFrame = pausedState?.callFrames[0];
+    const topLocation = topFrame?.location;
+    const hitBreakpoints = pausedState?.hitBreakpoints ?? [];
+    const hitTarget =
+      hitBreakpoints.includes(temporaryBreakpoint.breakpointId) ||
+      this.frameMatchesLocation(topFrame, temporaryBreakpoint.location);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(
+            {
+              success: hitTarget,
+              paused: true,
+              hitTarget,
+              message: hitTarget
+                ? 'Execution paused at target location'
+                : 'Execution paused before target location',
+              reason: pausedState?.reason,
+              url: topFrame?.url,
+              location: topLocation,
+              hitBreakpoints,
+              temporaryBreakpoint: {
+                breakpointId: temporaryBreakpoint.breakpointId,
+                location: temporaryBreakpoint.location,
+              },
+              removedTemporaryBreakpoint: cleanup.removed,
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+    };
+  }
+
+  private async waitForNewPausedState(
+    timeout: number,
+    previousTimestamp: number | undefined,
+  ): Promise<PausedState> {
+    const deadline = Date.now() + timeout;
+
+    while (true) {
+      const remaining = Math.max(1, deadline - Date.now());
+      const pausedState = await this.deps.debuggerManager.waitForPaused(remaining);
+      if (previousTimestamp === undefined || pausedState.timestamp !== previousTimestamp) {
+        return pausedState;
+      }
+
+      if (Date.now() >= deadline) {
+        throw new Error('Timeout waiting for paused event');
+      }
+
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.min(25, Math.max(1, deadline - Date.now()))),
+      );
+    }
+  }
+
+  private async removeTemporaryBreakpoint(
+    breakpointId: string,
+  ): Promise<{ removed: boolean; error?: string }> {
+    try {
+      await this.deps.debuggerManager.removeBreakpoint(breakpointId);
+      return { removed: true };
+    } catch (error) {
+      return {
+        removed: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private runToLocationFailure(
+    error: unknown,
+    temporaryBreakpoint: BreakpointInfo,
+    cleanup: { removed: boolean; error?: string },
+  ) {
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(
+            {
+              success: false,
+              paused: false,
+              message: error instanceof Error ? error.message : String(error),
+              temporaryBreakpoint: {
+                breakpointId: temporaryBreakpoint.breakpointId,
+                location: temporaryBreakpoint.location,
+              },
+              removedTemporaryBreakpoint: cleanup.removed,
+              cleanupError: cleanup.error,
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+    };
+  }
+
+  private frameMatchesLocation(
+    actual: PausedState['callFrames'][number] | undefined,
+    target: BreakpointInfo['location'],
+  ): boolean {
+    if (!actual) {
+      return false;
+    }
+
+    if (target.scriptId && actual.location.scriptId !== target.scriptId) {
+      return false;
+    }
+
+    if (target.url && actual.url !== target.url) {
+      return false;
+    }
+
+    return (
+      actual.location.lineNumber === target.lineNumber &&
+      (target.columnNumber === undefined || actual.location.columnNumber === target.columnNumber)
+    );
   }
 }

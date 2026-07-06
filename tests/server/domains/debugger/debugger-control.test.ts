@@ -12,6 +12,9 @@ type ControlDebuggerManager = Pick<
   | 'resume'
   | 'waitForPaused'
   | 'getPausedState'
+  | 'setBreakpointByUrl'
+  | 'setBreakpoint'
+  | 'removeBreakpoint'
 >;
 
 type ControlRuntimeInspector = Pick<RuntimeInspector, 'init' | 'disable'>;
@@ -32,6 +35,9 @@ describe('DebuggerControlHandlers', () => {
     resume: vi.fn<ControlDebuggerManager['resume']>(),
     waitForPaused: vi.fn<ControlDebuggerManager['waitForPaused']>(),
     getPausedState: vi.fn<ControlDebuggerManager['getPausedState']>(),
+    setBreakpointByUrl: vi.fn<ControlDebuggerManager['setBreakpointByUrl']>(),
+    setBreakpoint: vi.fn<ControlDebuggerManager['setBreakpoint']>(),
+    removeBreakpoint: vi.fn<ControlDebuggerManager['removeBreakpoint']>(),
   } satisfies ControlDebuggerManager;
 
   const runtimeInspector = {
@@ -136,5 +142,114 @@ describe('DebuggerControlHandlers', () => {
       resumed: false,
       message: 'Resume requested; debugger was not paused',
     });
+  });
+
+  it('runs to a URL location and removes the temporary breakpoint', async () => {
+    debuggerManager.getPausedState.mockReturnValueOnce(null);
+    debuggerManager.setBreakpointByUrl.mockResolvedValueOnce({
+      breakpointId: 'bp-1',
+      location: { url: 'app.js', lineNumber: 7, columnNumber: 1 },
+      enabled: true,
+      hitCount: 0,
+      createdAt: 1,
+    });
+    debuggerManager.waitForPaused.mockResolvedValueOnce({
+      reason: 'breakpoint',
+      callFrames: [
+        {
+          location: { scriptId: 'script-1', lineNumber: 7, columnNumber: 1 },
+          url: 'app.js',
+        },
+      ],
+      hitBreakpoints: ['bp-1'],
+      timestamp: 2,
+    } as Awaited<ReturnType<ControlDebuggerManager['waitForPaused']>>);
+    const handlers = createHandlers();
+
+    // @ts-expect-error — auto-suppressed [TS2558]
+    const body = parseJson<any>(
+      await handlers.handleDebuggerRunToLocation({
+        url: 'app.js',
+        lineNumber: 7,
+        columnNumber: 1,
+        timeout: 1234,
+      }),
+    );
+
+    expect(debuggerManager.setBreakpointByUrl).toHaveBeenCalledWith({
+      url: 'app.js',
+      lineNumber: 7,
+      columnNumber: 1,
+      condition: undefined,
+    });
+    expect(debuggerManager.resume).toHaveBeenCalledOnce();
+    expect(debuggerManager.waitForPaused).toHaveBeenCalledWith(1234);
+    expect(debuggerManager.removeBreakpoint).toHaveBeenCalledWith('bp-1');
+    expect(body).toEqual({
+      success: true,
+      paused: true,
+      hitTarget: true,
+      message: 'Execution paused at target location',
+      reason: 'breakpoint',
+      url: 'app.js',
+      location: { scriptId: 'script-1', lineNumber: 7, columnNumber: 1 },
+      hitBreakpoints: ['bp-1'],
+      temporaryBreakpoint: {
+        breakpointId: 'bp-1',
+        location: { url: 'app.js', lineNumber: 7, columnNumber: 1 },
+      },
+      removedTemporaryBreakpoint: true,
+    });
+  });
+
+  it('removes the temporary script breakpoint when waiting times out', async () => {
+    debuggerManager.getPausedState.mockReturnValueOnce(null);
+    debuggerManager.setBreakpoint.mockResolvedValueOnce({
+      breakpointId: 'bp-2',
+      location: { scriptId: 'script-2', lineNumber: 12 },
+      enabled: true,
+      hitCount: 0,
+      createdAt: 1,
+    });
+    debuggerManager.waitForPaused.mockRejectedValueOnce(
+      new Error('Timeout waiting for paused event'),
+    );
+    const handlers = createHandlers();
+
+    // @ts-expect-error — auto-suppressed [TS2558]
+    const body = parseJson<any>(
+      await handlers.handleDebuggerRunToLocation({
+        scriptId: 'script-2',
+        lineNumber: 12,
+      }),
+    );
+
+    expect(debuggerManager.setBreakpoint).toHaveBeenCalledWith({
+      scriptId: 'script-2',
+      lineNumber: 12,
+      columnNumber: undefined,
+      condition: undefined,
+    });
+    expect(debuggerManager.removeBreakpoint).toHaveBeenCalledWith('bp-2');
+    expect(body).toEqual({
+      success: false,
+      paused: false,
+      message: 'Timeout waiting for paused event',
+      temporaryBreakpoint: {
+        breakpointId: 'bp-2',
+        location: { scriptId: 'script-2', lineNumber: 12 },
+      },
+      removedTemporaryBreakpoint: true,
+    });
+  });
+
+  it('requires either url or scriptId for run-to-location', async () => {
+    const handlers = createHandlers();
+
+    await expect(handlers.handleDebuggerRunToLocation({ lineNumber: 1 })).rejects.toThrow(
+      'Either url or scriptId must be provided',
+    );
+    expect(debuggerManager.setBreakpoint).not.toHaveBeenCalled();
+    expect(debuggerManager.setBreakpointByUrl).not.toHaveBeenCalled();
   });
 });
