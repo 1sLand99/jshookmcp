@@ -13,6 +13,15 @@ export interface RegisteredPluginManifest {
   permissions?: string[];
 }
 
+export interface RegisteredPluginInfo {
+  id: string;
+  name: string;
+  version: string;
+  entry: string;
+  permissions: string[];
+  status: 'loaded' | 'unloaded';
+}
+
 interface LegacyPluginInfo {
   id: string;
   name: string;
@@ -150,6 +159,22 @@ export class PluginRegistry {
         permissions: [...plugin.permissions],
       }))
       .toSorted((left, right) => left.name.localeCompare(right.name));
+  }
+
+  getInstalled(pluginId: string): RegisteredPluginInfo | undefined {
+    const manifest = this.installedPlugins.get(pluginId);
+    if (!manifest) {
+      return undefined;
+    }
+
+    return {
+      id: manifest.id,
+      name: manifest.name,
+      version: manifest.version,
+      entry: manifest.entry,
+      permissions: [...manifest.permissions],
+      status: manifest.status,
+    };
   }
 
   async loadPlugin(

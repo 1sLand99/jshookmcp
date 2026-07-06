@@ -41,6 +41,14 @@ describe('PluginRegistry', () => {
         status: 'unloaded',
       },
     ]);
+    expect(registry.getInstalled(pluginId)).toMatchObject({
+      id: 'team-feature-plugin-',
+      name: 'Feature Plugin',
+      version: '1.2.3',
+      entry: './plugin.mjs',
+      permissions: ['network'],
+      status: 'unloaded',
+    });
 
     const disk = JSON.parse(await readFile(path.join(tempDir, 'plugins.json'), 'utf8')) as Array<{
       id: string;

@@ -1,9 +1,19 @@
+import { readFile, stat } from 'node:fs/promises';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { PluginRegistry, WebhookBridge } from '@modules/extension-registry';
-import { WebhookServer, CommandQueue } from '@server/webhook';
-import { argObject, argString, argStringRequired } from '@server/domains/shared/parse-args';
+import type { RegisteredPluginManifest } from '@modules/extension-registry';
+import { CommandQueue, WebhookServer } from '@server/webhook';
+import {
+  argObject,
+  argString,
+  argStringArray,
+  argStringRequired,
+} from '@server/domains/shared/parse-args';
 import { handleSafe } from '@server/domains/shared/ResponseBuilder';
 import { asJsonResponse } from '@server/domains/shared/response';
 import type { ToolArgs, ToolResponse } from '@server/types';
+import { getProjectRoot } from '@utils/outputPaths';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -11,6 +21,76 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isCallable(value: unknown): value is (input: unknown) => unknown {
   return typeof value === 'function';
+}
+
+function isHttpUrl(value: string): boolean {
+  return value.startsWith('http://') || value.startsWith('https://');
+}
+
+function isAbsolutePath(value: string): boolean {
+  return path.isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value) || value.startsWith('\\\\');
+}
+
+function cleanString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function cleanStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
+function moduleNameFromSource(source: string): string {
+  const parsed = isHttpUrl(source) ? new URL(source).pathname : source;
+  const baseName = path.basename(parsed).replace(/\.[cm]?js$/u, '');
+  return baseName || 'extension-plugin';
+}
+
+function resolveLocalSource(source: string): string {
+  return isAbsolutePath(source) ? path.normalize(source) : path.resolve(getProjectRoot(), source);
+}
+
+async function readJsonFile(filePath: string): Promise<Record<string, unknown>> {
+  const parsed = JSON.parse(await readFile(filePath, 'utf8')) as unknown;
+  if (!isRecord(parsed)) {
+    throw new Error(`Expected JSON object in ${filePath}`);
+  }
+  return parsed;
+}
+
+function extractPackagePermissions(pkg: Record<string, unknown>): string[] | undefined {
+  const config = isRecord(pkg.jshookmcp) ? pkg.jshookmcp : undefined;
+  return cleanStringArray(config?.permissions) ?? cleanStringArray(pkg.permissions);
+}
+
+function extractPackageEntry(pkg: Record<string, unknown>): string | undefined {
+  const config = isRecord(pkg.jshookmcp) ? pkg.jshookmcp : undefined;
+  const exportsField = pkg.exports;
+  return (
+    cleanString(config?.entry) ??
+    cleanString(pkg.entry) ??
+    cleanString(pkg.jshookmcpEntry) ??
+    cleanString(pkg.module) ??
+    cleanString(pkg.main) ??
+    cleanString(exportsField)
+  );
+}
+
+function toManifestCandidate(record: Record<string, unknown>): Partial<RegisteredPluginManifest> {
+  const candidate: Partial<RegisteredPluginManifest> = {};
+  const id = cleanString(record.id);
+  const name = cleanString(record.name);
+  const version = cleanString(record.version);
+  const entry = cleanString(record.entry);
+  const permissions = cleanStringArray(record.permissions);
+  if (id) candidate.id = id;
+  if (name) candidate.name = name;
+  if (version) candidate.version = version;
+  if (entry) candidate.entry = entry;
+  if (permissions) candidate.permissions = permissions;
+  return candidate;
 }
 
 export class ExtensionRegistryHandlers {
@@ -22,6 +102,27 @@ export class ExtensionRegistryHandlers {
     private webhook?: WebhookBridge,
   ) {}
 
+  async handleInstallTool(args: ToolArgs): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleInstall(args));
+  }
+
+  async handleInstall(args: ToolArgs): Promise<ToolResponse> {
+    const manifest = await this.resolveInstallManifest(args);
+    const pluginId = await this.getRegistry().register(manifest);
+    this.emitEvent('extension.installed', { pluginId });
+
+    return asJsonResponse({
+      success: true,
+      pluginId,
+      manifest: this.getRegistry().getInstalled(pluginId) ?? {
+        ...manifest,
+        id: pluginId,
+        permissions: manifest.permissions ?? [],
+        status: 'unloaded',
+      },
+    });
+  }
+
   async handleListInstalledTool(): Promise<ToolResponse> {
     return handleSafe(async () => await this.handleListInstalled());
   }
@@ -30,6 +131,24 @@ export class ExtensionRegistryHandlers {
     return asJsonResponse({
       success: true,
       plugins: this.getRegistry().listInstalled(),
+    });
+  }
+
+  async handleInfoTool(args: ToolArgs): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleInfo(args));
+  }
+
+  async handleInfo(args: ToolArgs): Promise<ToolResponse> {
+    const pluginId = argStringRequired(args, 'pluginId');
+    const manifest = this.getRegistry().getInstalled(pluginId);
+    if (!manifest) {
+      throw new Error(`Plugin not found: ${pluginId}`);
+    }
+
+    return asJsonResponse({
+      success: true,
+      pluginId,
+      manifest,
     });
   }
 
@@ -234,6 +353,94 @@ export class ExtensionRegistryHandlers {
       this.commandQueue = new CommandQueue();
     }
     return this.commandQueue;
+  }
+
+  private async resolveInstallManifest(args: ToolArgs): Promise<RegisteredPluginManifest> {
+    const source = argString(args, 'source');
+    const sourceCandidate = source ? await this.manifestFromSource(source) : {};
+    const inlineArgs = argObject(args, 'manifest');
+    const inlineCandidate = inlineArgs ? toManifestCandidate(inlineArgs) : {};
+    const directCandidate = toManifestCandidate(args);
+    const permissions = Array.isArray(args.permissions)
+      ? argStringArray(args, 'permissions')
+      : (directCandidate.permissions ?? inlineCandidate.permissions ?? sourceCandidate.permissions);
+    const merged = {
+      ...sourceCandidate,
+      ...inlineCandidate,
+      ...directCandidate,
+      permissions,
+    };
+
+    const name = merged.name;
+    const entry = merged.entry;
+    if (!name || !entry) {
+      throw new Error(
+        'extension_install requires name and entry via source, manifest, or top-level arguments',
+      );
+    }
+
+    return {
+      id: merged.id ?? name,
+      name,
+      version: merged.version ?? '0.0.0',
+      entry,
+      permissions: merged.permissions ?? [],
+    };
+  }
+
+  private async manifestFromSource(source: string): Promise<Partial<RegisteredPluginManifest>> {
+    if (isHttpUrl(source)) {
+      return {
+        id: moduleNameFromSource(source),
+        name: moduleNameFromSource(source),
+        version: '0.0.0',
+        entry: source,
+      };
+    }
+
+    const resolved = resolveLocalSource(source);
+    const sourceStat = await stat(resolved).catch((error: unknown) => {
+      throw new Error(`Extension source not found: ${source}`, { cause: error });
+    });
+
+    if (sourceStat.isDirectory()) {
+      return this.manifestFromPackageJson(path.join(resolved, 'package.json'), resolved);
+    }
+
+    if (
+      path.basename(resolved).toLowerCase() === 'package.json' ||
+      path.extname(resolved).toLowerCase() === '.json'
+    ) {
+      return this.manifestFromPackageJson(resolved, path.dirname(resolved));
+    }
+
+    return {
+      id: moduleNameFromSource(resolved),
+      name: moduleNameFromSource(resolved),
+      version: '0.0.0',
+      entry: pathToFileURL(resolved).href,
+    };
+  }
+
+  private async manifestFromPackageJson(
+    packageJsonPath: string,
+    packageDir: string,
+  ): Promise<Partial<RegisteredPluginManifest>> {
+    const pkg = await readJsonFile(packageJsonPath);
+    const entry = extractPackageEntry(pkg);
+    const resolvedEntry = entry
+      ? isHttpUrl(entry) || entry.startsWith('file://')
+        ? entry
+        : pathToFileURL(path.resolve(packageDir, entry)).href
+      : undefined;
+
+    return {
+      id: cleanString(pkg.id) ?? cleanString(pkg.name),
+      name: cleanString(pkg.name),
+      version: cleanString(pkg.version) ?? '0.0.0',
+      entry: resolvedEntry,
+      permissions: extractPackagePermissions(pkg),
+    };
   }
 
   private emitEvent(event: string, payload: unknown): void {

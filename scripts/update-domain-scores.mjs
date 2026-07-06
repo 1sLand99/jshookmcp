@@ -22,7 +22,10 @@ const SCORES = {
   debugger: [8.5, '18 tools, 50 tests, Phase 1 function breakpoints'],
   encoding: [9.6, '5 tools, Phase 3 magic signatures + base32/base58/base85/compression codecs'],
   'exploit-dev': [9.3, '20 tools, Phase 0 capstone x64 one-gadget scan, CLAUDE.md created'],
-  'extension-registry': [8.8, '5 tools, Phase 1 routing/doc stale fix + Phase 2 MCP-safe wrappers'],
+  'extension-registry': [
+    9.4,
+    '7 tools, Phase 3 MCP install/info lifecycle with no-import manifest inspection',
+  ],
   graphql: [9.4, '6 tools, Phase 3 Apollo Federation _service.sdl introspection'],
   instrumentation: [9.0, '16 tools, Phase 3 session snapshot export to artifacts'],
   maintenance: [9.0, '13 tools, sandbox memory/tool allowlist/redaction hardening, 6 tests'],

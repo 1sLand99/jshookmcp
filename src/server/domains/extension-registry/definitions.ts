@@ -2,8 +2,43 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { tool } from '@server/registry/tool-builder';
 
 export const extensionRegistryTools: Tool[] = [
+  tool('extension_install', (t) =>
+    t
+      .desc(
+        'Install/register an extension from a manifest, local package directory, local module file, or remote module URL.',
+      )
+      .string('source', 'Local directory, package.json, module file, or http(s) module URL')
+      .object(
+        'manifest',
+        {
+          id: { type: 'string', description: 'Plugin identifier' },
+          name: { type: 'string', description: 'Display name' },
+          version: { type: 'string', description: 'Semantic version' },
+          entry: { type: 'string', description: 'Module entry path or URL' },
+          permissions: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Declared plugin permissions',
+          },
+        },
+        'Inline extension manifest. Top-level fields override this object.',
+      )
+      .string('id', 'Plugin identifier override')
+      .string('name', 'Plugin display name override')
+      .string('version', 'Plugin version override')
+      .string('entry', 'Module entry path or URL override')
+      .array('permissions', { type: 'string' }, 'Declared plugin permissions override')
+      .openWorld(),
+  ),
   tool('extension_list_installed', (t) =>
     t.desc('List installed extensions from the local registry.').query(),
+  ),
+  tool('extension_info', (t) =>
+    t
+      .desc('Read installed extension manifest details without importing plugin code.')
+      .string('pluginId', 'Plugin identifier')
+      .required('pluginId')
+      .query(),
   ),
   tool('extension_execute_in_context', (t) =>
     t

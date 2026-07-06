@@ -19,11 +19,13 @@
 - extension-registry + workflow
 - extension-registry + maintenance
 
-## 工具清单（5）
+## 工具清单（7）
 
 | 工具 | 说明 |
 | --- | --- |
+| `extension_install` | 从内联清单、本地包目录、本地模块文件或远程模块 URL 安装/注册扩展。 |
 | `extension_list_installed` | 列出已安装的 Chrome 扩展。 |
+| `extension_info` | 读取已安装扩展的清单详情，不导入或执行插件代码。 |
 | `extension_execute_in_context` | 在指定 Chrome 扩展的后台上下文中执行代码。 |
 | `extension_reload` | 重新加载已安装的扩展（先卸载再加载）。 |
 | `extension_uninstall` | 从本地扩展注册表中卸载扩展。 |

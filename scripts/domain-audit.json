@@ -214,11 +214,11 @@
   "extension-registry": {
     "domain": "extension-registry",
     "dims": {
-      "d1_toolCount": 5,
-      "d2_testFiles": 4,
+      "d1_toolCount": 7,
+      "d2_testFiles": 6,
       "d3_coverageExcluded": ["src/server/domains/extension-registry/handlers.ts"],
       "d4_bareCatch": 0,
-      "d5_handleSafeRefs": 6,
+      "d5_handleSafeRefs": 8,
       "d6_doc": {
         "hasClaude": true,
         "hasScore": true,
