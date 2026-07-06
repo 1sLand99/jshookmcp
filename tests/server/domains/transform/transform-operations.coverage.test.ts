@@ -89,6 +89,45 @@ describe('transform-operations', () => {
       expect(result.appliedTransforms).toContain('constant_fold');
     });
 
+    it('does not fold arithmetic inside comments', async () => {
+      const code = 'const x = 1 + 2; /* 3 + 4 */';
+      const result = applyTransforms(code, ['constant_fold']);
+      expect(result.transformed).toContain('const x = 3');
+      expect(result.transformed).toContain('/* 3 + 4 */');
+    });
+
+    it('decodes printable base64 and plain hex string literals', async () => {
+      const base64 = applyTransforms("'SGVsbG8gd29ybGQh'", ['string_decrypt']);
+      const hex = applyTransforms("'48656c6c6f20776f726c642148656c6c6f20776f726c6421'", [
+        'string_decrypt',
+      ]);
+      expect(base64.transformed).toBe("'Hello world!'");
+      expect(hex.transformed).toBe("'Hello world!Hello world!'");
+    });
+
+    it('flattens array dispatcher variants', async () => {
+      const code =
+        'var order=["b","a"];var i=0;while(true){switch(order[i++]){case "a":a();continue;case "b":b();continue;}break;}';
+      const result = applyTransforms(code, ['control_flow_flatten']);
+      expect(result.transformed.indexOf('b();')).toBeLessThan(result.transformed.indexOf('a();'));
+    });
+
+    it('renames _0x bindings without touching property names or template raw text', async () => {
+      const code = 'var _0xabc = 1; obj._0xabc = _0xabc; const text = `_0xabc:${_0xabc}`;';
+      const result = applyTransforms(code, ['rename_vars']);
+      expect(result.transformed).toContain('var var_1 = 1');
+      expect(result.transformed).toContain('obj._0xabc = var_1');
+      expect(result.transformed).toContain('`_0xabc:${var_1}`');
+    });
+
+    it('renames _0x bindings per lexical scope', async () => {
+      const code = 'var _0xabc = 1; function f(_0xabc) { return _0xabc; } _0xabc;';
+      const result = applyTransforms(code, ['rename_vars']);
+      expect(result.transformed).toContain('var var_1 = 1');
+      expect(result.transformed).toContain('function f(var_2) {return var_2; }');
+      expect(result.transformed.trimEnd().endsWith('var_1;')).toBe(true);
+    });
+
     it('handles empty code', async () => {
       const result = applyTransforms('', ['constant_fold']);
       expect(result.transformed).toBe('');
