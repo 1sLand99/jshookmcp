@@ -91,6 +91,52 @@ describe('StreamingToolHandlers', () => {
     expect(body.frames[0].direction).toBe('received');
   });
 
+  it('returns full ws payload only when requested', async () => {
+    (handlers as any).wsFrameOrder.push({
+      requestId: 'r1',
+      frame: {
+        requestId: 'r1',
+        timestamp: 1,
+        direction: 'sent',
+        opcode: 1,
+        payloadLength: 22,
+        payloadPreview: '{"op":"preview"}',
+        payloadSample: '{"op":"sample-secret"}',
+        payload: '{"op":"complete-secret"}',
+        isBinary: false,
+      },
+    });
+
+    const previewBody = parseJson<any>(await handlers.handleWsGetFrames({}));
+    expect(previewBody.frames[0]).not.toHaveProperty('payload');
+
+    const fullBody = parseJson<any>(await handlers.handleWsGetFrames({ fullPayload: true }));
+    expect(fullBody.filters.fullPayload).toBe(true);
+    expect(fullBody.frames[0].payload).toBe('{"op":"complete-secret"}');
+  });
+
+  it('exposes ws connection timing and handshake metadata', async () => {
+    (handlers as any).wsConnections.set('r1', {
+      requestId: 'r1',
+      url: 'wss://x',
+      status: 'closed',
+      framesCount: 8,
+      createdTimestamp: 10,
+      closedTimestamp: 14,
+      handshakeStatus: 101,
+    });
+
+    const body = parseJson<any>(await handlers.handleWsGetConnections({}));
+    expect(body.connections[0]).toMatchObject({
+      requestId: 'r1',
+      createdTimestamp: 10,
+      closedTimestamp: 14,
+      durationSeconds: 4,
+      framesPerSecond: 2,
+      handshakeStatus: 101,
+    });
+  });
+
   it('disables ws monitor and returns summary', async () => {
     await handlers.handleWsMonitorEnable({ maxFrames: 10 });
     (handlers as any).wsConnections.set('a', {

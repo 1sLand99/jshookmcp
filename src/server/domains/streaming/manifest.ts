@@ -19,8 +19,10 @@ const registrations = defineMethodRegistrations<H, (typeof streamingTools)[numbe
     { tool: 'ws_monitor', method: 'handleWsMonitorDispatchTool' },
     { tool: 'ws_get_frames', method: 'handleWsGetFramesTool' },
     { tool: 'ws_get_connections', method: 'handleWsGetConnectionsTool' },
+    { tool: 'ws_export_capture', method: 'handleWsExportCaptureTool' },
     { tool: 'sse_monitor_enable', method: 'handleSseMonitorEnableTool' },
     { tool: 'sse_get_events', method: 'handleSseGetEventsTool' },
+    { tool: 'sse_export_capture', method: 'handleSseExportCaptureTool' },
   ],
 });
 

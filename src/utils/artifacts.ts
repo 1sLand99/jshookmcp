@@ -14,6 +14,7 @@ export type ArtifactCategory =
   | 'dumps'
   | 'reports'
   | 'har'
+  | 'captures'
   | 'sessions'
   | 'offloaded'
   | 'tmp';

@@ -2,8 +2,10 @@
  * WebSocket monitoring handlers — enable, disable, get frames, get connections.
  */
 
+import { writeFile } from 'node:fs/promises';
 import { logger } from '@utils/logger';
 import { RingBuffer } from '@utils/RingBuffer';
+import { resolveArtifactPath } from '@utils/artifacts';
 import { WS_PAYLOAD_PREVIEW_LIMIT, WS_PAYLOAD_SAMPLE_LIMIT } from '@src/constants';
 import type {
   StreamingSharedState,
@@ -16,6 +18,7 @@ import type {
 } from './shared';
 import {
   asJson,
+  parseBooleanArg,
   parseNumberArg,
   parseOptionalStringArg,
   parseWsDirection,
@@ -41,6 +44,11 @@ const getRecordField = (value: unknown, key: string): UnknownRecord | undefined 
   const nested = asRecord(value)?.[key];
   return asRecord(nested);
 };
+
+type ExportFormat = 'json' | 'ndjson';
+
+const parseExportFormat = (value: unknown): ExportFormat =>
+  value === 'ndjson' ? 'ndjson' : 'json';
 
 export class WsHandlers {
   constructor(private s: StreamingSharedState) {}
@@ -137,6 +145,7 @@ export class WsHandlers {
       payloadLength: payloadData.length,
       payloadPreview,
       payloadSample,
+      payload: payloadData,
       isBinary: opcode === 2,
     };
 
@@ -184,6 +193,48 @@ export class WsHandlers {
       else received += 1;
     }
     return { total: this.s.wsFrameOrder.length, sent, received };
+  }
+
+  private selectWsFrames(args: Record<string, unknown>): {
+    direction: ReturnType<typeof parseWsDirection>;
+    payloadFilterRaw?: string;
+    filtered: WsFrameRecord[];
+    error?: string;
+  } {
+    const direction = parseWsDirection(args.direction);
+    const payloadFilterRaw = parseOptionalStringArg(args.payloadFilter);
+
+    let payloadFilter: RegExp | undefined;
+    if (payloadFilterRaw) {
+      const compiled = compileRegex(payloadFilterRaw);
+      if (compiled.error) {
+        return {
+          direction,
+          payloadFilterRaw,
+          filtered: [],
+          error: `Invalid payloadFilter regex: ${compiled.error}`,
+        };
+      }
+      payloadFilter = compiled.regex;
+    }
+
+    const filtered = this.s.wsFrameOrder
+      .toArray()
+      .map((entry) => entry.frame)
+      .filter((frame) => (direction === 'all' ? true : frame.direction === direction))
+      .filter((frame) =>
+        payloadFilter ? payloadFilter.test(frame.payload ?? frame.payloadSample) : true,
+      );
+
+    return { direction, payloadFilterRaw, filtered };
+  }
+
+  private getConnectionDurationSeconds(conn: {
+    createdTimestamp: number;
+    closedTimestamp?: number;
+  }): number | null {
+    if (conn.closedTimestamp === undefined) return null;
+    return Math.max(0, Number((conn.closedTimestamp - conn.createdTimestamp).toFixed(3)));
   }
 
   async handleWsMonitorEnable(args: Record<string, unknown>): Promise<TextToolResponse> {
@@ -309,7 +360,6 @@ export class WsHandlers {
   }
 
   async handleWsGetFrames(args: Record<string, unknown>): Promise<TextToolResponse> {
-    const direction = parseWsDirection(args.direction);
     const limit = parseNumberArg(args.limit, {
       defaultValue: 100,
       min: 1,
@@ -322,36 +372,28 @@ export class WsHandlers {
       max: Number.MAX_SAFE_INTEGER,
       integer: true,
     });
-    const payloadFilterRaw = parseOptionalStringArg(args.payloadFilter);
+    const fullPayload = parseBooleanArg(args.fullPayload, false);
+    const { direction, payloadFilterRaw, filtered, error } = this.selectWsFrames(args);
+    if (error) return asJson({ success: false, error });
 
-    let payloadFilter: RegExp | undefined;
-    if (payloadFilterRaw) {
-      const compiled = compileRegex(payloadFilterRaw);
-      if (compiled.error)
-        return asJson({ success: false, error: `Invalid payloadFilter regex: ${compiled.error}` });
-      payloadFilter = compiled.regex;
-    }
-
-    const filtered = this.s.wsFrameOrder
-      .toArray()
-      .map((entry) => entry.frame)
-      .filter((frame) => (direction === 'all' ? true : frame.direction === direction))
-      .filter((frame) => (payloadFilter ? payloadFilter.test(frame.payloadSample) : true));
-
-    const pageItems = filtered.slice(offset, offset + limit).map((frame) => ({
-      requestId: frame.requestId,
-      timestamp: frame.timestamp,
-      direction: frame.direction,
-      opcode: frame.opcode,
-      payloadLength: frame.payloadLength,
-      payloadPreview: frame.payloadPreview,
-      isBinary: frame.isBinary,
-    }));
+    const pageItems = filtered.slice(offset, offset + limit).map((frame) => {
+      const item: Record<string, unknown> = {
+        requestId: frame.requestId,
+        timestamp: frame.timestamp,
+        direction: frame.direction,
+        opcode: frame.opcode,
+        payloadLength: frame.payloadLength,
+        payloadPreview: frame.payloadPreview,
+        isBinary: frame.isBinary,
+      };
+      if (fullPayload) item.payload = frame.payload ?? frame.payloadSample;
+      return item;
+    });
 
     return asJson({
       success: true,
       monitorEnabled: this.s.wsConfig.enabled,
-      filters: { direction, payloadFilter: payloadFilterRaw ?? null },
+      filters: { direction, payloadFilter: payloadFilterRaw ?? null, fullPayload },
       page: {
         offset,
         limit,
@@ -367,18 +409,95 @@ export class WsHandlers {
   async handleWsGetConnections(_args: Record<string, unknown>): Promise<TextToolResponse> {
     const connections = Array.from(this.s.wsConnections.values())
       .toSorted((a, b) => a.createdTimestamp - b.createdTimestamp)
-      .map((conn) => ({
-        requestId: conn.requestId,
-        url: conn.url,
-        status: conn.status,
-        framesCount: conn.framesCount,
-      }));
+      .map((conn) => {
+        const durationSeconds = this.getConnectionDurationSeconds(conn);
+        return {
+          requestId: conn.requestId,
+          url: conn.url,
+          status: conn.status,
+          framesCount: conn.framesCount,
+          createdTimestamp: conn.createdTimestamp,
+          closedTimestamp: conn.closedTimestamp ?? null,
+          durationSeconds,
+          framesPerSecond:
+            durationSeconds && durationSeconds > 0
+              ? Number((conn.framesCount / durationSeconds).toFixed(3))
+              : null,
+          handshakeStatus: conn.handshakeStatus ?? null,
+        };
+      });
 
     return asJson({
       success: true,
       monitorEnabled: this.s.wsConfig.enabled,
       total: connections.length,
       connections,
+    });
+  }
+
+  async handleWsExportCapture(args: Record<string, unknown>): Promise<TextToolResponse> {
+    const format = parseExportFormat(args.format);
+    const includePayload = parseBooleanArg(args.includePayload, true);
+    const { direction, payloadFilterRaw, filtered, error } = this.selectWsFrames(args);
+    if (error) return asJson({ success: false, error });
+
+    const exportedAt = new Date().toISOString();
+    const records = filtered.map((frame) => {
+      const conn = this.s.wsConnections.get(frame.requestId);
+      const record: Record<string, unknown> = {
+        requestId: frame.requestId,
+        url: conn?.url ?? null,
+        timestamp: frame.timestamp,
+        direction: frame.direction,
+        opcode: frame.opcode,
+        payloadLength: frame.payloadLength,
+        payloadPreview: frame.payloadPreview,
+        isBinary: frame.isBinary,
+        connectionStatus: conn?.status ?? null,
+        handshakeStatus: conn?.handshakeStatus ?? null,
+      };
+      if (includePayload) record.payload = frame.payload ?? frame.payloadSample;
+      return record;
+    });
+
+    const metadata = {
+      schema: 'jshookmcp.streaming.ws.capture.v1',
+      exportedAt,
+      format,
+      filters: { direction, payloadFilter: payloadFilterRaw ?? null, includePayload },
+      monitor: {
+        enabled: this.s.wsConfig.enabled,
+        maxFrames: this.s.wsConfig.maxFrames,
+        urlFilter: this.s.wsConfig.urlFilterRaw ?? null,
+        connectionCount: this.s.wsConnections.size,
+      },
+      recordCount: records.length,
+    };
+
+    const body =
+      format === 'ndjson'
+        ? [
+            JSON.stringify({ type: 'metadata', ...metadata }),
+            ...records.map((record) => JSON.stringify({ type: 'frame', ...record })),
+          ].join('\n') + '\n'
+        : `${JSON.stringify({ ...metadata, frames: records }, null, 2)}\n`;
+
+    const artifact = await resolveArtifactPath({
+      category: 'captures',
+      toolName: 'ws-capture',
+      target: direction,
+      ext: format,
+    });
+    await writeFile(artifact.absolutePath, body, 'utf8');
+
+    return asJson({
+      success: true,
+      artifactPath: artifact.displayPath,
+      format,
+      bytes: Buffer.byteLength(body, 'utf8'),
+      recordCount: records.length,
+      filters: metadata.filters,
+      monitor: metadata.monitor,
     });
   }
 }

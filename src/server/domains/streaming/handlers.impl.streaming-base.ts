@@ -31,6 +31,7 @@ export interface WsFrameRecord {
   payloadLength: number;
   payloadPreview: string;
   payloadSample: string;
+  payload?: string;
   isBinary: boolean;
 }
 

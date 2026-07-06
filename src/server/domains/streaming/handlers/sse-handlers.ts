@@ -2,13 +2,21 @@
  * SSE monitoring handlers — enable, get events.
  */
 
+import { writeFile } from 'node:fs/promises';
+import { resolveArtifactPath } from '@utils/artifacts';
 import type {
   StreamingSharedState,
   TextToolResponse,
   SseEnableResult,
   SseEventRecord,
 } from './shared';
-import { asJson, parseNumberArg, parseOptionalStringArg, compileRegex } from './shared';
+import {
+  asJson,
+  parseBooleanArg,
+  parseNumberArg,
+  parseOptionalStringArg,
+  compileRegex,
+} from './shared';
 import {
   evaluateWithTimeout,
   evaluateOnNewDocumentWithTimeout,
@@ -18,6 +26,7 @@ type InternalSseEvent = {
   sourceUrl: string;
   eventType: string;
   dataPreview: string;
+  data?: string;
   dataLength: number;
   lastEventId: string | null;
   timestamp: number;
@@ -39,6 +48,11 @@ type InternalSseMonitorState = {
   sources: Record<string, InternalSseSource>;
   originalEventSource?: typeof EventSource;
 };
+
+type ExportFormat = 'json' | 'ndjson';
+
+const parseExportFormat = (value: unknown): ExportFormat =>
+  value === 'ndjson' ? 'ndjson' : 'json';
 
 function sseInjectionFn(config: { maxEvents: number; urlFilterRaw?: string }) {
   const globalWindow = window as Window &
@@ -103,6 +117,7 @@ function sseInjectionFn(config: { maxEvents: number; urlFilterRaw?: string }) {
       sourceUrl,
       eventType,
       dataPreview: preview,
+      data: dataString,
       dataLength: dataString.length,
       lastEventId,
       timestamp: Date.now(),
@@ -294,6 +309,7 @@ export class SseHandlers {
   async handleSseGetEvents(args: Record<string, unknown>): Promise<TextToolResponse> {
     const sourceUrl = parseOptionalStringArg(args.sourceUrl);
     const eventType = parseOptionalStringArg(args.eventType);
+    const fullData = parseBooleanArg(args.fullData, false);
     const limit = parseNumberArg(args.limit, {
       defaultValue: 100,
       min: 1,
@@ -311,11 +327,18 @@ export class SseHandlers {
 
     const result = await evaluateWithTimeout(
       page,
-      (query: { sourceUrl?: string; eventType?: string; limit: number; offset: number }) => {
+      (query: {
+        sourceUrl?: string;
+        eventType?: string;
+        limit: number;
+        offset: number;
+        fullData: boolean;
+      }) => {
         type EventRecord = {
           sourceUrl: string;
           eventType: string;
           dataPreview: string;
+          data?: string;
           dataLength: number;
           lastEventId: string | null;
           timestamp: number;
@@ -352,11 +375,19 @@ export class SseHandlers {
         if (query.eventType) events = events.filter((evt) => evt.eventType === query.eventType);
 
         const totalAfterFilter = events.length;
-        const paged = events.slice(query.offset, query.offset + query.limit);
+        const paged = events.slice(query.offset, query.offset + query.limit).map((event) => {
+          if (query.fullData) return event;
+          const { data: _data, ...withoutData } = event;
+          return withoutData;
+        });
 
         return {
           success: true,
-          filters: { sourceUrl: query.sourceUrl ?? null, eventType: query.eventType ?? null },
+          filters: {
+            sourceUrl: query.sourceUrl ?? null,
+            eventType: query.eventType ?? null,
+            fullData: query.fullData,
+          },
           page: {
             offset: query.offset,
             limit: query.limit,
@@ -376,9 +407,129 @@ export class SseHandlers {
           events: paged,
         };
       },
-      { sourceUrl, eventType, limit, offset },
+      { sourceUrl, eventType, limit, offset, fullData },
     );
 
     return asJson(result as { success: boolean; message?: string; events?: SseEventRecord[] });
+  }
+
+  async handleSseExportCapture(args: Record<string, unknown>): Promise<TextToolResponse> {
+    const sourceUrl = parseOptionalStringArg(args.sourceUrl);
+    const eventType = parseOptionalStringArg(args.eventType);
+    const includeData = parseBooleanArg(args.includeData, true);
+    const format = parseExportFormat(args.format);
+    const page = await this.s.collector.getActivePage();
+
+    const result = await evaluateWithTimeout(
+      page,
+      (query: { sourceUrl?: string; eventType?: string; includeData: boolean }) => {
+        type EventRecord = {
+          sourceUrl: string;
+          eventType: string;
+          dataPreview: string;
+          data?: string;
+          dataLength: number;
+          lastEventId: string | null;
+          timestamp: number;
+        };
+        type SourceRecord = {
+          url: string;
+          status: 'connecting' | 'open' | 'error' | 'closed';
+          eventCount: number;
+          lastEventTimestamp?: number;
+        };
+        type MonitorState = {
+          enabled: boolean;
+          patched: boolean;
+          maxEvents: number;
+          urlFilterRaw?: string;
+          events: EventRecord[];
+          sources: Record<string, SourceRecord>;
+        };
+
+        const gw = window as Window &
+          typeof globalThis & {
+            __jshookSSEMonitor?: MonitorState;
+            EventSource: typeof EventSource;
+          };
+        const state = gw.__jshookSSEMonitor;
+        if (!state)
+          return {
+            success: false,
+            message: 'SSE monitor is not enabled. Call sse_monitor_enable first.',
+          };
+
+        let events = state.events;
+        if (query.sourceUrl) events = events.filter((evt) => evt.sourceUrl === query.sourceUrl);
+        if (query.eventType) events = events.filter((evt) => evt.eventType === query.eventType);
+
+        return {
+          success: true,
+          monitor: {
+            enabled: state.enabled,
+            patched: state.patched,
+            maxEvents: state.maxEvents,
+            urlFilter: state.urlFilterRaw ?? null,
+            sourceCount: Object.keys(state.sources).length,
+          },
+          filters: {
+            sourceUrl: query.sourceUrl ?? null,
+            eventType: query.eventType ?? null,
+            includeData: query.includeData,
+          },
+          events: events.map((event) => {
+            if (query.includeData) return event;
+            const { data: _data, ...withoutData } = event;
+            return withoutData;
+          }),
+        };
+      },
+      { sourceUrl, eventType, includeData },
+    );
+
+    const capture = result as {
+      success: boolean;
+      message?: string;
+      monitor?: Record<string, unknown>;
+      filters?: Record<string, unknown>;
+      events?: SseEventRecord[];
+    };
+    if (!capture.success) return asJson(capture);
+
+    const events = capture.events ?? [];
+    const metadata = {
+      schema: 'jshookmcp.streaming.sse.capture.v1',
+      exportedAt: new Date().toISOString(),
+      format,
+      filters: capture.filters ?? { sourceUrl: sourceUrl ?? null, eventType: eventType ?? null },
+      monitor: capture.monitor ?? null,
+      recordCount: events.length,
+    };
+
+    const body =
+      format === 'ndjson'
+        ? [
+            JSON.stringify({ type: 'metadata', ...metadata }),
+            ...events.map((event) => JSON.stringify({ type: 'event', ...event })),
+          ].join('\n') + '\n'
+        : `${JSON.stringify({ ...metadata, events }, null, 2)}\n`;
+
+    const artifact = await resolveArtifactPath({
+      category: 'captures',
+      toolName: 'sse-capture',
+      target: eventType ?? sourceUrl ?? 'all',
+      ext: format,
+    });
+    await writeFile(artifact.absolutePath, body, 'utf8');
+
+    return asJson({
+      success: true,
+      artifactPath: artifact.displayPath,
+      format,
+      bytes: Buffer.byteLength(body, 'utf8'),
+      recordCount: events.length,
+      filters: metadata.filters,
+      monitor: metadata.monitor,
+    });
   }
 }

@@ -29,6 +29,7 @@ export interface WsFrameRecord {
   payloadLength: number;
   payloadPreview: string;
   payloadSample: string;
+  payload?: string;
   isBinary: boolean;
 }
 
@@ -49,6 +50,7 @@ export interface SseEventRecord {
   sourceUrl: string;
   eventType: string;
   dataPreview: string;
+  data?: string;
   dataLength: number;
   lastEventId: string | null;
   timestamp: number;
@@ -140,6 +142,16 @@ export function parseNumberArg(
 export function parseWsDirection(value: unknown): WsQueryDirection {
   if (value === 'sent' || value === 'received' || value === 'all') return value;
   return 'all';
+}
+
+export function parseBooleanArg(value: unknown, defaultValue: boolean): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true') return true;
+    if (normalized === 'false') return false;
+  }
+  return defaultValue;
 }
 
 export function compileRegex(pattern: string): { regex?: RegExp; error?: string } {

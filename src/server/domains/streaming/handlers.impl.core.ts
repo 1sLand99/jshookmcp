@@ -69,6 +69,10 @@ export class StreamingToolHandlers {
     return handleSafe(async () => await this.handleWsGetConnections(args));
   }
 
+  async handleWsExportCaptureTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleWsExportCapture(args));
+  }
+
   handleWsMonitorDispatch = (args: Record<string, unknown>) => {
     const action = String(args['action'] ?? '');
     return action === 'disable'
@@ -79,6 +83,7 @@ export class StreamingToolHandlers {
   handleWsMonitorDisable = (args: Record<string, unknown>) => this.ws.handleWsMonitorDisable(args);
   handleWsGetFrames = (args: Record<string, unknown>) => this.ws.handleWsGetFrames(args);
   handleWsGetConnections = (args: Record<string, unknown>) => this.ws.handleWsGetConnections(args);
+  handleWsExportCapture = (args: Record<string, unknown>) => this.ws.handleWsExportCapture(args);
 
   // ── SSE ──
 
@@ -90,6 +95,11 @@ export class StreamingToolHandlers {
     return handleSafe(async () => await this.handleSseGetEvents(args));
   }
 
+  async handleSseExportCaptureTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleSseExportCapture(args));
+  }
+
   handleSseMonitorEnable = (args: Record<string, unknown>) => this.sse.handleSseMonitorEnable(args);
   handleSseGetEvents = (args: Record<string, unknown>) => this.sse.handleSseGetEvents(args);
+  handleSseExportCapture = (args: Record<string, unknown>) => this.sse.handleSseExportCapture(args);
 }
