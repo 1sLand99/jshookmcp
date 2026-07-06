@@ -77,8 +77,8 @@ export const captureTools: Tool[] = [
       })
       .number('retryIntervalMs', 'Retry interval in milliseconds', {
         default: 500,
-        minimum: 100,
-        maximum: 10000,
+        minimum: 50,
+        maximum: 5000,
       })
       .boolean('autoEnable', 'Auto-enable network monitoring when currently disabled', {
         default: false,

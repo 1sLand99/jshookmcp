@@ -145,6 +145,16 @@ describe('network tool definitions', () => {
     expect(tool.inputSchema.required).toContain('requestId');
   });
 
+  it('network_get_response_body retry interval schema matches runtime clamp', async () => {
+    const tool = findTool('network_get_response_body');
+    const props = getProperties(tool);
+
+    expect(props.retryIntervalMs).toMatchObject({
+      minimum: 50,
+      maximum: 5000,
+    });
+  });
+
   it('network_monitor requires action', async () => {
     const tool = findTool('network_monitor');
     expect(tool.inputSchema.required).toContain('action');

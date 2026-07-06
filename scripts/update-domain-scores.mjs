@@ -63,7 +63,10 @@ const SCORES = {
     '6 tools, runtime DomainManifest registration + Rizin/Binary Ninja bridge parity',
   ],
   'native-emulator': [9.1, '22 tools, 64 tests, E4 finale + session diagnostics'],
-  network: [9.1, '37 tools, 37 scan-counted tests, DNS resolver-server override'],
+  network: [
+    9.2,
+    '37 tools, 37 scan-counted tests, DNS resolver-server override + response-body retry schema/runtime alignment',
+  ],
   platform: [9.3, '16 tools, Phase 3 ASAR integrity SHA256/SHA512 algorithm awareness'],
   process: [
     9.1,
