@@ -385,6 +385,23 @@ describe('NativeEmulatorHandlers — happy path', () => {
     expect(res.returns).toBe('int');
   });
 
+  it('rejects Java mocks with multiple return value kinds', async () => {
+    const sessionId = await freshSession();
+    const res = payload(
+      await handlers.handleSetupJavaMock({
+        sessionId,
+        className: 'com/app/Config',
+        methodName: 'getMagic',
+        signature: '()I',
+        returnInt: 42,
+        returnString: 'forty-two',
+      }),
+    );
+
+    expect(res.success).toBe(false);
+    expect(String(res.error)).toContain('returnInt, returnString, and returnBytes');
+  });
+
   it('registers a declarative Java field (int / string / bytes)', async () => {
     const sessionId = await freshSession();
     const asInt = payload(
@@ -420,6 +437,23 @@ describe('NativeEmulatorHandlers — happy path', () => {
       }),
     );
     expect(asBytes.kind).toBe('bytes');
+  });
+
+  it('rejects Java fields with multiple value kinds', async () => {
+    const sessionId = await freshSession();
+    const res = payload(
+      await handlers.handleSetupJavaField({
+        sessionId,
+        className: 'com/app/Config',
+        fieldName: 'magic',
+        signature: 'I',
+        valueInt: 1337,
+        valueString: 'pepper',
+      }),
+    );
+
+    expect(res.success).toBe(false);
+    expect(String(res.error)).toContain('valueInt, valueString, and valueBytes');
   });
 
   it('traces an exported symbol instruction-by-instruction', async () => {

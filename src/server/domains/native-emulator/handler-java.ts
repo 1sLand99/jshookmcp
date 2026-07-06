@@ -14,7 +14,30 @@ export interface JavaFieldValue {
   value: bigint;
 }
 
+function providedKeys(args: ToolArgs, keys: string[]): string[] {
+  return keys.filter((key) => args[key] !== undefined && args[key] !== null);
+}
+
+function assertSingleJavaMockReturn(args: ToolArgs): void {
+  const provided = providedKeys(args, ['returnInt', 'returnString', 'returnBytes']);
+  if (provided.length > 1) {
+    throw new Error(
+      'returnInt, returnString, and returnBytes are mutually exclusive; provide only one return value.',
+    );
+  }
+}
+
+function assertSingleJavaFieldValue(args: ToolArgs): void {
+  const provided = providedKeys(args, ['valueInt', 'valueString', 'valueBytes']);
+  if (provided.length > 1) {
+    throw new Error(
+      'valueInt, valueString, and valueBytes are mutually exclusive; provide only one field value.',
+    );
+  }
+}
+
 export function buildJavaMockImpl(args: ToolArgs): JavaMockImpl {
+  assertSingleJavaMockReturn(args);
   const returnInt = argNumber(args, 'returnInt');
   const returnString = argString(args, 'returnString');
   const returnBytes = argString(args, 'returnBytes');
@@ -39,6 +62,7 @@ export function buildJavaMockImpl(args: ToolArgs): JavaMockImpl {
 }
 
 export function buildJavaFieldValue(session: EmulatorSession, args: ToolArgs): JavaFieldValue {
+  assertSingleJavaFieldValue(args);
   const valueInt = argNumber(args, 'valueInt');
   const valueString = argString(args, 'valueString');
   const valueBytes = argString(args, 'valueBytes');
