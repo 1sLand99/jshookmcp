@@ -111,6 +111,39 @@ describe('artifactRetention', () => {
     }
   });
 
+  it('limits cleanup to selected artifact categories', async () => {
+    const artifacts = await import('@utils/artifacts');
+    const outputPaths = await import('@utils/outputPaths');
+    vi.spyOn(outputPaths, 'getProjectRoot').mockReturnValue(root);
+    vi.spyOn(artifacts, 'getArtifactDir').mockImplementation((category) =>
+      join(root, 'artifacts', category),
+    );
+
+    const harFile = join(root, 'artifacts', 'har', 'old.har');
+    const traceDir = join(root, 'artifacts', 'traces');
+    const traceFile = join(traceDir, 'old.trace');
+    await mkdir(traceDir, { recursive: true });
+    await writeFile(harFile, 'old har');
+    await writeFile(traceFile, 'old trace');
+    const oldTime = new Date('2024-01-01T00:00:00.000Z');
+    const { stat, utimes } = await import('node:fs/promises');
+    await utimes(harFile, oldTime, oldTime);
+    await utimes(traceFile, oldTime, oldTime);
+
+    const result = await cleanupArtifacts({
+      retentionDays: 1,
+      dryRun: false,
+      now: new Date('2024-01-10T00:00:00.000Z').getTime(),
+      categories: ['har'],
+    });
+
+    expect(result.categories).toEqual(['har']);
+    expect(result.directories).toEqual([join(root, 'artifacts', 'har')]);
+    expect(result.removedFiles).toBe(1);
+    await expect(stat(harFile)).rejects.toThrow();
+    await expect(stat(traceFile)).resolves.toBeDefined();
+  });
+
   it('keeps pruning cwd debugger sessions when MCP_PROJECT_ROOT is overridden', async () => {
     const artifacts = await import('@utils/artifacts');
     const outputPaths = await import('@utils/outputPaths');

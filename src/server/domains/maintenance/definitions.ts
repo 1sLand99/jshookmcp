@@ -98,6 +98,44 @@ export const artifactTools: Tool[] = [
       .number('retentionDays', 'Override retention window in days')
       .number('maxTotalBytes', 'Override maximum retained bytes')
       .boolean('dryRun', 'Preview removals without deleting')
+      .array(
+        'categories',
+        {
+          type: 'string',
+          enum: [
+            'wasm',
+            'traces',
+            'profiles',
+            'dumps',
+            'reports',
+            'har',
+            'captures',
+            'sessions',
+            'offloaded',
+            'tmp',
+          ],
+        },
+        'Only clean these artifact categories',
+      )
+      .array(
+        'excludeCategories',
+        {
+          type: 'string',
+          enum: [
+            'wasm',
+            'traces',
+            'profiles',
+            'dumps',
+            'reports',
+            'har',
+            'captures',
+            'sessions',
+            'offloaded',
+            'tmp',
+          ],
+        },
+        'Do not clean these artifact categories',
+      )
       .destructive(),
   ),
   tool('doctor_environment', (t) =>

@@ -40,4 +40,13 @@ describe('maintenance domain definitions', () => {
     expect(properties).toHaveProperty('allowedTools');
     expect(properties).toHaveProperty('redactOutput');
   });
+
+  it('cleanup_artifacts exposes category filters', () => {
+    const cleanupTool = artifactTools.find((tool) => tool.name === 'cleanup_artifacts');
+    const properties = cleanupTool?.inputSchema.properties as Record<string, unknown> | undefined;
+
+    expect(properties).toBeDefined();
+    expect(properties).toHaveProperty('categories');
+    expect(properties).toHaveProperty('excludeCategories');
+  });
 });

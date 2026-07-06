@@ -24,6 +24,8 @@ export interface ArtifactCleanupResult {
   remainingBytes: number;
   dryRun: boolean;
   directories: string[];
+  categories?: ArtifactCategory[];
+  excludeCategories?: ArtifactCategory[];
   removedSample: string[];
   config: ArtifactRetentionConfig;
 }
@@ -36,6 +38,18 @@ interface ArtifactFileEntry {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MANAGED_ARTIFACT_CATEGORIES: readonly ArtifactCategory[] = Object.freeze([
+  'wasm',
+  'traces',
+  'profiles',
+  'dumps',
+  'reports',
+  'har',
+  'captures',
+  'sessions',
+  'offloaded',
+  'tmp',
+]);
 
 export function getArtifactRetentionConfig(
   env: NodeJS.ProcessEnv = process.env,
@@ -64,6 +78,8 @@ export async function cleanupArtifacts(options?: {
   dryRun?: boolean;
   now?: number;
   directories?: string[];
+  categories?: ArtifactCategory[];
+  excludeCategories?: ArtifactCategory[];
 }): Promise<ArtifactCleanupResult> {
   const envConfig = getArtifactRetentionConfig();
   const config: ArtifactRetentionConfig = {
@@ -74,7 +90,14 @@ export async function cleanupArtifacts(options?: {
 
   const now = options?.now ?? Date.now();
   const dryRun = options?.dryRun ?? false;
-  const directories = options?.directories ?? getManagedArtifactDirectories();
+  const categories = normalizeCategories(options?.categories);
+  const excludeCategories = normalizeCategories(options?.excludeCategories);
+  const directories =
+    options?.directories ??
+    getManagedArtifactDirectories({
+      categories,
+      excludeCategories,
+    });
 
   const cutoff = config.retentionDays > 0 ? now - config.retentionDays * DAY_MS : 0;
   let scannedFiles = 0;
@@ -147,6 +170,8 @@ export async function cleanupArtifacts(options?: {
     remainingBytes: remaining.reduce((sum, entry) => sum + entry.size, 0),
     dryRun,
     directories,
+    ...(categories.length > 0 ? { categories } : {}),
+    ...(excludeCategories.length > 0 ? { excludeCategories } : {}),
     removedSample,
     config,
   };
@@ -180,7 +205,23 @@ export function startArtifactRetentionScheduler(): (() => void) | null {
   return () => clearInterval(handle);
 }
 
-function getManagedArtifactDirectories(): string[] {
+function getManagedArtifactDirectories(options?: {
+  categories?: ArtifactCategory[];
+  excludeCategories?: ArtifactCategory[];
+}): string[] {
+  const hasCategoryFilter =
+    (options?.categories?.length ?? 0) > 0 || (options?.excludeCategories?.length ?? 0) > 0;
+  if (hasCategoryFilter) {
+    const selected =
+      options?.categories && options.categories.length > 0
+        ? options.categories
+        : [...MANAGED_ARTIFACT_CATEGORIES];
+    const excluded = new Set(options?.excludeCategories ?? []);
+    return selected
+      .filter((category) => !excluded.has(category))
+      .map((category) => getArtifactDir(category));
+  }
+
   const projectRoot = getProjectRoot();
   const cwdDebuggerSessionsDir = resolve(process.cwd(), 'debugger-sessions');
   const projectDebuggerSessionsDir = resolve(projectRoot, 'debugger-sessions');
@@ -192,21 +233,23 @@ function getManagedArtifactDirectories(): string[] {
     projectDebuggerSessionsDir,
   ]);
 
-  const categories: ArtifactCategory[] = [
-    'wasm',
-    'traces',
-    'profiles',
-    'dumps',
-    'reports',
-    'har',
-    'sessions',
-    'tmp',
-  ];
-  for (const category of categories) {
+  for (const category of MANAGED_ARTIFACT_CATEGORIES) {
     directories.add(getArtifactDir(category));
   }
 
   return [...directories];
+}
+
+function normalizeCategories(categories: ArtifactCategory[] | undefined): ArtifactCategory[] {
+  if (!categories || categories.length === 0) return [];
+  const allowed = new Set(MANAGED_ARTIFACT_CATEGORIES);
+  const normalized: ArtifactCategory[] = [];
+  for (const category of categories) {
+    if (allowed.has(category) && !normalized.includes(category)) {
+      normalized.push(category);
+    }
+  }
+  return normalized;
 }
 
 async function walkAndProcess(

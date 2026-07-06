@@ -197,6 +197,21 @@ describe('CoreMaintenanceHandlers', () => {
     });
   });
 
+  it('artifact cleanup forwards category filters', async () => {
+    artifactCleanup.mockResolvedValue({ success: true });
+    await handlers.handleCleanupArtifacts({
+      categories: ['traces', 'har'],
+      excludeCategories: ['har'],
+    });
+    expect(artifactCleanup).toHaveBeenCalledWith({
+      retentionDays: undefined,
+      maxTotalBytes: undefined,
+      dryRun: undefined,
+      categories: ['traces', 'har'],
+      excludeCategories: ['har'],
+    });
+  });
+
   it('environment doctor with bridge health enabled', async () => {
     environmentDoctor.mockResolvedValue({ success: true });
     await handlers.handleEnvironmentDoctor({ includeBridgeHealth: true });

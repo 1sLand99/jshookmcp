@@ -37,7 +37,7 @@ const SCORES = {
   ],
   graphql: [9.4, '6 tools, Phase 3 Apollo Federation _service.sdl introspection'],
   instrumentation: [9.0, '16 tools, Phase 3 session snapshot export to artifacts'],
-  maintenance: [9.0, '13 tools, sandbox memory/tool allowlist/redaction hardening, 6 tests'],
+  maintenance: [9.2, '13 tools, sandbox hardening plus category-aware artifact retention cleanup'],
   memory: [9.7, '34 tools, E5 parity, Phase 0 find_accesses wired readMemory+capstone+pid'],
   'mojo-ipc': [9.0, '6 tools, encode/filter surface, expanded decoder types + v2 header metadata'],
   'native-bridge': [

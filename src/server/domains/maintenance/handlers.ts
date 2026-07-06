@@ -3,6 +3,7 @@ import { type UnifiedCacheManager } from '@utils/UnifiedCacheManager';
 import type { ToolResponse } from '@server/types';
 import { handleSafe } from '@server/domains/shared/ResponseBuilder';
 import { cleanupArtifacts } from '@utils/artifactRetention';
+import type { ArtifactCategory } from '@utils/artifacts';
 import { runEnvironmentDoctor } from '@utils/environmentDoctor';
 
 interface CoreMaintenanceHandlerDeps {
@@ -81,12 +82,16 @@ export class CoreMaintenanceHandlers {
     retentionDays?: number;
     maxTotalBytes?: number;
     dryRun?: boolean;
+    categories?: ArtifactCategory[];
+    excludeCategories?: ArtifactCategory[];
   }): Promise<ToolResponse> {
     return handleSafe(async () =>
       this.artifactCleanup({
         retentionDays: args.retentionDays,
         maxTotalBytes: args.maxTotalBytes,
         dryRun: args.dryRun,
+        ...(args.categories ? { categories: args.categories } : {}),
+        ...(args.excludeCategories ? { excludeCategories: args.excludeCategories } : {}),
       }),
     );
   }
