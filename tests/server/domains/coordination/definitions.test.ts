@@ -29,6 +29,17 @@ describe('coordination domain definitions', () => {
     expect(tool?.inputSchema.properties).toHaveProperty('minConfidence');
   });
 
+  it('should expose update_task_handoff status transitions', async () => {
+    const tool = getTool('update_task_handoff');
+    expect(tool?.inputSchema.required).toContain('taskId');
+    expect(tool?.inputSchema.properties).toHaveProperty('status');
+    expect((tool?.inputSchema.properties?.status as any)?.enum).toEqual([
+      'pending',
+      'in_progress',
+      'failed',
+    ]);
+  });
+
   it('should expose session insight retrieval metadata', async () => {
     const tool = getTool('append_session_insight');
     expect(tool?.inputSchema.properties).toHaveProperty('tags');

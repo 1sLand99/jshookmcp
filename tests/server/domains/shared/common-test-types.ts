@@ -35,7 +35,7 @@ export interface CompleteTaskHandoffResponse extends BaseResponse {
 export interface TaskHandoffRecord {
   taskId: string;
   description: string;
-  status: 'pending' | 'completed';
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
   constraints?: string[];
   targetDomain?: string;
   pageUrl?: string;
@@ -58,10 +58,12 @@ export interface GetTaskContextResponse extends BaseResponse {
   handoff?: TaskHandoffRecord;
   active?: TaskHandoffRecord[];
   completed?: TaskHandoffRecord[];
+  failed?: TaskHandoffRecord[];
   sessionInsights?: SessionInsight[];
   summary?: {
     totalActive: number;
     totalCompleted: number;
+    totalFailed: number;
     totalInsights: number;
   };
 }

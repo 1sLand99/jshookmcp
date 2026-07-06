@@ -568,5 +568,6 @@
   "debugger_run_to_location": "通过设置临时代码断点并恢复执行，等待调试器在指定源码位置暂停，随后自动移除该断点。",
   "adb_port_forward": "管理 ADB forward/reverse 端口映射，用于设备与主机之间的调试桥接流程。",
   "debugger_capture_hit": "等待下一次调试器暂停，并一次性捕获调用栈和可选的顶部调用帧作用域变量。",
-  "adb_screenrecord": "通过 adb shell screenrecord 录制短 MP4 屏幕视频并拉取到本地。"
+  "adb_screenrecord": "通过 adb shell screenrecord 录制短 MP4 屏幕视频并拉取到本地。",
+  "update_task_handoff": "更新 Task Handoff 的状态或元数据，但不把任务标记为完成。"
 }

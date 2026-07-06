@@ -100,6 +100,73 @@ describe('CoordinationHandlers', () => {
     ).rejects.toThrow(/is already completed/);
   });
 
+  it('handleUpdateTaskHandoff updates status and metadata', async () => {
+    const createRes = (await handlers.handleCreateTaskHandoff({
+      description: 'Start me',
+      constraints: ['initial'],
+    })) as unknown as CreateTaskHandoffResponse;
+
+    const updated = (await handlers.handleUpdateTaskHandoff({
+      taskId: createRes.taskId,
+      status: 'in_progress',
+      description: 'Started',
+      decision: 'Use browser state',
+      risks: ['timeout'],
+      nextSteps: ['inspect storage'],
+    })) as any;
+
+    expect(updated.previousStatus).toBe('pending');
+    expect(updated.status).toBe('in_progress');
+    expect(updated.description).toBe('Started');
+    expect(updated.decision).toBe('Use browser state');
+    expect(updated.risks).toEqual(['timeout']);
+    expect(updated.nextSteps).toEqual(['inspect storage']);
+
+    const context = (await handlers.handleGetTaskContext({})) as unknown as GetTaskContextResponse;
+    expect(context.active?.[0]?.status).toBe('in_progress');
+    expect(context.summary?.totalActive).toBe(1);
+    expect(context.summary?.totalFailed).toBe(0);
+  });
+
+  it('handleUpdateTaskHandoff marks failed handoffs outside the active list', async () => {
+    const createRes = (await handlers.handleCreateTaskHandoff({
+      description: 'May fail',
+    })) as unknown as CreateTaskHandoffResponse;
+
+    const failed = (await handlers.handleUpdateTaskHandoff({
+      taskId: createRes.taskId,
+      status: 'failed',
+      summary: 'Target page disappeared',
+      keyFindings: ['page closed'],
+      artifacts: ['artifacts/failure.json'],
+    })) as any;
+
+    expect(failed.status).toBe('failed');
+    expect(failed.completedAt).toBeDefined();
+    expect(failed.summary).toBe('Target page disappeared');
+
+    const context = (await handlers.handleGetTaskContext({})) as unknown as GetTaskContextResponse;
+    expect(context.active).toEqual([]);
+    expect(context.failed?.[0]?.taskId).toBe(createRes.taskId);
+    expect(context.failed?.[0]?.status).toBe('failed');
+    expect(context.summary?.totalFailed).toBe(1);
+  });
+
+  it('handleUpdateTaskHandoff rejects completed handoff reopening', async () => {
+    const createRes = (await handlers.handleCreateTaskHandoff({
+      description: 'Done task',
+    })) as unknown as CreateTaskHandoffResponse;
+
+    await handlers.handleCompleteTaskHandoff({ taskId: createRes.taskId, summary: 'done' });
+
+    await expect(
+      handlers.handleUpdateTaskHandoff({
+        taskId: createRes.taskId,
+        status: 'in_progress',
+      }),
+    ).rejects.toThrow(/already completed and cannot be reopened/);
+  });
+
   it('handleGetTaskContext returns specific handoff', async () => {
     const createRes = (await handlers.handleCreateTaskHandoff({
       description: 'ctx task',

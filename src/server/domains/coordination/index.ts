@@ -45,6 +45,8 @@ export interface SessionInsight {
   sourceTaskId?: string;
 }
 
+type HandoffUpdateStatus = Exclude<TaskHandoff['status'], 'completed'>;
+
 interface CoordinationSnapshot {
   schemaVersion: 1;
   savedAt: string;
@@ -224,6 +226,58 @@ export class CoordinationHandlers {
     };
   }
 
+  // ── update_task_handoff ──
+
+  async handleUpdateTaskHandoffTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleUpdateTaskHandoff(args));
+  }
+
+  async handleUpdateTaskHandoff(args: Record<string, unknown>): Promise<unknown> {
+    const taskId = args.taskId as string;
+    if (!taskId) throw new Error('taskId is required');
+
+    const handoff = this.handoffs.get(taskId);
+    if (!handoff) {
+      throw new Error(
+        `Task handoff "${taskId}" not found. Active IDs: ${[...this.handoffs.keys()].join(', ') || '(none)'}`,
+      );
+    }
+
+    const previousStatus = handoff.status;
+    if (hasArg(args, 'status')) {
+      const status = readHandoffUpdateStatus(args.status);
+      if (!status) {
+        throw new Error('Invalid handoff status. Expected one of: pending, in_progress, failed');
+      }
+      if (handoff.status === 'completed') {
+        throw new Error(`Task handoff "${taskId}" is already completed and cannot be reopened`);
+      }
+      handoff.status = status;
+      if (status === 'failed') {
+        handoff.completedAt = Date.now();
+      } else {
+        handoff.completedAt = undefined;
+      }
+    }
+
+    if (typeof args.description === 'string') handoff.description = args.description;
+    if (hasArg(args, 'constraints')) handoff.constraints = readStringArray(args.constraints);
+    if (typeof args.targetDomain === 'string') handoff.targetDomain = args.targetDomain;
+    if (typeof args.decision === 'string') handoff.decision = args.decision;
+    if (hasArg(args, 'risks')) handoff.risks = readStringArray(args.risks);
+    if (hasArg(args, 'nextSteps')) handoff.nextSteps = readStringArray(args.nextSteps);
+    if (typeof args.summary === 'string') handoff.summary = args.summary;
+    if (hasArg(args, 'keyFindings')) handoff.keyFindings = readStringArray(args.keyFindings);
+    if (hasArg(args, 'artifacts')) handoff.artifacts = readStringArray(args.artifacts);
+
+    this.markDirty();
+
+    return {
+      ...this.serializeHandoff(handoff),
+      previousStatus,
+    };
+  }
+
   // ── get_task_context ──
 
   async handleGetTaskContextTool(args: Record<string, unknown>): Promise<ToolResponse> {
@@ -243,17 +297,20 @@ export class CoordinationHandlers {
 
     // Return all handoffs + session insights
     const handoffs = [...this.handoffs.values()].map((h) => this.serializeHandoff(h));
-    const active = handoffs.filter((h) => h.status !== 'completed');
+    const active = handoffs.filter((h) => h.status === 'pending' || h.status === 'in_progress');
     const completed = handoffs.filter((h) => h.status === 'completed');
+    const failed = handoffs.filter((h) => h.status === 'failed');
     const sessionInsights = this.filterInsights(args).map((i) => this.serializeInsight(i));
 
     return {
       active,
       completed,
+      failed,
       sessionInsights,
       summary: {
         totalActive: active.length,
         totalCompleted: completed.length,
+        totalFailed: failed.length,
         totalInsights: this.insights.length,
         returnedInsights: sessionInsights.length,
       },
@@ -608,6 +665,17 @@ function isHandoffStatus(value: unknown): value is TaskHandoff['status'] {
   return (
     value === 'pending' || value === 'in_progress' || value === 'completed' || value === 'failed'
   );
+}
+
+function hasArg(args: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(args, key);
+}
+
+function readHandoffUpdateStatus(value: unknown): HandoffUpdateStatus | undefined {
+  if (value === 'pending' || value === 'in_progress' || value === 'failed') {
+    return value;
+  }
+  return undefined;
 }
 
 function isOptionalStringArray(value: unknown): value is string[] | undefined {

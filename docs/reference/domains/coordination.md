@@ -20,12 +20,13 @@
 - coordination + workflow
 - coordination + browser
 
-## 工具清单（10）
+## 工具清单（11）
 
 | 工具 | 说明 |
 | --- | --- |
 | `create_task_handoff` | 创建一个 MCP Task Handoff 任务以移交复杂工作。 |
 | `complete_task_handoff` | 以成功或失败的状态完结一个 MCP Task Handoff 任务。 |
+| `update_task_handoff` | 更新 Task Handoff 的状态或元数据，但不把任务标记为完成。 |
 | `get_task_context` | 获取 MCP 任务的具体上下文详情。 |
 | `append_session_insight` | 向当前持续会话记录一条重要洞察结论。 |
 | `save_page_snapshot` | 保存当前页面状态快照（URL、Cookie、localStorage、sessionStorage），便于后续恢复。 |

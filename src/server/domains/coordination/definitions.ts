@@ -22,6 +22,22 @@ export const coordinationTools: Tool[] = [
       .array('artifacts', { type: 'string' }, 'Paths to generated artifact files')
       .required('taskId', 'summary'),
   ),
+  tool('update_task_handoff', (t) =>
+    t
+      .desc('Update task handoff status or metadata without completing it.')
+      .string('taskId', 'Task ID from create_task_handoff')
+      .enum('status', ['pending', 'in_progress', 'failed'], 'New handoff status')
+      .string('description', 'Replacement task description')
+      .array('constraints', { type: 'string' }, 'Replacement constraints')
+      .string('targetDomain', 'Replacement target domain')
+      .string('decision', 'Replacement or updated design decision')
+      .array('risks', { type: 'string' }, 'Replacement identified risks')
+      .array('nextSteps', { type: 'string' }, 'Replacement next actions')
+      .string('summary', 'Failure or progress summary')
+      .array('keyFindings', { type: 'string' }, 'Current key findings')
+      .array('artifacts', { type: 'string' }, 'Current artifact file paths')
+      .required('taskId'),
+  ),
   tool('get_task_context', (t) =>
     t
       .desc('Read persisted task handoff context and session insights.')

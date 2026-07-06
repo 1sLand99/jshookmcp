@@ -20,12 +20,13 @@ Coordination domain for session insights, MCP Task Handoff, and cross-agent shar
 - coordination + workflow
 - coordination + browser
 
-## Full tool list (10)
+## Full tool list (11)
 
 | Tool | Description |
 | --- | --- |
 | `create_task_handoff` | Create a persisted task handoff for cross-tool coordination. |
 | `complete_task_handoff` | Mark a task handoff as completed. |
+| `update_task_handoff` | Update task handoff status or metadata without completing it. |
 | `get_task_context` | Read persisted task handoff context and session insights. |
 | `append_session_insight` | Record a persisted insight for the current session. |
 | `save_page_snapshot` | Save current page state. |

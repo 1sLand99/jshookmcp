@@ -20,6 +20,7 @@ const registrations = defineMethodRegistrations<H, (typeof coordinationTools)[nu
   entries: [
     { tool: 'create_task_handoff', method: 'handleCreateTaskHandoffTool', profiles: ['full'] },
     { tool: 'complete_task_handoff', method: 'handleCompleteTaskHandoffTool', profiles: ['full'] },
+    { tool: 'update_task_handoff', method: 'handleUpdateTaskHandoffTool', profiles: ['full'] },
     { tool: 'get_task_context', method: 'handleGetTaskContextTool', profiles: ['full'] },
     {
       tool: 'append_session_insight',
