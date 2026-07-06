@@ -3,7 +3,7 @@ import { asJsonResponse } from '@server/domains/shared/response';
 import { handleSafe } from '@server/domains/shared/ResponseBuilder';
 import { argBool, argNumber, argString } from '@server/domains/shared/parse-args';
 import type { ToolResponse } from '@server/types';
-import type { EvidenceGraphSnapshot } from '@server/evidence/types';
+import type { EvidenceGraphSnapshot, EvidenceNode } from '@server/evidence/types';
 import type { CrossDomainEvidenceBridge } from './handlers/evidence-graph-bridge';
 import { correlateSkiaToJS } from './handlers/skia-correlator';
 import { correlateMojoToCDP } from './handlers/mojo-cdp-correlator';
@@ -365,6 +365,10 @@ export class CrossDomainHandlers {
     return handleSafe(async () => await this.handleEvidenceExport());
   }
 
+  async handleEvidenceQueryTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleEvidenceQuery(args));
+  }
+
   async handleEvidenceStatsTool(): Promise<ToolResponse> {
     return handleSafe(async () => await this.handleEvidenceStats());
   }
@@ -487,9 +491,107 @@ export class CrossDomainHandlers {
     return asJsonResponse(this.evidenceBridge.exportGraph());
   }
 
+  async handleEvidenceQuery(args: Record<string, unknown>): Promise<ToolResponse> {
+    const queryType = argString(args, 'queryType', '');
+    const value = argString(args, 'value', '');
+    const limit = Math.max(1, Math.min(500, Math.floor(argNumber(args, 'limit', 50))));
+    const graph = this.evidenceBridge.getGraph();
+
+    let nodes: EvidenceNode[];
+    switch (queryType) {
+      case 'network_url':
+        requireQueryValue(queryType, value);
+        nodes = this.evidenceBridge.queryByNetworkUrl(value);
+        break;
+      case 'heap_address':
+        requireQueryValue(queryType, value);
+        nodes = this.evidenceBridge.queryByHeapAddress(value);
+        break;
+      case 'function':
+        requireQueryValue(queryType, value);
+        nodes = graph.queryByFunction(value);
+        break;
+      case 'script_id':
+        requireQueryValue(queryType, value);
+        nodes = graph.queryByScriptId(value);
+        break;
+      case 'node_id': {
+        requireQueryValue(queryType, value);
+        const node = graph.getNode(value);
+        nodes = node ? [node] : [];
+        break;
+      }
+      case 'node_type':
+        requireQueryValue(queryType, value);
+        nodes = this.evidenceBridge.exportGraph().nodes.filter((node) => node.type === value);
+        break;
+      case 'metadata':
+        nodes = queryNodesByMetadata(this.evidenceBridge.exportGraph().nodes, args);
+        break;
+      case 'chain':
+        requireQueryValue(queryType, value);
+        nodes = graph.getEvidenceChain(value, readChainDirection(args['direction']));
+        break;
+      default:
+        throw new Error(
+          'Invalid evidence queryType. Expected one of: network_url, heap_address, function, script_id, node_id, node_type, metadata, chain',
+        );
+    }
+
+    const total = nodes.length;
+    const returnedNodes = nodes.slice(0, limit);
+    const returnedNodeIds = new Set(returnedNodes.map((node) => node.id));
+    const edges = this.evidenceBridge
+      .exportGraph()
+      .edges.filter((edge) => returnedNodeIds.has(edge.source) && returnedNodeIds.has(edge.target));
+
+    return asJsonResponse({
+      query: {
+        queryType,
+        value: value || undefined,
+        metadataKey: argString(args, 'metadataKey'),
+        metadataValue: argString(args, 'metadataValue'),
+        direction: queryType === 'chain' ? readChainDirection(args['direction']) : undefined,
+        limit,
+      },
+      total,
+      returned: returnedNodes.length,
+      truncated: total > returnedNodes.length,
+      nodes: returnedNodes,
+      edges,
+    });
+  }
+
   async handleEvidenceStats(): Promise<ToolResponse> {
     return asJsonResponse(this.evidenceBridge.getStats());
   }
+}
+
+function requireQueryValue(queryType: string, value: string): void {
+  if (!value.trim()) {
+    throw new Error(`value is required for evidence queryType=${queryType}`);
+  }
+}
+
+function readChainDirection(value: unknown): 'forward' | 'backward' {
+  return value === 'backward' ? 'backward' : 'forward';
+}
+
+function queryNodesByMetadata(
+  nodes: EvidenceNode[],
+  args: Record<string, unknown>,
+): EvidenceNode[] {
+  const metadataKey = argString(args, 'metadataKey', '');
+  if (!metadataKey.trim()) {
+    throw new Error('metadataKey is required for evidence queryType=metadata');
+  }
+  const hasMetadataValue = Object.prototype.hasOwnProperty.call(args, 'metadataValue');
+  const metadataValue = args['metadataValue'];
+  return nodes.filter((node) => {
+    if (!Object.prototype.hasOwnProperty.call(node.metadata, metadataKey)) return false;
+    if (!hasMetadataValue) return true;
+    return String(node.metadata[metadataKey]) === String(metadataValue);
+  });
 }
 
 function tokenizeForWorkflowScoring(value: string): Set<string> {

@@ -145,6 +145,33 @@ export const crossDomainToolDefinitions: Tool[] = [
   tool('cross_domain_evidence_export', (t) =>
     t.desc('Export the shared cross-domain evidence graph as JSON.').query(),
   ),
+  tool('cross_domain_evidence_query', (t) =>
+    t
+      .desc(
+        'Query the shared evidence graph by URL, heap address, function, script, node type, metadata, or chain.',
+      )
+      .enum(
+        'queryType',
+        [
+          'network_url',
+          'heap_address',
+          'function',
+          'script_id',
+          'node_id',
+          'node_type',
+          'metadata',
+          'chain',
+        ],
+        'Evidence query mode',
+      )
+      .string('value', 'Primary query value, such as URL substring, heap address, node ID, or type')
+      .string('metadataKey', 'Metadata key for queryType=metadata')
+      .string('metadataValue', 'Optional exact metadata value for queryType=metadata')
+      .enum('direction', ['forward', 'backward'], 'Traversal direction for queryType=chain')
+      .number('limit', 'Maximum nodes to return', { default: 50, minimum: 1 })
+      .required('queryType')
+      .query(),
+  ),
   tool('cross_domain_evidence_stats', (t) =>
     t.desc('Get node and edge statistics for the shared cross-domain evidence graph.').query(),
   ),

@@ -19,7 +19,7 @@ Cross-domain correlation domain that bridges analysis results across multiple do
 - cross-domain + instrumentation
 - cross-domain + v8-inspector + canvas
 
-## Full tool list (6)
+## Full tool list (7)
 
 | Tool | Description |
 | --- | --- |
@@ -28,4 +28,5 @@ Cross-domain correlation domain that bridges analysis results across multiple do
 | `cross_domain_health` | Report health status of cross-domain bridges and correlators. |
 | `cross_domain_correlate_all` | Run the built-in skia, mojo, syscall, and binary correlators and merge the results into the shared evidence graph. |
 | `cross_domain_evidence_export` | Export the shared cross-domain evidence graph as JSON. |
+| `cross_domain_evidence_query` | Query the shared evidence graph by URL, heap address, function, script, node type, metadata, or chain. |
 | `cross_domain_evidence_stats` | Get node and edge statistics for the shared cross-domain evidence graph. |

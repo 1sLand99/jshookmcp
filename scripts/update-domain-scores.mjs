@@ -27,8 +27,8 @@ const SCORES = {
     '11 tools, persisted handoffs/insights, tagged insight filtering, handoff status updates',
   ],
   'cross-domain': [
-    9.0,
-    '6 tools, live-state hydration, edge filtering, expanded workflow classifier',
+    9.1,
+    '7 tools, live-state hydration, edge filtering, expanded workflow classifier, evidence queries',
   ],
   'dart-inspector': [
     9.1,

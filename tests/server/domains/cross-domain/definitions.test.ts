@@ -16,4 +16,15 @@ describe('cross-domain definitions', () => {
     expect(tool?.inputSchema.properties).toHaveProperty('ghidraOutput');
     expect(tool?.inputSchema.properties).not.toHaveProperty('v8Objects');
   });
+
+  it('should expose evidence query inputs', async () => {
+    const tool = getTool('cross_domain_evidence_query');
+    expect(tool?.inputSchema.required).toContain('queryType');
+    expect(tool?.inputSchema.properties).toHaveProperty('value');
+    expect(tool?.inputSchema.properties).toHaveProperty('metadataKey');
+    expect(tool?.inputSchema.properties).toHaveProperty('direction');
+    expect((tool?.inputSchema.properties?.queryType as any)?.enum).toContain('network_url');
+    expect((tool?.inputSchema.properties?.queryType as any)?.enum).toContain('metadata');
+    expect((tool?.inputSchema.properties?.queryType as any)?.enum).toContain('chain');
+  });
 });

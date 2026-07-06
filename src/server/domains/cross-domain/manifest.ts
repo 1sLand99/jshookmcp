@@ -23,6 +23,7 @@ const registrations = defineMethodRegistrations<
     { tool: 'cross_domain_health', method: 'handleHealthTool' },
     { tool: 'cross_domain_correlate_all', method: 'handleCorrelateAllTool' },
     { tool: 'cross_domain_evidence_export', method: 'handleEvidenceExportTool' },
+    { tool: 'cross_domain_evidence_query', method: 'handleEvidenceQueryTool' },
     { tool: 'cross_domain_evidence_stats', method: 'handleEvidenceStatsTool' },
   ],
 });

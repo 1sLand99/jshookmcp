@@ -131,14 +131,14 @@
   "cross-domain": {
     "domain": "cross-domain",
     "dims": {
-      "d1_toolCount": 6,
+      "d1_toolCount": 7,
       "d2_testFiles": 10,
       "d3_coverageExcluded": [
         "src/server/domains/cross-domain/handlers.ts",
         "src/server/domains/cross-domain/handlers.impl.ts"
       ],
       "d4_bareCatch": 0,
-      "d5_handleSafeRefs": 7,
+      "d5_handleSafeRefs": 8,
       "d6_doc": {
         "hasClaude": true,
         "hasScore": true,

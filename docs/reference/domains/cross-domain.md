@@ -19,7 +19,7 @@
 - cross-domain + instrumentation
 - cross-domain + v8-inspector + canvas
 
-## 工具清单（6）
+## 工具清单（7）
 
 | 工具 | 说明 |
 | --- | --- |
@@ -28,4 +28,5 @@
 | `cross_domain_health` | 报告跨域健康状态、已启用的 v5.0 域和证据图可用性。 |
 | `cross_domain_correlate_all` | 将 V8、网络、canvas、syscall、mojo 和二进制域的产物摄入共享证据图并可选地添加交叉链接。 |
 | `cross_domain_evidence_export` | 将共享跨域证据图导出为 JSON。 |
+| `cross_domain_evidence_query` | 按 URL、堆地址、函数、脚本、节点类型、元数据或证据链查询共享跨域证据图。 |
 | `cross_domain_evidence_stats` | 获取共享跨域证据图的节点和边统计。 |

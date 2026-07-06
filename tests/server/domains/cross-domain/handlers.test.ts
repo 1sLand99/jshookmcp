@@ -12,6 +12,7 @@ import {
   ReverseEvidenceGraph,
   resetIdCounter as _resetGraphIdCounter,
 } from '@server/evidence/ReverseEvidenceGraph';
+import { TEST_URLS, withPath } from '@tests/shared/test-urls';
 
 describe('CrossDomainHandlers', () => {
   let bridge: CrossDomainEvidenceBridge;
@@ -59,6 +60,71 @@ describe('CrossDomainHandlers', () => {
       const data = JSON.parse(result.content[0].text);
       expect(data.version).toBe(1);
       expect(data.nodes.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('handleEvidenceQuery', () => {
+    it('queries network URLs and returns edges between matched nodes', async () => {
+      const heap = bridge.addV8Object({ address: '0x100', name: 'FetchWrapper' });
+      const { node: request } = bridge.addNetworkRequest(
+        { requestId: 'req-1', url: withPath(TEST_URLS.api, 'secure'), method: 'POST' },
+        heap.id,
+      );
+
+      const result = await handlers.handleEvidenceQuery({
+        queryType: 'network_url',
+        value: 'secure',
+      });
+      const data = ResponseBuilder.parse<Record<string, any>>(result);
+
+      expect(data.total).toBe(2);
+      expect(data.nodes.map((node: Record<string, unknown>) => node.id)).toEqual(
+        expect.arrayContaining([heap.id, request.id]),
+      );
+      expect(data.edges).toHaveLength(1);
+      expect(data.edges[0].type).toBe('network-initiated-by');
+    });
+
+    it('queries evidence nodes by metadata key and value', async () => {
+      const symbol = bridge.addBinarySymbol({
+        moduleName: 'libnative.so',
+        symbolName: 'native_encrypt',
+        address: '0x7fff0000',
+      });
+
+      const result = await handlers.handleEvidenceQuery({
+        queryType: 'metadata',
+        metadataKey: 'moduleName',
+        metadataValue: 'libnative.so',
+      });
+      const data = ResponseBuilder.parse<Record<string, any>>(result);
+
+      expect(data.total).toBe(1);
+      expect(data.nodes[0].id).toBe(symbol.id);
+    });
+
+    it('queries evidence chains by node id and direction', async () => {
+      const heap = bridge.addV8Object({ address: '0x200', name: 'SceneFactory' });
+      const canvas = bridge.addCanvasNode({ nodeId: 'layer-1', label: 'SceneLayer' }, heap.id);
+
+      const result = await handlers.handleEvidenceQuery({
+        queryType: 'chain',
+        value: heap.id,
+        direction: 'forward',
+      });
+      const data = ResponseBuilder.parse<Record<string, any>>(result);
+
+      expect(data.nodes.map((node: Record<string, unknown>) => node.id)).toEqual([
+        heap.id,
+        canvas.id,
+      ]);
+      expect(data.edges[0].type).toBe('canvas-rendered-by');
+    });
+
+    it('rejects metadata queries without a metadataKey', async () => {
+      await expect(handlers.handleEvidenceQuery({ queryType: 'metadata' })).rejects.toThrow(
+        'metadataKey is required',
+      );
     });
   });
 
