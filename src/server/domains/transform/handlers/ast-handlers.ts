@@ -58,7 +58,12 @@ export class AstHandlers {
         createdAt: Date.now(),
       });
 
-      return toTextResponse({ name, transforms, created: true });
+      return toTextResponse({
+        name,
+        transforms,
+        created: true,
+        ...(description ? { description } : {}),
+      });
     } catch (error) {
       return fail('ast_transform_chain', error);
     }

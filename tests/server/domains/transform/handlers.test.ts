@@ -66,6 +66,7 @@ describe('TransformToolHandlers', () => {
     );
     expect(body.created).toBe(true);
     expect(body.name).toBe('fast');
+    expect(body.description).toBe('opt chain');
     expect(body.transforms).toEqual(['constant_fold', 'dead_code_remove']);
   });
 

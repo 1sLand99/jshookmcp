@@ -127,6 +127,7 @@ describe('TransformToolHandlers (handlers.impl.core)', () => {
       );
       expect(body.created).toBe(true);
       expect(body.name).toBe('my-chain');
+      expect(body.description).toBe('A test chain');
       expect(body.transforms).toEqual(['constant_fold', 'dead_code_remove']);
     });
 
@@ -181,6 +182,7 @@ describe('TransformToolHandlers (handlers.impl.core)', () => {
         }),
       );
       expect(body.created).toBe(true);
+      expect(body.description).toBe('my desc');
     });
 
     it('omits description when empty or missing', async () => {
@@ -192,6 +194,7 @@ describe('TransformToolHandlers (handlers.impl.core)', () => {
         }),
       );
       expect(body.created).toBe(true);
+      expect(body.description).toBeUndefined();
     });
 
     it('overwrites existing chain with same name', async () => {
