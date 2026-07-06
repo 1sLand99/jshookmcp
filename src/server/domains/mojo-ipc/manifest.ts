@@ -16,6 +16,7 @@ const registrations = defineMethodRegistrations<H, (typeof mojoIpcTools)[number]
     { tool: 'mojo_ipc_capabilities', method: 'handleMojoIpcCapabilitiesTool' },
     { tool: 'mojo_monitor', method: 'handleMojoMonitorDispatchTool' },
     { tool: 'mojo_decode_message', method: 'handleMojoDecodeMessageTool' },
+    { tool: 'mojo_encode_message', method: 'handleMojoEncodeMessageTool' },
     { tool: 'mojo_list_interfaces', method: 'handleMojoListInterfacesTool' },
     { tool: 'mojo_messages_get', method: 'handleMojoMessagesGetTool' },
   ],
@@ -47,7 +48,7 @@ const manifest: DomainManifest<typeof DEP_KEY, MojoIPCHandlers, typeof DOMAIN> =
       /(mojo|ipc|chromium).*(monitor|capture|hook|trace)/i,
     ],
     priority: 75,
-    tools: ['mojo_monitor', 'mojo_decode_message', 'mojo_list_interfaces'],
+    tools: ['mojo_monitor', 'mojo_decode_message', 'mojo_encode_message', 'mojo_list_interfaces'],
     hint: 'Mojo IPC: start monitor → capture messages → decode payloads → correlate with CDP',
   },
   prerequisites: {

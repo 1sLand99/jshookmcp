@@ -56,6 +56,51 @@ describe('MojoMonitor', () => {
     expect(result.messages).toHaveLength(1);
   });
 
+  it('filters messages by type, timestamp, and payload hex substring', async () => {
+    (monitor as any).active = true;
+    monitor.recordMessage({
+      timestamp: 1000,
+      sourcePid: 1,
+      targetPid: 2,
+      interfaceName: 'network.mojom.NetworkService',
+      messageType: '7',
+      payload: '0001',
+      size: 2,
+    });
+    monitor.recordMessage({
+      timestamp: 2000,
+      sourcePid: 1,
+      targetPid: 2,
+      interfaceName: 'network.mojom.NetworkService',
+      messageType: '7',
+      payload: 'aabbccdd',
+      size: 4,
+    });
+    monitor.recordMessage({
+      timestamp: 3000,
+      sourcePid: 1,
+      targetPid: 2,
+      interfaceName: 'blink.mojom.WidgetHost',
+      messageType: '8',
+      payload: 'aabbccdd',
+      size: 4,
+    });
+
+    const result = await monitor.getMessages({
+      messageType: 7,
+      sinceTimestamp: 1500,
+      hexSearch: 'BB CC',
+    });
+
+    expect(result.filtered).toBe(true);
+    expect(result.messages).toHaveLength(1);
+    expect(result.messages[0]).toMatchObject({
+      timestamp: 2000,
+      messageType: '7',
+      payload: 'aabbccdd',
+    });
+  });
+
   it('stops and clears buffered messages', async () => {
     (monitor as any).active = true;
     monitor.recordMessage({

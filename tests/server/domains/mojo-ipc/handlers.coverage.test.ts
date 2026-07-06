@@ -42,6 +42,7 @@ function createMockDecoder(overrides: Record<string, unknown> = {}) {
     decodePayload: vi
       .fn()
       .mockReturnValue({ header: { version: 1 }, fields: {}, handles: 0, raw: '0001' }),
+    encodeMessage: vi.fn().mockReturnValue('0100010100000101'),
     ...overrides,
   };
 }
@@ -291,6 +292,90 @@ describe('MojoIPCHandlers — coverage expansion', () => {
       expect(result).toHaveProperty('decoded.fields.field0', 'hello');
       expect(result).toHaveProperty('decoded.handles', 1);
     });
+
+    it('converts decoded bigint values to strings for JSON-safe responses', async () => {
+      decoder.decodePayload.mockReturnValue({
+        header: { version: 1 },
+        fields: { field0: 42n, nested: { value: -1n } },
+        handles: 0,
+        raw: '010001010000',
+      });
+      const result = await handlers.handleMojoDecodeMessage({ hexPayload: '010001010000' });
+      expect(result).toMatchObject({
+        success: true,
+        decoded: {
+          fields: {
+            field0: '42',
+            nested: { value: '-1' },
+          },
+        },
+      });
+    });
+  });
+
+  // ── handleMojoEncodeMessage ───────────────────────────────────────────────
+
+  describe('handleMojoEncodeMessage', () => {
+    it('encodes a valid structured message', async () => {
+      const fields = [{ type: 'bool', value: true }];
+      const result = await handlers.handleMojoEncodeMessage({
+        interfaceName: 'network.mojom.NetworkService',
+        messageType: 'CreateLoader',
+        fields,
+      });
+
+      expect(decoder.encodeMessage).toHaveBeenCalledWith(
+        'network.mojom.NetworkService',
+        'CreateLoader',
+        fields,
+      );
+      expect(result).toEqual({ success: true, hexPayload: '0100010100000101' });
+    });
+
+    it('accepts numeric message types', async () => {
+      const fields: unknown[] = [];
+      const result = await handlers.handleMojoEncodeMessage({
+        interfaceName: 'network.mojom.NetworkService',
+        messageType: 7,
+        fields,
+      });
+
+      expect(decoder.encodeMessage).toHaveBeenCalledWith('network.mojom.NetworkService', 7, fields);
+      expect(result).toMatchObject({ success: true });
+    });
+
+    it('returns error when interfaceName is missing', async () => {
+      const result = await handlers.handleMojoEncodeMessage({ messageType: 1, fields: [] });
+      expect(result).toEqual({
+        success: false,
+        error: 'interfaceName is required',
+      });
+      expect(decoder.encodeMessage).not.toHaveBeenCalled();
+    });
+
+    it('returns error when messageType is missing', async () => {
+      const result = await handlers.handleMojoEncodeMessage({
+        interfaceName: 'network.mojom.NetworkService',
+        fields: [],
+      });
+      expect(result).toEqual({
+        success: false,
+        error: 'messageType is required',
+      });
+      expect(decoder.encodeMessage).not.toHaveBeenCalled();
+    });
+
+    it('returns error when fields is not an array', async () => {
+      const result = await handlers.handleMojoEncodeMessage({
+        interfaceName: 'network.mojom.NetworkService',
+        messageType: 1,
+      });
+      expect(result).toEqual({
+        success: false,
+        error: 'fields must be an array',
+      });
+      expect(decoder.encodeMessage).not.toHaveBeenCalled();
+    });
   });
 
   // ── handleMojoListInterfaces ──────────────────────────────────────────────
@@ -383,6 +468,9 @@ describe('MojoIPCHandlers — coverage expansion', () => {
       expect(monitor.getMessages).toHaveBeenCalledWith({
         limit: 100,
         interfaceName: undefined,
+        messageType: undefined,
+        sinceTimestamp: undefined,
+        hexSearch: undefined,
       });
       expect(result).toMatchObject({
         success: true,
@@ -398,6 +486,9 @@ describe('MojoIPCHandlers — coverage expansion', () => {
       expect(monitor.getMessages).toHaveBeenCalledWith({
         limit: 10000,
         interfaceName: undefined,
+        messageType: undefined,
+        sinceTimestamp: undefined,
+        hexSearch: undefined,
       });
       expect(result).toMatchObject({ success: true });
     });
@@ -407,6 +498,9 @@ describe('MojoIPCHandlers — coverage expansion', () => {
       expect(monitor.getMessages).toHaveBeenCalledWith({
         limit: 50,
         interfaceName: undefined,
+        messageType: undefined,
+        sinceTimestamp: undefined,
+        hexSearch: undefined,
       });
       expect(result).toMatchObject({ success: true });
     });
@@ -418,6 +512,9 @@ describe('MojoIPCHandlers — coverage expansion', () => {
       expect(monitor.getMessages).toHaveBeenCalledWith({
         limit: 100,
         interfaceName: 'network.mojom.NetworkService',
+        messageType: undefined,
+        sinceTimestamp: undefined,
+        hexSearch: undefined,
       });
       expect(result).toMatchObject({ success: true });
     });
@@ -430,6 +527,27 @@ describe('MojoIPCHandlers — coverage expansion', () => {
       expect(monitor.getMessages).toHaveBeenCalledWith({
         limit: 200,
         interfaceName: 'blink.mojom.WidgetHost',
+        messageType: undefined,
+        sinceTimestamp: undefined,
+        hexSearch: undefined,
+      });
+      expect(result).toMatchObject({ success: true });
+    });
+
+    it('passes messageType, sinceTimestamp, and hexSearch filters', async () => {
+      const result = await handlers.handleMojoMessagesGet({
+        limit: 25,
+        interface: 'network.mojom.URLLoaderFactory',
+        messageType: 7,
+        sinceTimestamp: 1234,
+        hexSearch: 'aa bb',
+      });
+      expect(monitor.getMessages).toHaveBeenCalledWith({
+        limit: 25,
+        interfaceName: 'network.mojom.URLLoaderFactory',
+        messageType: 7,
+        sinceTimestamp: 1234,
+        hexSearch: 'aa bb',
       });
       expect(result).toMatchObject({ success: true });
     });
@@ -572,6 +690,9 @@ describe('MojoIPCHandlers — coverage expansion', () => {
       expect(monitor.getMessages).toHaveBeenCalledWith({
         limit: 0,
         interfaceName: undefined,
+        messageType: undefined,
+        sinceTimestamp: undefined,
+        hexSearch: undefined,
       });
       expect(result).toMatchObject({ success: true });
     });
@@ -581,6 +702,9 @@ describe('MojoIPCHandlers — coverage expansion', () => {
       expect(monitor.getMessages).toHaveBeenCalledWith({
         limit: -5,
         interfaceName: undefined,
+        messageType: undefined,
+        sinceTimestamp: undefined,
+        hexSearch: undefined,
       });
       expect(result).toMatchObject({ success: true });
     });
@@ -739,6 +863,19 @@ describe('MojoIPCHandlers — coverage expansion', () => {
       expect(payload).toMatchObject({
         success: true,
         decoded: { header: { version: 1 }, fields: {}, handles: 0, raw: '0001' },
+      });
+    });
+
+    it('wraps encoded messages in a ToolResponse', async () => {
+      const response = await handlers.handleMojoEncodeMessageTool({
+        interfaceName: 'network.mojom.NetworkService',
+        messageType: 1,
+        fields: [{ type: 'bool', value: true }],
+      });
+      const payload = ResponseBuilder.parse<Record<string, unknown>>(response);
+      expect(payload).toMatchObject({
+        success: true,
+        hexPayload: '0100010100000101',
       });
     });
 

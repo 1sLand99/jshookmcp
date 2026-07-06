@@ -17,6 +17,29 @@ export const mojoIpcTools: Tool[] = [
       .required('hexPayload')
       .query(),
   ),
+  tool('mojo_encode_message', (t) =>
+    t
+      .desc('Encode a structured Mojo IPC message into a hex payload.')
+      .string('interfaceName', 'Mojo interface name, for example network.mojom.URLLoaderFactory')
+      .prop('messageType', {
+        anyOf: [{ type: 'string' }, { type: 'number' }],
+        description: 'Message type as a method name, decimal number, or 0x-prefixed hex value',
+      })
+      .array(
+        'fields',
+        {
+          anyOf: [
+            { type: 'boolean' },
+            { type: 'number' },
+            { type: 'string' },
+            { type: 'object', additionalProperties: true },
+          ],
+        },
+        'Fields to encode. Objects may specify { type, value }, arrays, structs, or handles.',
+      )
+      .required('interfaceName', 'messageType', 'fields')
+      .query(),
+  ),
   tool('mojo_list_interfaces', (t) =>
     t.desc('List discovered Mojo IPC interfaces and their pending message counts.').query(),
   ),
@@ -25,6 +48,12 @@ export const mojoIpcTools: Tool[] = [
       .desc('Retrieve captured Mojo IPC messages from the active monitoring session.')
       .number('limit', 'Maximum number of messages to retrieve (default 100)')
       .string('interface', 'Filter messages by interface name')
+      .prop('messageType', {
+        anyOf: [{ type: 'string' }, { type: 'number' }],
+        description: 'Filter messages by message type or method name',
+      })
+      .number('sinceTimestamp', 'Only return messages captured at or after this Unix timestamp')
+      .string('hexSearch', 'Case-insensitive hex substring to search in captured payloads')
       .query(),
   ),
 ];

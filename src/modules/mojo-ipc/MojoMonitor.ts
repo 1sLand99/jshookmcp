@@ -13,8 +13,10 @@ export interface MojoMessage {
 
 export interface MojoMessageFilter {
   interfaceName?: string;
-  messageType?: string;
+  messageType?: string | number;
   pid?: number;
+  sinceTimestamp?: number;
+  hexSearch?: string;
 }
 
 interface MojoInterfaceState {
@@ -106,7 +108,7 @@ function matchesFilter(message: MojoMessage, filter: MojoMessageFilter): boolean
     return false;
   }
 
-  if (filter.messageType && message.messageType !== filter.messageType) {
+  if (filter.messageType !== undefined && message.messageType !== String(filter.messageType)) {
     return false;
   }
 
@@ -116,6 +118,17 @@ function matchesFilter(message: MojoMessage, filter: MojoMessageFilter): boolean
     message.targetPid !== filter.pid
   ) {
     return false;
+  }
+
+  if (typeof filter.sinceTimestamp === 'number' && message.timestamp < filter.sinceTimestamp) {
+    return false;
+  }
+
+  if (filter.hexSearch) {
+    const needle = filter.hexSearch.replace(/\s+/g, '').toLowerCase();
+    if (needle.length > 0 && !message.payload.toLowerCase().includes(needle)) {
+      return false;
+    }
   }
 
   return true;
@@ -271,7 +284,13 @@ export class MojoMonitor {
     return 'mixed';
   }
 
-  async getMessages(options?: { limit?: number; interfaceName?: string }): Promise<{
+  async getMessages(options?: {
+    limit?: number;
+    interfaceName?: string;
+    messageType?: string | number;
+    sinceTimestamp?: number;
+    hexSearch?: string;
+  }): Promise<{
     messages: MojoMessage[];
     totalAvailable: number;
     filtered: boolean;
@@ -290,6 +309,15 @@ export class MojoMonitor {
     if (options?.interfaceName) {
       filter.interfaceName = options.interfaceName;
     }
+    if (options?.messageType !== undefined) {
+      filter.messageType = options.messageType;
+    }
+    if (options?.sinceTimestamp !== undefined) {
+      filter.sinceTimestamp = options.sinceTimestamp;
+    }
+    if (options?.hexSearch) {
+      filter.hexSearch = options.hexSearch;
+    }
 
     const allMessages = await this.captureMessages(filter);
     const limit = options?.limit ?? 100;
@@ -297,7 +325,12 @@ export class MojoMonitor {
     return {
       messages: allMessages.slice(0, limit),
       totalAvailable: allMessages.length,
-      filtered: !!options?.interfaceName,
+      filtered: !!(
+        options?.interfaceName ||
+        options?.messageType !== undefined ||
+        options?.sinceTimestamp !== undefined ||
+        options?.hexSearch
+      ),
       simulation: this.simulationMode,
     };
   }

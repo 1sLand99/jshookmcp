@@ -19,6 +19,7 @@ describe('MojoIPCHandlers', () => {
   };
   let decoder: {
     decodePayload: ReturnType<typeof vi.fn>;
+    encodeMessage: ReturnType<typeof vi.fn>;
   };
   let handlers: MojoIPCHandlers;
 
@@ -56,6 +57,7 @@ describe('MojoIPCHandlers', () => {
       decodePayload: vi
         .fn()
         .mockReturnValue({ header: { version: 1 }, fields: {}, handles: 0, raw: '0001' }),
+      encodeMessage: vi.fn().mockReturnValue('0100010100000101'),
     };
     handlers = new MojoIPCHandlers(monitor as any, decoder as any);
   });
@@ -99,6 +101,17 @@ describe('MojoIPCHandlers', () => {
     expect(result).toMatchObject({ success: true });
   });
 
+  it('encodes mojo payloads with the current API', async () => {
+    const fields = [{ type: 'bool', value: true }];
+    const result = await handlers.handleMojoEncodeMessage({
+      interfaceName: 'network.mojom.NetworkService',
+      messageType: 1,
+      fields,
+    });
+    expect(decoder.encodeMessage).toHaveBeenCalledWith('network.mojom.NetworkService', 1, fields);
+    expect(result).toEqual({ success: true, hexPayload: '0100010100000101' });
+  });
+
   it('lists interfaces with the current API', async () => {
     const result = await handlers.handleMojoListInterfaces();
     expect(monitor.listInterfaces).toHaveBeenCalledOnce();
@@ -123,6 +136,9 @@ describe('MojoIPCHandlers', () => {
     expect(monitor.getMessages).toHaveBeenCalledWith({
       limit: 10,
       interfaceName: 'network.mojom.NetworkService',
+      messageType: undefined,
+      sinceTimestamp: undefined,
+      hexSearch: undefined,
     });
     expect(result).toMatchObject({
       success: true,

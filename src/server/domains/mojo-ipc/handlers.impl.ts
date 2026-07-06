@@ -5,7 +5,7 @@ import {
   createStub,
 } from '@server/domains/shared/capabilities';
 import { handleSafe, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
-import { argNumber, argString } from '@server/domains/shared/parse-args';
+import { argArray, argNumber, argString } from '@server/domains/shared/parse-args';
 import type { EventBus, ServerEventMap } from '@server/EventBus';
 
 function getMojoFix(reason: string): string {
@@ -35,6 +35,35 @@ function getFridaProbeSucceeded(monitor: MojoMonitor): boolean {
     : false;
 }
 
+function argStringOrNumber(
+  args: Record<string, unknown>,
+  key: string,
+): string | number | undefined {
+  const value = args[key];
+  return typeof value === 'string' || typeof value === 'number' ? value : undefined;
+}
+
+function toJsonSafe(value: unknown): unknown {
+  if (typeof value === 'bigint') {
+    return value.toString();
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => toJsonSafe(item));
+  }
+
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+        key,
+        toJsonSafe(item),
+      ]),
+    );
+  }
+
+  return value;
+}
+
 export class MojoIPCHandlers {
   constructor(
     private monitor?: MojoMonitor,
@@ -52,6 +81,10 @@ export class MojoIPCHandlers {
 
   async handleMojoDecodeMessageTool(args: Record<string, unknown>): Promise<ToolResponse> {
     return handleSafe(async () => await this.handleMojoDecodeMessage(args));
+  }
+
+  async handleMojoEncodeMessageTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleMojoEncodeMessage(args));
   }
 
   async handleMojoListInterfacesTool(): Promise<ToolResponse> {
@@ -121,7 +154,7 @@ export class MojoIPCHandlers {
         capability: 'mojo_payload_decode',
         status: 'available',
         details: {
-          tools: ['mojo_decode_message'],
+          tools: ['mojo_decode_message', 'mojo_encode_message'],
         },
       },
     ]);
@@ -202,7 +235,43 @@ export class MojoIPCHandlers {
     const decoded = this.getDecoder().decodePayload(hexPayload);
     return {
       success: true,
-      decoded,
+      decoded: toJsonSafe(decoded),
+    };
+  }
+
+  async handleMojoEncodeMessage(args: Record<string, unknown>): Promise<unknown> {
+    const interfaceName = argString(args, 'interfaceName', '').trim();
+    if (interfaceName.length === 0) {
+      return {
+        success: false,
+        error: 'interfaceName is required',
+      };
+    }
+
+    const messageType = argStringOrNumber(args, 'messageType');
+    if (
+      messageType === undefined ||
+      (typeof messageType === 'string' && messageType.trim().length === 0) ||
+      (typeof messageType === 'number' && !Number.isFinite(messageType))
+    ) {
+      return {
+        success: false,
+        error: 'messageType is required',
+      };
+    }
+
+    const fields = argArray(args, 'fields');
+    if (!fields) {
+      return {
+        success: false,
+        error: 'fields must be an array',
+      };
+    }
+
+    const hexPayload = this.getDecoder().encodeMessage(interfaceName, messageType, fields);
+    return {
+      success: true,
+      hexPayload,
     };
   }
 
@@ -274,10 +343,16 @@ export class MojoIPCHandlers {
 
     const limit = argNumber(args, 'limit');
     const interfaceName = argString(args, 'interface');
+    const messageType = argStringOrNumber(args, 'messageType');
+    const sinceTimestamp = argNumber(args, 'sinceTimestamp');
+    const hexSearch = argString(args, 'hexSearch');
 
     const result = (await monitor.getMessages({
       limit: limit !== undefined ? Math.min(limit, 10000) : 100,
       interfaceName,
+      messageType,
+      sinceTimestamp,
+      hexSearch,
     })) as {
       messages: unknown[];
       totalAvailable: number;
