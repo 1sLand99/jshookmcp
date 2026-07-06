@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_RULES,
   classifyOne,
+  classifyOneRule,
   compileRuleInput,
   mergeRules,
   categorize,
@@ -51,8 +52,20 @@ describe('DEFAULT_RULES classification', () => {
 
   it('matches Dart-style class names to classNames', () => {
     expect(classifyOne('LoginViewModel', DEFAULT_RULES)).toBe('classNames');
-    expect(classifyOne('_PrivateClass', DEFAULT_RULES)).toBe('classNames');
     expect(classifyOne('Api', DEFAULT_RULES)).toBe('classNames');
+  });
+
+  it('matches Dart-specific identifier shapes', () => {
+    expect(classifyOne('_PrivateClass', DEFAULT_RULES)).toBe('dartPrivateIdentifiers');
+    expect(classifyOne('_internal', DEFAULT_RULES)).toBe('dartPrivateIdentifiers');
+    expect(classifyOne('auth.LoginViewModel._internal', DEFAULT_RULES)).toBe('dartQualifiedNames');
+    expect(classifyOne('lib.auth.Repository.fetch', DEFAULT_RULES)).toBe('dartQualifiedNames');
+  });
+
+  it('marks very short identifiers as low-confidence obfuscation hints', () => {
+    const rule = classifyOneRule('a1', DEFAULT_RULES);
+    expect(rule?.category).toBe('dartObfuscatedNames');
+    expect(rule?.confidence).toBe(0.35);
   });
 
   it('excludes ALL_CAPS strings from classNames', () => {
@@ -268,5 +281,8 @@ describe('categorize', () => {
     expect(out.classNames).toEqual([]);
     expect(out.packageRefs).toEqual([]);
     expect(out.cryptoKeywords).toEqual([]);
+    expect(out.dartPrivateIdentifiers).toEqual([]);
+    expect(out.dartQualifiedNames).toEqual([]);
+    expect(out.dartObfuscatedNames).toEqual([]);
   });
 });

@@ -2,7 +2,7 @@
  * Classifier helpers for the dart-inspector module.
  *
  * Provides:
- *   - {@link DEFAULT_RULES}: the 5-category baseline ruleset
+ *   - {@link DEFAULT_RULES}: the Dart-aware baseline ruleset
  *   - {@link classifyOne}: first-match classification for a single string
  *   - {@link compileRuleInput}: safe regex compilation with ReDoS rejection
  *   - {@link mergeRules}: combine defaults + custom rules per RuleMode
@@ -31,8 +31,8 @@ import type {
  *
  * Tuning notes:
  *  - `paths` rule excludes static image extensions to avoid noise from asset paths.
- *  - `classNames` rule excludes all-caps strings (they fall through to
- *    `cryptoKeywords` if they match its alternation, otherwise stay unclassified).
+ *  - Dart-specific identifier rules run before generic class names so
+ *    private and qualified symbols keep their stronger signal.
  *  - `cryptoKeywords` is intentionally last among ALL_CAPS-friendly rules so
  *    "AES"/"RSA" land there rather than unclassified.
  */
@@ -44,6 +44,12 @@ export const DEFAULT_RULES: readonly CategoryRule[] = Object.freeze([
     exclude: /\.(png|jpg|jpeg|gif|svg|webp)$/i,
   },
   { category: 'packageRefs', pattern: /^package:[a-z_][a-z0-9_]*\/[a-z0-9_./]+\.dart$/i },
+  {
+    category: 'dartQualifiedNames',
+    pattern: /^(?:[A-Za-z_][A-Za-z0-9_]*\.)+[A-Za-z_][A-Za-z0-9_]*$/,
+  },
+  { category: 'dartPrivateIdentifiers', pattern: /^_[A-Za-z][A-Za-z0-9_]{2,}$/ },
+  { category: 'dartObfuscatedNames', pattern: /^[A-Za-z_$][A-Za-z0-9_$]?$/, confidence: 0.35 },
   {
     category: 'cryptoKeywords',
     pattern: /^(AES|RSA|DES|HMAC|SHA\d+|MD5|encrypt(ion)?|decrypt|cipher|key)$/i,

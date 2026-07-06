@@ -5,7 +5,15 @@
  */
 
 /** Default categories produced by DEFAULT_RULES. Custom rules can introduce new keys. */
-export type DefaultCategory = 'urls' | 'paths' | 'classNames' | 'packageRefs' | 'cryptoKeywords';
+export type DefaultCategory =
+  | 'urls'
+  | 'paths'
+  | 'classNames'
+  | 'packageRefs'
+  | 'cryptoKeywords'
+  | 'dartPrivateIdentifiers'
+  | 'dartQualifiedNames'
+  | 'dartObfuscatedNames';
 
 export type CategoryKey = DefaultCategory | string;
 

@@ -6,7 +6,7 @@ export const dartInspectorTools: Tool[] = [
     t
       .desc(
         'Stream-extract ASCII/UTF-16LE strings from a Dart AOT libapp.so and ' +
-          'classify them (urls, paths, classNames, packageRefs, cryptoKeywords, ' +
+          'classify them (urls, paths, classNames, packageRefs, cryptoKeywords, Dart identifiers, ' +
           'plus customRules). ReDoS-guarded.',
       )
       .string('filePath', 'Absolute path to the libapp.so (or arbitrary binary) to extract from')
