@@ -10,7 +10,7 @@ export const streamingTools: Tool[] = [
       .number('maxFrames', 'Maximum frames in memory (action=enable, default: 1000)', {
         default: 1000,
         minimum: 1,
-        maximum: 100000,
+        maximum: 20000,
       })
       .required('action')
       .destructive(),
@@ -48,7 +48,7 @@ export const streamingTools: Tool[] = [
       .number('maxEvents', 'Maximum SSE events in memory', {
         default: 2000,
         minimum: 1,
-        maximum: 100000,
+        maximum: 50000,
       })
       .boolean('persistent', 'Survive page navigations via evaluateOnNewDocument'),
   ),

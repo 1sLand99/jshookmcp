@@ -75,7 +75,7 @@ const SCORES = {
   ],
   proxy: [9.2, '10 tools, body/timing capture, active rule lifecycle, exact HTTP method matching'],
   sourcemap: [9.2, '6 tools, Phase 2 MCP-safe wrappers + shared SSRF private-host policy'],
-  streaming: [9.1, '7 tools, Phase 2 MCP-safe wrappers + Phase 3 payload/export/metadata'],
+  streaming: [9.2, '7 tools, MCP-safe wrappers + capture cap schema/runtime alignment'],
   'syscall-hook': [
     9.1,
     '15 tools, PID/return filters, MCP-safe wrappers, richer strace fd/path decoding, bounded capture summaries',
