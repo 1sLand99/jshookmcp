@@ -5,6 +5,33 @@ import type { DataFlow } from '@internal-types/index';
 
 import { logger } from '@utils/logger';
 import { checkSanitizer } from '@modules/analyzer/SecurityCodeAnalyzer';
+import {
+  buildFunctionSummaries,
+  calleeName,
+  identifySource,
+  type SourceInfo,
+} from '@modules/analyzer/CodeAnalyzerDataFlow.summaries';
+
+type SinkType = DataFlow['sinks'][number]['type'];
+
+interface SinkSite {
+  args: Array<t.Expression | t.SpreadElement | t.ArgumentPlaceholder>;
+  sinkType: SinkType;
+  line: number;
+}
+
+function normalizeSourceType(sourceType: string): DataFlow['sources'][number]['type'] {
+  if (
+    sourceType === 'user_input' ||
+    sourceType === 'storage' ||
+    sourceType === 'network' ||
+    sourceType === 'other'
+  ) {
+    return sourceType;
+  }
+  // Legacy first-pass marker ('url') and anything unexpected map to safe defaults.
+  return sourceType === 'url' ? 'user_input' : 'other';
+}
 
 export async function analyzeDataFlowWithTaint(code: string): Promise<DataFlow> {
   const graph: DataFlow['graph'] = { nodes: [], edges: [] };
@@ -13,6 +40,8 @@ export async function analyzeDataFlowWithTaint(code: string): Promise<DataFlow> 
   const taintPaths: DataFlow['taintPaths'] = [];
 
   const taintMap = new Map<string, { sourceType: string; sourceLine: number }>();
+
+  const sinkSites: SinkSite[] = [];
 
   const sanitizers = new Set([
     'encodeURIComponent',
@@ -65,6 +94,28 @@ export async function analyzeDataFlowWithTaint(code: string): Promise<DataFlow> 
     'String.prototype.trim',
     'Array.prototype.filter',
     'Array.prototype.map',
+    // Value-sinking builtins: these return a number/boolean derived from the
+    // argument, dropping the taint identity (e.g. `Math.max(tainted, 0)` no
+    // longer carries the source). Listing them here keeps the unknown-callee
+    // pass-through from over-reporting on pure numeric helpers.
+    'Math.max',
+    'Math.min',
+    'Math.floor',
+    'Math.ceil',
+    'Math.round',
+    'Math.abs',
+    'Math.trunc',
+    'Math.sign',
+    'Math.sqrt',
+    'Math.pow',
+    'Math.log',
+    'Math.exp',
+    'Math.random',
+    'Math.hypot',
+    'Math.fround',
+    'Number.prototype.toString',
+    'Number.prototype.toFixed',
+    'Number.prototype.toPrecision',
   ]);
 
   try {
@@ -93,7 +144,7 @@ export async function analyzeDataFlowWithTaint(code: string): Promise<DataFlow> 
 
             const parent = path.parent;
             if (t.isVariableDeclarator(parent) && t.isIdentifier(parent.id)) {
-              taintMap.set(parent.id.name, { sourceType: 'network', sourceLine: line });
+              taintMap.set(parent.id.name, { sourceType: 'user_input', sourceLine: line });
             }
           } else if (
             [
@@ -128,6 +179,7 @@ export async function analyzeDataFlowWithTaint(code: string): Promise<DataFlow> 
             });
 
             checkTaintedArguments(path.node.arguments, taintMap, taintPaths, funcName, line);
+            sinkSites.push({ args: path.node.arguments, sinkType: 'eval', line });
           }
         }
 
@@ -148,6 +200,7 @@ export async function analyzeDataFlowWithTaint(code: string): Promise<DataFlow> 
               location: { file: 'current', line },
             });
             checkTaintedArguments(path.node.arguments, taintMap, taintPaths, methodName, line);
+            sinkSites.push({ args: path.node.arguments, sinkType: 'xss', line });
           }
 
           if (['query', 'execute', 'exec', 'run'].includes(methodName)) {
@@ -160,6 +213,7 @@ export async function analyzeDataFlowWithTaint(code: string): Promise<DataFlow> 
               location: { file: 'current', line },
             });
             checkTaintedArguments(path.node.arguments, taintMap, taintPaths, methodName, line);
+            sinkSites.push({ args: path.node.arguments, sinkType: 'sql-injection', line });
           }
 
           if (['exec', 'spawn', 'execSync', 'spawnSync'].includes(methodName)) {
@@ -172,6 +226,7 @@ export async function analyzeDataFlowWithTaint(code: string): Promise<DataFlow> 
               location: { file: 'current', line },
             });
             checkTaintedArguments(path.node.arguments, taintMap, taintPaths, methodName, line);
+            sinkSites.push({ args: path.node.arguments, sinkType: 'other', line });
           }
 
           if (
@@ -186,6 +241,7 @@ export async function analyzeDataFlowWithTaint(code: string): Promise<DataFlow> 
               location: { file: 'current', line },
             });
             checkTaintedArguments(path.node.arguments, taintMap, taintPaths, methodName, line);
+            sinkSites.push({ args: path.node.arguments, sinkType: 'other', line });
           }
         }
       },
@@ -208,7 +264,7 @@ export async function analyzeDataFlowWithTaint(code: string): Promise<DataFlow> 
 
             const parent = path.parent;
             if (t.isVariableDeclarator(parent) && t.isIdentifier(parent.id)) {
-              taintMap.set(parent.id.name, { sourceType: 'url', sourceLine: line });
+              taintMap.set(parent.id.name, { sourceType: 'user_input', sourceLine: line });
             }
           }
         }
@@ -306,6 +362,8 @@ export async function analyzeDataFlowWithTaint(code: string): Promise<DataFlow> 
               location: { file: 'current', line },
             });
 
+            sinkSites.push({ args: [right], sinkType: 'xss', line });
+
             if (t.isIdentifier(right) && taintMap.has(right.name)) {
               const taintInfo = taintMap.get(right.name)!;
               taintPaths.push({
@@ -352,13 +410,10 @@ export async function analyzeDataFlowWithTaint(code: string): Promise<DataFlow> 
                 : taintMap.get((init.right as t.Identifier).name)!;
               taintMap.set(id.name, taintInfo);
             }
-          } else if (t.isCallExpression(init)) {
-            const arg = init.arguments[0];
-            if (t.isIdentifier(arg) && taintMap.has(arg.name)) {
-              const taintInfo = taintMap.get(arg.name)!;
-              taintMap.set(id.name, taintInfo);
-            }
           }
+          // Call-expression propagation is handled by the summary-aware Pass 3
+          // below, which distinguishes taint-passing helpers from sanitizers and
+          // tracks non-first argument positions.
         }
       },
 
@@ -372,6 +427,124 @@ export async function analyzeDataFlowWithTaint(code: string): Promise<DataFlow> 
         }
       },
     });
+
+    // --- Pass 3: interprocedural + member-chain propagation, then sink re-scan ---
+    // Additive only: extends the (flat, module-scoped) taintMap using per-function
+    // summaries and member-chain access, then re-checks every recorded sink site
+    // against the enriched map. This surfaces taint that flows through helpers and
+    // property chains — paths the first two passes emit too late (sinks are scanned
+    // before propagation completes) or not at all.
+    const summaries = buildFunctionSummaries(ast, sanitizers, checkSanitizer);
+
+    const moduleEval = (node: t.Node | null | undefined): SourceInfo | null => {
+      if (!node) {
+        return null;
+      }
+      if (t.isIdentifier(node)) {
+        return taintMap.get(node.name) ?? null;
+      }
+      const source = identifySource(node);
+      if (source) {
+        return source;
+      }
+      if (t.isMemberExpression(node)) {
+        return moduleEval(node.object);
+      }
+      if (t.isBinaryExpression(node)) {
+        return (t.isExpression(node.left) ? moduleEval(node.left) : null) ?? moduleEval(node.right);
+      }
+      if (t.isCallExpression(node)) {
+        if (checkSanitizer(node, sanitizers)) {
+          return null;
+        }
+        const argInfos = node.arguments.map((arg) =>
+          t.isExpression(arg) ? moduleEval(arg) : null,
+        );
+        const name = calleeName(node);
+        if (name && summaries.has(name)) {
+          const summary = summaries.get(name)!;
+          for (const idx of summary.taintedParamIndices) {
+            const argInfo = argInfos[idx];
+            if (argInfo) {
+              return argInfo;
+            }
+          }
+          return summary.returnsSource;
+        }
+        // Unknown callee: conservatively pass through taint from any argument so
+        // user helpers (`wrap(s)`) still propagate. Pure value-sinking builtins
+        // that drop the taint identity (Math.*, parseInt, Number, ...) are listed
+        // as sanitizers above and never reach this branch.
+        for (const argInfo of argInfos) {
+          if (argInfo) {
+            return argInfo;
+          }
+        }
+      }
+      return null;
+    };
+
+    // Monotonic fixpoint over module-scope declarations/assignments (taint only
+    // grows). Function bodies are skipped — they are captured by the summaries.
+    let propagated = true;
+    let guard = 0;
+    while (propagated && guard < 100) {
+      propagated = false;
+      guard += 1;
+      traverse(ast, {
+        Function(path) {
+          path.skip();
+        },
+        VariableDeclarator(path) {
+          const id = path.node.id;
+          if (t.isIdentifier(id) && !taintMap.has(id.name) && path.node.init) {
+            const info = moduleEval(path.node.init);
+            if (info) {
+              taintMap.set(id.name, info);
+              propagated = true;
+            }
+          }
+        },
+        AssignmentExpression(path) {
+          const left = path.node.left;
+          if (t.isIdentifier(left) && !taintMap.has(left.name)) {
+            const info = moduleEval(path.node.right);
+            if (info) {
+              taintMap.set(left.name, info);
+              propagated = true;
+            }
+          }
+        },
+      });
+    }
+
+    const seenPaths = new Set(
+      taintPaths.map((p) => `${p.source.location.line}->${p.sink.location.line}:${p.sink.type}`),
+    );
+    for (const site of sinkSites) {
+      for (const arg of site.args) {
+        if (!t.isIdentifier(arg) || !taintMap.has(arg.name)) {
+          continue;
+        }
+        const info = taintMap.get(arg.name)!;
+        const key = `${info.sourceLine}->${site.line}:${site.sinkType}`;
+        if (seenPaths.has(key)) {
+          continue;
+        }
+        seenPaths.add(key);
+        taintPaths.push({
+          source: {
+            type: normalizeSourceType(info.sourceType),
+            location: { file: 'current', line: info.sourceLine },
+          },
+          sink: { type: site.sinkType, location: { file: 'current', line: site.line } },
+          path: [
+            { file: 'current', line: info.sourceLine },
+            { file: 'current', line: site.line },
+          ],
+        });
+      }
+    }
   } catch (error) {
     logger.warn('Data flow analysis failed', error);
   }
