@@ -410,4 +410,75 @@ describe('TlsBotHandlers — TLS/HTTP fingerprint/Bot behavioral tests', () => {
       expect(json.error as string).toContain('Invalid mode');
     });
   });
+
+  describe('parse_client_hello', () => {
+    // Pre-verified minimal ClientHello: TLS 1.3, one cipher (TLS_AES_128_GCM_SHA256=0x1301),
+    // supported_versions(0304) + supported_groups(001d) + signature_algorithms(0403) + ALPN(h2).
+    // Hand-assembled constant (no SNI → JA4 part A = "t13i..."); verified by the parser.
+    const VALID_CH =
+      '160301004f0100004b03030000000000000000000000000000000000000000000000000000000000000000000002130101000020002b0003020304000a00040002001d000d000400020403001000050003026832';
+
+    it('parses ClientHello hex and returns JA3 + JA4', async () => {
+      const res = await handlers.handleNetworkTlsFingerprint({
+        mode: 'parse_client_hello',
+        clientHelloHex: VALID_CH,
+      });
+      const json = parseJson<Record<string, unknown>>(res);
+      expect(json.success).toBe(true);
+      expect(json.mode).toBe('parse_client_hello');
+      expect(json.ja3).toMatch(/^[0-9a-f]{32}$/);
+      expect(typeof json.ja3_raw).toBe('string');
+      expect(typeof json.ja4).toBe('string');
+      expect((json.ja4 as string).startsWith('t13i0104h2')).toBe(true);
+      expect(json.negotiatedVersion).toBe('0304');
+      expect(json.hasSni).toBe(false);
+      expect(json.alpn).toEqual(['h2']);
+    });
+
+    it('includes detailed analysis breakdown when includeAnalysis is true', async () => {
+      const res = await handlers.handleNetworkTlsFingerprint({
+        mode: 'parse_client_hello',
+        clientHelloHex: VALID_CH,
+        includeAnalysis: true,
+      });
+      const json = parseJson<Record<string, unknown>>(res);
+      const analysis = json.analysis as Record<string, unknown>;
+      expect(analysis).toBeDefined();
+      expect(analysis.ciphers).toEqual(['1301']);
+      expect(analysis.supportedVersions).toEqual(['0304']);
+      expect(analysis.signatureAlgorithms).toEqual(['0403']);
+    });
+
+    it('fails when clientHelloHex is missing', async () => {
+      const res = await handlers.handleNetworkTlsFingerprint({
+        mode: 'parse_client_hello',
+      });
+      const json = parseJson<Record<string, unknown>>(res);
+      expect(json.success).toBe(false);
+      expect(String(json.error)).toContain('clientHelloHex');
+    });
+
+    it('fails on a malformed record (wrong handshake type)', async () => {
+      // 0x16 record + 0x02 handshake type = ServerHello, not ClientHello.
+      const serverHelloHex = '1603010005020000020303';
+      const res = await handlers.handleNetworkTlsFingerprint({
+        mode: 'parse_client_hello',
+        clientHelloHex: serverHelloHex,
+      });
+      const json = parseJson<Record<string, unknown>>(res);
+      expect(json.success).toBe(false);
+      expect(String(json.error)).toContain('ClientHello');
+    });
+
+    it('accepts the parse_client_hello enum value at the schema layer', async () => {
+      // Sanity that definitions.ts enum includes the new mode.
+      const res = await handlers.handleNetworkTlsFingerprint({
+        mode: 'parse_client_hello',
+        clientHelloHex: 'not-hex',
+      });
+      const json = parseJson<Record<string, unknown>>(res);
+      // Should NOT be rejected for an invalid mode — only for bad hex.
+      expect(String(json.error)).not.toContain('Invalid mode');
+    });
+  });
 });

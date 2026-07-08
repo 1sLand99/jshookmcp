@@ -144,9 +144,19 @@ export const analysisTools: Tool[] = [
   ),
   tool('network_tls_fingerprint', (t) =>
     t
-      .desc('Compute TLS/HTTP fingerprint hashes for bot detection.')
-      .enum('mode', ['analyze_request', 'compute_tls', 'compute_http'], 'Fingerprint mode')
+      .desc(
+        'Compute TLS/HTTP fingerprints for bot detection. ' +
+          'compute_tls/compute_http build fingerprints from user-supplied lists; ' +
+          'parse_client_hello parses a raw ClientHello record (hex) and emits JA3 + JA4 ' +
+          'from the real wire bytes; analyze_request links a captured requestId.',
+      )
+      .enum(
+        'mode',
+        ['analyze_request', 'compute_tls', 'compute_http', 'parse_client_hello'],
+        'Fingerprint mode',
+      )
       .string('requestId', 'Request ID to analyze')
+      .string('clientHelloHex', 'Raw ClientHello TLS record as hex (parse_client_hello mode)')
       .array('tlsVersions', { type: 'string' }, 'TLS version codes in order')
       .array('ciphers', { type: 'string' }, 'Cipher suite codes in order')
       .array('extensions', { type: 'string' }, 'Extension type codes in order')

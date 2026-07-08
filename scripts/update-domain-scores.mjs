@@ -70,8 +70,8 @@ const SCORES = {
     '22 tools, 64 tests, E4 finale + session diagnostics + strict Java mock value exclusivity',
   ],
   network: [
-    9.4,
-    '38 tools, http2_frame_parse (build+parse symmetric) + extract_auth signing-scheme recognition (AWS SigV4 / Aliyun ACS3 / DPoP / OAuth2 client_assertion) + form-urlencoded body + DNS resolver-server override + response-body retry schema/runtime alignment',
+    9.6,
+    '38 tools, parse_client_hello mode (real JA3 Salesforce MD5 + JA4 FoxIO from captured ClientHello bytes) + http2_frame_parse (build+parse symmetric) + extract_auth signing-scheme recognition (AWS SigV4 / Aliyun ACS3 / DPoP / OAuth2 client_assertion) + form-urlencoded body + DNS resolver-server override + response-body retry schema/runtime alignment',
   ],
   platform: [9.3, '16 tools, Phase 3 ASAR integrity SHA256/SHA512 algorithm awareness'],
   process: [

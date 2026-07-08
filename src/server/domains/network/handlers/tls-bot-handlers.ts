@@ -13,8 +13,14 @@ import { toHex4, isGrease } from './fingerprint-utils';
 import { computeTlsFingerprint } from './tls-fingerprint';
 import { computeHttpFingerprint, normalizeObservedHttpVersion } from './http-fingerprint';
 import { detectBotSignals } from './bot-detection';
+import { computeJa3, computeJa4FromClientHello, parseClientHello } from './clienthello-parser';
 
-const TLS_FINGERPRINT_MODES = new Set(['compute_tls', 'compute_http', 'analyze_request'] as const);
+const TLS_FINGERPRINT_MODES = new Set([
+  'compute_tls',
+  'compute_http',
+  'analyze_request',
+  'parse_client_hello',
+] as const);
 const TLS_PROTOCOLS = new Set(['tls', 'quic', 'dtls'] as const);
 
 function getSecurityDetails(value: unknown): Record<string, unknown> | undefined {
@@ -132,6 +138,50 @@ export class TlsBotHandlers {
               .filter((h) => h !== 'cookie' && h !== 'referer' && !h.startsWith(':'))
               .toSorted(),
             userAgentLength: ua.length,
+          };
+        }
+        return R.ok().merge(result).json();
+      }
+
+      // mode === 'parse_client_hello': parse a raw ClientHello record (hex) and
+      // compute JA3 (Salesforce MD5) + JA4 (FoxIO) fingerprints from the real
+      // wire bytes — no user-supplied cipher/extension lists required. This closes
+      // the gap where compute_tls only re-hashed whatever arrays the caller passed in.
+      if (mode === 'parse_client_hello') {
+        const clientHelloHex = argStringRequired(args, 'clientHelloHex');
+        const parsed = parseClientHello(clientHelloHex);
+        if (!parsed.valid) {
+          return R.fail(`Failed to parse ClientHello: ${parsed.error ?? 'unknown'}`).json();
+        }
+        const { ja3, ja3_raw } = computeJa3(parsed);
+        const { ja4, ja4_raw } = computeJa4FromClientHello(parsed);
+        const result: Record<string, unknown> = {
+          success: true,
+          mode: 'parse_client_hello',
+          ja3,
+          ja3_raw,
+          ja4,
+          ja4_raw,
+          recordVersion: parsed.recordVersion,
+          legacyVersion: parsed.legacyVersion,
+          negotiatedVersion: parsed.negotiatedVersion,
+          hasSni: parsed.hasSni,
+          alpn: parsed.alpn,
+        };
+        if (includeAnalysis) {
+          result.analysis = {
+            ciphers: parsed.ciphers,
+            ciphersCount: parsed.ciphers!.length,
+            extensions: parsed.extensions!.map((e) => ({
+              type: e.type,
+              length: e.data.length / 2,
+            })),
+            supportedVersions: parsed.supportedVersions,
+            ellipticCurves: parsed.ellipticCurves,
+            ecPointFormats: parsed.ecPointFormats,
+            signatureAlgorithms: parsed.signatureAlgorithms,
+            greaseCipherCount: parsed.ciphers!.filter((c) => isGrease(c)).length,
+            greaseExtensionCount: parsed.extensions!.filter((e) => isGrease(e.type)).length,
           };
         }
         return R.ok().merge(result).json();
