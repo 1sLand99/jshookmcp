@@ -16,11 +16,17 @@ const mockGetModuleInformation = vi.fn();
 const mockReadProcessMemory = vi.fn();
 const mockReadFile = vi.fn();
 
-vi.mock('node:fs', () => ({
-  promises: {
-    readFile: (...args: unknown[]) => mockReadFile(...args),
-  },
-}));
+vi.mock('node:fs', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('node:fs');
+  return {
+    ...actual,
+    default: actual,
+    promises: {
+      ...(actual as any).promises,
+      readFile: (...args: unknown[]) => mockReadFile(...args),
+    },
+  };
+});
 
 vi.mock('@native/PEAnalyzer', () => {
   return {
