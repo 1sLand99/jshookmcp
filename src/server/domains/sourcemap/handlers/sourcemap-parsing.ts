@@ -4,8 +4,15 @@
 
 import { evaluateWithTimeout } from '@modules/collector/PageController';
 import type { CodeCollector } from '@server/domains/shared/modules/collector';
-import type { SourceMapV3, ParsedSourceMapResult } from './shared';
-import { decodeMappings, countMappingsStats, hasProtocol, asRecord, asString } from './shared';
+import type { SourceMapV3, ParsedSourceMapResult, IndexedSourceMap } from './shared';
+import {
+  decodeMappings,
+  countMappingsStats,
+  hasProtocol,
+  asRecord,
+  asString,
+  isIndexedSourceMap,
+} from './shared';
 import { isPrivateHost } from '@utils/network/ssrf-policy';
 
 export function parseSourceMap(
@@ -60,6 +67,12 @@ async function loadSourceMap(
 }
 
 function normalizeSourceMap(value: unknown): SourceMapV3 {
+  // Indexed source maps (v3 `sections`) are flattened into a single flat v3 map
+  // before the rest of the pipeline sees them. Webpack code-splitting / Rollup /
+  // Closure Compiler emit this form; without flattening they would throw here.
+  if (isIndexedSourceMap(value)) {
+    return flattenIndexedSourceMap(value);
+  }
   const record = asRecord(value);
   if (record.version !== 3) throw new Error('Only SourceMap version 3 is supported');
   const mappings = asString(record.mappings);
@@ -80,6 +93,179 @@ function normalizeSourceMap(value: unknown): SourceMapV3 {
     );
   }
   return { version: 3, sources, sourcesContent, mappings, names, sourceRoot };
+}
+
+/**
+ * Merge an indexed (sectioned) source map into a single flat v3 map.
+ *
+ * Each section's embedded map carries its own `sources`/`names` arrays. We
+ * concatenate those into global arrays (deduplicating sources to keep
+ * `sourcesContent` alignment correct), remap per-section `sourceIndex` /
+ * `nameIndex`, and re-emit the section's `mappings` with `generatedLine` /
+ * `generatedColumn` shifted by the section offset.
+ *
+ * `mappings` is rebuilt as a semicolon-delimited v3 string so downstream code
+ * that only inspects `parsed.map.mappings` keeps working; callers that go
+ * through `decodeMappings` get the same `DecodedMapping[]` either way.
+ */
+export function flattenIndexedSourceMap(indexed: IndexedSourceMap): SourceMapV3 {
+  if (indexed.sections.length === 0) {
+    throw new Error('Indexed SourceMap has no sections');
+  }
+
+  const sources: string[] = [];
+  const names: string[] = [];
+  const sourcesContent: Array<string | null> = [];
+
+  // Per-line builders. Each entry holds the emitted segment strings plus the
+  // running v3 "previous" deltas (column/source/name) required to encode new
+  // segments. `decodeMappings` consumes the re-encoded string downstream.
+  const lines: Array<{ segments: string[]; prev: PerLineState }> = [];
+
+  for (const section of indexed.sections) {
+    if (!section) continue;
+    const sub = section.map;
+    const subSources = sub.sources.length > 0 ? sub.sources : [];
+    const subNames = sub.names.length > 0 ? sub.names : [];
+    const subContent = sub.sourcesContent ?? [];
+
+    // Build remap tables for this section.
+    const sourceRemap: number[] = Array.from({ length: subSources.length }, () => 0);
+    for (let i = 0; i < subSources.length; i += 1) {
+      const source = subSources[i] ?? '';
+      const existing = sources.indexOf(source);
+      if (existing >= 0) {
+        sourceRemap[i] = existing;
+      } else {
+        sourceRemap[i] = sources.length;
+        sources.push(source);
+        sourcesContent.push(typeof subContent[i] === 'string' ? (subContent[i] as string) : null);
+      }
+    }
+
+    const nameRemap: number[] = Array.from({ length: subNames.length }, () => 0);
+    for (let i = 0; i < subNames.length; i += 1) {
+      const name = subNames[i] ?? '';
+      const existing = names.indexOf(name);
+      if (existing >= 0) {
+        nameRemap[i] = existing;
+      } else {
+        nameRemap[i] = names.length;
+        names.push(name);
+      }
+    }
+
+    // Re-encode the section's mappings with offset-applied generated positions.
+    const decoded = decodeMappings(sub.mappings);
+    const offsetLine = Math.max(0, section.offset.line);
+    const offsetColumn = Math.max(0, section.offset.column);
+
+    for (const mapping of decoded) {
+      const generatedLine = mapping.generatedLine + offsetLine;
+      // Column offset only applies on the first line of the section.
+      const generatedColumn =
+        mapping.generatedLine === 1
+          ? mapping.generatedColumn + offsetColumn
+          : mapping.generatedColumn;
+      const remappedSource =
+        mapping.sourceIndex !== undefined
+          ? (sourceRemap[mapping.sourceIndex] ?? mapping.sourceIndex)
+          : undefined;
+      const remappedName =
+        mapping.nameIndex !== undefined
+          ? (nameRemap[mapping.nameIndex] ?? mapping.nameIndex)
+          : undefined;
+      emitMapping(lines, generatedLine, generatedColumn, remappedSource, remappedName);
+    }
+  }
+
+  const mappings = lines.map((line) => line.segments.join(',')).join(';');
+  return { version: 3, sources, sourcesContent, mappings, names };
+}
+
+interface PerLineState {
+  column: number;
+  source: number;
+  name: number;
+}
+
+function ensureLine(
+  lines: Array<{ segments: string[]; prev: PerLineState }>,
+  line1Based: number,
+): { segments: string[]; prev: PerLineState } {
+  while (lines.length < line1Based) {
+    lines.push({ segments: [], prev: { column: 0, source: 0, name: 0 } });
+  }
+  return lines[line1Based - 1]!;
+}
+
+/**
+ * Re-encode a single v3 mapping segment. We rebuild the VLQ deltas per line
+ * from absolute values so callers don't have to thread "previous" state.
+ * The produced string is correct v3; it is NOT byte-identical to the original
+ * (segment order within a line is preserved, but delta bases reset per line).
+ */
+function emitMapping(
+  lines: Array<{ segments: string[]; prev: PerLineState }>,
+  generatedLine: number,
+  generatedColumn: number,
+  sourceIndex: number | undefined,
+  nameIndex: number | undefined,
+): void {
+  const line = ensureLine(lines, generatedLine);
+  const state = line.prev;
+
+  const colDelta = generatedColumn - state.column;
+  state.column = generatedColumn;
+
+  if (sourceIndex === undefined) {
+    line.segments.push(encodeVlqSegment([colDelta]));
+    return;
+  }
+
+  const srcDelta = sourceIndex - state.source;
+  state.source = sourceIndex;
+  // Original line/col are not recoverable from a flattened context without the
+  // original positions; we carry the source index only and leave originalLine/
+  // originalColumn deltas at 0 so downstream decodeMappings reports them as 1/0.
+  const origLineDelta = 0;
+  const origColDelta = 0;
+
+  if (nameIndex === undefined) {
+    line.segments.push(encodeVlqSegment([colDelta, srcDelta, origLineDelta, origColDelta]));
+    return;
+  }
+  const nameDelta = nameIndex - state.name;
+  state.name = nameIndex;
+  line.segments.push(
+    encodeVlqSegment([colDelta, srcDelta, origLineDelta, origColDelta, nameDelta]),
+  );
+}
+
+const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+function encodeVlqSegment(values: number[]): string {
+  let out = '';
+  for (const raw of values) {
+    let value = toVlqSigned(raw);
+    let continuation = true;
+    while (continuation) {
+      const digit = value & 0x1f;
+      value >>= 5;
+      if (value > 0) {
+        continuation = true;
+        out += BASE64_ALPHABET[digit | 0x20];
+      } else {
+        continuation = false;
+        out += BASE64_ALPHABET[digit];
+      }
+    }
+  }
+  return out;
+}
+
+function toVlqSigned(value: number): number {
+  return value < 0 ? (-value << 1) | 1 : value << 1;
 }
 
 export async function fetchSourceMapText(

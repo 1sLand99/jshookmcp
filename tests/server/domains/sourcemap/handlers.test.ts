@@ -427,6 +427,185 @@ describe('SourcemapToolHandlers', () => {
       expect(parsed.success).toBe(false);
       expect(parsed.tool).toBe('sourcemap_lookup');
     });
+
+    // ── Reverse lookup (original -> generated) ──
+
+    it('resolves an original source:line:col back to the generated position', async () => {
+      // mappings: gen1:0 -> orig a.ts:1:0 (AAAA); gen3:0 -> orig a.ts:2:0 (AACA)
+      const mockMap = {
+        version: 3,
+        sources: ['src/a.ts'],
+        mappings: 'AAAA;;AACA',
+        names: [],
+      };
+      globalFetch.mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify(mockMap)),
+      });
+
+      const res = await handlers.handleSourcemapLookup({
+        sourceMapUrl: withPath(TEST_HTTP_URLS.root, 'reverse.map'),
+        originalSource: 'src/a.ts',
+        originalLine: 2,
+        originalColumn: 0,
+      });
+      const parsed = JSON.parse(getText(res) || '{}');
+      expect(parsed.success).toBe(true);
+      expect(parsed.generated).toBeDefined();
+      expect(parsed.generated.line).toBe(3);
+      expect(parsed.matchType).toBe('exact');
+    });
+
+    it('falls back to closest preceding original mapping for reverse lookup', async () => {
+      const mockMap = {
+        version: 3,
+        sources: ['src/a.ts'],
+        mappings: 'AAAA,CAAC',
+        names: [],
+      };
+      globalFetch.mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify(mockMap)),
+      });
+
+      const res = await handlers.handleSourcemapLookup({
+        sourceMapUrl: withPath(TEST_HTTP_URLS.root, 'reverse-nearest.map'),
+        originalSource: 'src/a.ts',
+        originalLine: 5,
+        originalColumn: 0,
+      });
+      const parsed = JSON.parse(getText(res) || '{}');
+      expect(parsed.success).toBe(true);
+      expect(parsed.matchType).toBe('closest-preceding');
+    });
+
+    it('reports an error when the original source is not in the map', async () => {
+      const mockMap = {
+        version: 3,
+        sources: ['src/a.ts'],
+        mappings: 'AAAA',
+        names: [],
+      };
+      globalFetch.mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify(mockMap)),
+      });
+
+      const res = await handlers.handleSourcemapLookup({
+        sourceMapUrl: withPath(TEST_HTTP_URLS.root, 'reverse-missing.map'),
+        originalSource: 'src/missing.ts',
+        originalLine: 1,
+        originalColumn: 0,
+      });
+      const parsed = JSON.parse(getText(res) || '{}');
+      expect(parsed.success).toBe(false);
+      expect(parsed.error).toMatch(/not present/);
+    });
+
+    it('rejects invalid originalLine in reverse lookup', async () => {
+      const mockMap = {
+        version: 3,
+        sources: ['src/a.ts'],
+        mappings: 'AAAA',
+        names: [],
+      };
+      globalFetch.mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify(mockMap)),
+      });
+
+      const res = await handlers.handleSourcemapLookup({
+        sourceMapUrl: withPath(TEST_HTTP_URLS.root, 'reverse-badline.map'),
+        originalSource: 'src/a.ts',
+        originalLine: 0,
+        originalColumn: 0,
+      });
+      const parsed = JSON.parse(getText(res) || '{}');
+      expect(parsed.success).toBe(false);
+      expect(parsed.tool).toBe('sourcemap_lookup');
+    });
+  });
+
+  describe('indexed (sectioned) source maps', () => {
+    it('fetch_and_parse flattens indexed source maps into a single v3 map', async () => {
+      // Two sections, each pinning a tiny embedded map at an offset.
+      const indexed = {
+        version: 3,
+        file: 'app.js',
+        sections: [
+          {
+            offset: { line: 0, column: 0 },
+            map: {
+              version: 3,
+              sources: ['src/a.ts'],
+              sourcesContent: ['export const a = 1;'],
+              names: [],
+              mappings: 'AAAA',
+            },
+          },
+          {
+            offset: { line: 5, column: 0 },
+            map: {
+              version: 3,
+              sources: ['src/b.ts'],
+              sourcesContent: ['export const b = 2;'],
+              names: [],
+              mappings: 'AAAA',
+            },
+          },
+        ],
+      };
+      globalFetch.mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify(indexed)),
+      });
+
+      const res = await handlers.handleSourcemapFetchAndParse({
+        sourceMapUrl: withPath(TEST_HTTP_URLS.root, 'indexed.map'),
+      });
+      const parsed = JSON.parse(getText(res) || '{}');
+      expect(parsed.sources).toEqual(['src/a.ts', 'src/b.ts']);
+      expect(parsed.segmentCount).toBeGreaterThan(0);
+    });
+
+    it('lookup works against an indexed source map after flattening', async () => {
+      const indexed = {
+        version: 3,
+        sections: [
+          {
+            offset: { line: 0, column: 0 },
+            map: {
+              version: 3,
+              sources: ['src/a.ts'],
+              names: [],
+              mappings: 'AAAA',
+            },
+          },
+          {
+            offset: { line: 10, column: 0 },
+            map: {
+              version: 3,
+              sources: ['src/b.ts'],
+              names: [],
+              mappings: 'AAAA',
+            },
+          },
+        ],
+      };
+      globalFetch.mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify(indexed)),
+      });
+
+      const res = await handlers.handleSourcemapLookup({
+        sourceMapUrl: withPath(TEST_HTTP_URLS.root, 'indexed-lookup.map'),
+        line: 1,
+        column: 0,
+      });
+      const parsed = JSON.parse(getText(res) || '{}');
+      expect(parsed.success).toBe(true);
+      expect(parsed.original.source).toBe('src/a.ts');
+    });
   });
 
   describe('handleSourcemapReconstructTree', () => {

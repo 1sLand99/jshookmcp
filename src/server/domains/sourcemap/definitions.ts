@@ -23,12 +23,22 @@ export const sourcemapTools: Tool[] = [
   ),
   tool('sourcemap_lookup', (t) =>
     t
-      .desc('Resolve generated code position to original source.')
+      .desc(
+        'Resolve generated code position to original source (default), or — when originalSource ' +
+          'is supplied — resolve original source:line:column back to the generated position. ' +
+          'Supports indexed (sectioned) source maps transparently.',
+      )
       .string('sourceMapUrl', 'Source map URL.')
       .string('scriptUrl', 'Script URL for relative map resolution.')
-      .number('line', 'Generated line number.', { minimum: 1 })
-      .number('column', 'Generated column number.', { minimum: 0 })
-      .required('sourceMapUrl', 'line', 'column'),
+      .number('line', 'Generated line number (forward lookup).', { minimum: 1 })
+      .number('column', 'Generated column number (forward lookup).', { minimum: 0 })
+      .string(
+        'originalSource',
+        'Original source path. When set, performs reverse lookup (original -> generated) and line/column refer to the original position.',
+      )
+      .number('originalLine', 'Original line number (reverse lookup).', { minimum: 1 })
+      .number('originalColumn', 'Original column number (reverse lookup).', { minimum: 0 })
+      .required('sourceMapUrl'),
   ),
   tool('sourcemap_reconstruct_tree', (t) =>
     t

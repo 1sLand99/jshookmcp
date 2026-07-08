@@ -26,6 +26,29 @@ export interface SourceMapV3 {
   sourceRoot?: string;
 }
 
+/**
+ * An indexed source map (v3 `sections` form), produced by webpack code-splitting,
+ * Rollup, and Closure Compiler. Each section pins an embedded v3 map at a
+ * generated (line, column) offset. `flattenIndexedSourceMap` merges sections into
+ * a single flat v3 map with offset-remapped mappings.
+ */
+export interface SourceMapSection {
+  offset: { line: number; column: number };
+  map: SourceMapV3;
+}
+
+export interface IndexedSourceMap {
+  version: 3;
+  file?: string;
+  sections: SourceMapSection[];
+}
+
+export function isIndexedSourceMap(value: unknown): value is IndexedSourceMap {
+  if (typeof value !== 'object' || value === null) return false;
+  const record = value as JsonRecord;
+  return record['version'] === 3 && Array.isArray(record['sections']);
+}
+
 export interface DecodedMapping {
   generatedLine: number;
   generatedColumn: number;

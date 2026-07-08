@@ -238,6 +238,77 @@ export class SourcemapHandlers {
     try {
       const sourceMapUrl = requiredStringArg(args.sourceMapUrl, 'sourceMapUrl');
       const scriptUrl = optionalStringArg(args.scriptUrl);
+      const parsed = await parseSourceMap(sourceMapUrl, scriptUrl, this.state.collector);
+
+      // Reverse-lookup mode: original source:line:column -> generated position.
+      // Triggered when `original.source` is supplied instead of `line`/`column`.
+      // This is what debuggers need to set breakpoints in original code and what
+      // error-reporting services use to de-obfuscate production stacks.
+      const originalSourceRaw = optionalStringArg(args.originalSource);
+      const originalSource = originalSourceRaw ?? (args['original'] as unknown);
+      if (typeof originalSource === 'string') {
+        const originalLine = Number(args.originalLine);
+        const originalColumn = Number(args.originalColumn);
+        if (!Number.isInteger(originalLine) || originalLine < 1) {
+          throw new Error('originalLine must be a positive integer');
+        }
+        if (!Number.isFinite(originalColumn) || originalColumn < 0) {
+          throw new Error('originalColumn must be a non-negative number');
+        }
+
+        const sourceIndex = parsed.map.sources.indexOf(originalSource);
+        if (sourceIndex === -1) {
+          return json({
+            success: false,
+            sourceMapUrl,
+            resolvedUrl: parsed.resolvedUrl,
+            original: { source: originalSource, line: originalLine, column: originalColumn },
+            error: 'Original source not present in this source map',
+          });
+        }
+
+        const candidates = parsed.mappings
+          .filter(
+            (entry) =>
+              entry.sourceIndex === sourceIndex && (entry.originalLine ?? Infinity) <= originalLine,
+          )
+          .toSorted((a, b) => {
+            const lineDelta = (b.originalLine ?? 0) - (a.originalLine ?? 0);
+            if (lineDelta !== 0) return lineDelta;
+            return (b.originalColumn ?? 0) - (a.originalColumn ?? 0);
+          });
+
+        const bestMatch = candidates[0];
+        if (!bestMatch) {
+          return json({
+            success: false,
+            sourceMapUrl,
+            resolvedUrl: parsed.resolvedUrl,
+            original: { source: originalSource, line: originalLine, column: originalColumn },
+            error: 'No generated position maps to this original source',
+          });
+        }
+
+        return json({
+          success: true,
+          sourceMapUrl,
+          resolvedUrl: parsed.resolvedUrl,
+          original: { source: originalSource, line: originalLine, column: originalColumn },
+          generated: {
+            line: bestMatch.generatedLine,
+            column: bestMatch.generatedColumn,
+            name:
+              typeof bestMatch.nameIndex === 'number'
+                ? (parsed.map.names[bestMatch.nameIndex] ?? null)
+                : null,
+          },
+          matchType:
+            bestMatch.originalLine === originalLine && bestMatch.originalColumn === originalColumn
+              ? 'exact'
+              : 'closest-preceding',
+        });
+      }
+
       const line = Number(args.line);
       const column = Number(args.column);
       if (!Number.isInteger(line) || line < 1) {
@@ -247,7 +318,6 @@ export class SourcemapHandlers {
         throw new Error('column must be a non-negative number');
       }
 
-      const parsed = await parseSourceMap(sourceMapUrl, scriptUrl, this.state.collector);
       let bestMatch = parsed.mappings.find(
         (entry) => entry.generatedLine === line && entry.generatedColumn === column,
       );

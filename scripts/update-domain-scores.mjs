@@ -86,7 +86,10 @@ const SCORES = {
     9.3,
     '10 tools, body/timing capture, active rule lifecycle, exact HTTP method matching, strict rule input validation',
   ],
-  sourcemap: [9.2, '6 tools, Phase 2 MCP-safe wrappers + shared SSRF private-host policy'],
+  sourcemap: [
+    9.4,
+    '6 tools, indexed (sectioned) source map flattening + sourcemap_lookup reverse (original -> generated) mode + Phase 2 MCP-safe wrappers + shared SSRF private-host policy',
+  ],
   streaming: [9.2, '7 tools, MCP-safe wrappers + capture cap schema/runtime alignment'],
   'syscall-hook': [
     9.2,
