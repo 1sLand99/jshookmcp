@@ -117,12 +117,12 @@
 | mojo-ipc | 9.2 | 6 | `research/mojo-ipc.md` | **DONE** encode/filter surface + expanded decoder/header metadata + field labels |
 | native-bridge | 9.5 | 6 | `research/native-bridge.md` | **DONE** runtime manifest + Rizin/Binary Ninja parity |
 | native-emulator | 9.2 | 22 | `research/native-emulator.md` | **DONE** session diagnostics + strict Java mock values；next: SIMD/crypto depth |
-| network | 9.6 | 38 | `research/network.md` | **DONE Session 28** parse_client_hello mode（真实 JA3 Salesforce MD5 + JA4 FoxIO 从 ClientHello wire bytes）；**Session 25** http2_frame_parse + extract_auth signing-scheme；next: bot-detect depth（JA3/JA4 已可计算，待接 bot 评分 #4）/ DNS resolver override #6 / streaming replay #5 |
+| network | 9.8 | 38 | `research/network.md` | **DONE Session 30** bot_detect_analyze JA3/JA4 integration（user-supplied knownBad lists，零内置特征库）；**Session 28** parse_client_hello（真实 JA3+JA4）；**Session 25** http2_frame_parse + extract_auth signing-scheme；next: DNS resolver override #6 / streaming replay #5 / HTTP/2 SETTINGS fingerprint |
 | platform | 9.3 | 16 | `research/platform.md` | **DONE** ASAR integrity SHA256/SHA512 awareness；next: Authenticode/notarization |
 | process | 9.2 | 27 | `research/process.md` | **DONE** suspend/resume + dumps + thread diagnostics + memory pattern validation |
 | protocol-analysis | 9.6 | 20 | `research/protocol-analysis.md` | **P3 ✅ +5 fingerprints: MQTT/STUN/QUIC/SOCKS5/HTTP2（Session 18）** |
 | proxy | 9.3 | 10 | `research/proxy.md` | **DONE** body/timing capture + active rules + arbitrary methods + strict rule validation |
-| sourcemap | 9.4 | 6 | `research/sourcemap.md` | **DONE Session 26** indexed source map flattening + sourcemap_lookup reverse mode；next: sourcesContent null inference (#1) / sourcemap_diff (#4) / v4 scopes into reconstruct_tree (#5) |
+| sourcemap | 9.6 | 6 | `research/sourcemap.md` | **DONE Session 31** reconstruct_tree inferMissing（sourcesContent null 推断 skeleton，零内置特征库）；**Session 26** indexed flattening + reverse lookup；next: sourcemap_diff (#4) / v4 scopes into reconstruct_tree (#5) |
 | streaming | 9.2 | 7 | `research/streaming.md` | **DONE** payload export + cap schema/runtime alignment；next: gRPC/fetch/WebRTC |
 | syscall-hook | 9.4 | 15 | `research/syscall-hook.md` | **DONE Session 27** dtrace entry/return 配对（returnValue+duration）+ ETW multi-provider（kernel-process/network/file/image GUID）；next: native direct-NT live hook (#4) / Frida 跨平台 live (#5) |
 | trace | 9.2 | 9 | `research/trace.md` | **DONE** thread tracks + runtime diagnostics；next: samples/flame graph |
