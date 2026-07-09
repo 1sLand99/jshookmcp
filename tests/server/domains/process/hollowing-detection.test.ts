@@ -95,8 +95,12 @@ describe('HollowingDetectionHandlers', () => {
     handlers = new HollowingDetectionHandlers();
   });
 
+  // Hollowing detection uses Win32 Toolhelp32 APIs; on Linux/macOS the
+  // integrity scan falls back to /proc/pid/maps which doesn't exist in CI.
+  const itWin32 = process.platform === 'win32' ? it : it.skip;
+
   describe('handleDetectHollowing', () => {
-    it('should detect normal (non-hollowed) process', async () => {
+    itWin32('should detect normal (non-hollowed) process', async () => {
       mockCompareMemoryWithDisk.mockResolvedValue({
         isMatch: true,
         confidence: 100,
@@ -110,7 +114,7 @@ describe('HollowingDetectionHandlers', () => {
       expect(result.confidence).toBe(100);
     });
 
-    it('should detect hollowed process (hash mismatch)', async () => {
+    itWin32('should detect hollowed process (hash mismatch)', async () => {
       mockCompareMemoryWithDisk.mockResolvedValue({
         isMatch: false,
         confidence: 45,
@@ -135,7 +139,7 @@ describe('HollowingDetectionHandlers', () => {
       expect(result.differences).toHaveLength(1);
     });
 
-    it('should attach memoryBytes/diskBytes when includeMemoryDump=true', async () => {
+    itWin32('should attach memoryBytes/diskBytes when includeMemoryDump=true', async () => {
       const memoryBytes = Buffer.from([0xde, 0xad, 0xbe, 0xef]);
       const diskBytes = Buffer.from([0xca, 0xfe, 0xba, 0xbe]);
       // Build a disk buffer whose .text slice (pointerToRawData=0x200, readSize=4) yields diskBytes
@@ -191,7 +195,7 @@ describe('HollowingDetectionHandlers', () => {
       );
     });
 
-    it('should mark truncated=true when bytesCompared exceeds 65536', async () => {
+    itWin32('should mark truncated=true when bytesCompared exceeds 65536', async () => {
       const memoryBytes = Buffer.alloc(65536, 0xab);
       const diskBuffer = Buffer.alloc(0x40000 + 0x200);
       mockReadFile.mockResolvedValue(diskBuffer);
@@ -234,7 +238,7 @@ describe('HollowingDetectionHandlers', () => {
       expect(difference?.memoryBytes?.length).toBe(131072);
     });
 
-    it('should omit memoryDump when includeMemoryDump is false (default)', async () => {
+    itWin32('should omit memoryDump when includeMemoryDump is false (default)', async () => {
       mockCompareMemoryWithDisk.mockResolvedValue({
         isMatch: false,
         confidence: 45,
@@ -260,7 +264,7 @@ describe('HollowingDetectionHandlers', () => {
       expect(difference?.diskBytes).toBeUndefined();
     });
 
-    it('should return error when no modules found', async () => {
+    itWin32('should return error when no modules found', async () => {
       mockEnumProcessModules.mockReturnValue({
         success: false,
         modules: [],
@@ -273,7 +277,7 @@ describe('HollowingDetectionHandlers', () => {
       expect(result.error).toContain('No modules found');
     });
 
-    it('should return error when GetModuleFileNameEx fails', async () => {
+    itWin32('should return error when GetModuleFileNameEx fails', async () => {
       mockGetModuleFileNameEx.mockReturnValue(null);
 
       const result = await handlers.handleDetectHollowing({ pid: 1234 });
