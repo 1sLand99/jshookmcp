@@ -4,7 +4,10 @@ exclude = [
   "^http://127\\.0\\.0\\.1",
   "^http://localhost",
   "^ws://127\\.0\\.0\\.1",
-  "^ws://localhost"
+  "^ws://localhost",
+  # star-history.com image API intermittently returns 503 (external service
+  # flakiness, not a real broken link) — exclude to keep Repo Hygiene stable.
+  "^https://api\\.star-history\\.com"
 ]
 exclude_path = [
   "docs/.vitepress/dist/assets/**",
