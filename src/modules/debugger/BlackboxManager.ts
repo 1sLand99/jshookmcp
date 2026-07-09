@@ -107,6 +107,30 @@ export class BlackboxManager {
     return Array.from(this.blackboxedPatterns);
   }
 
+  /**
+   * Restore previously-serialized blackbox patterns (already-normalized regexes)
+   * WITHOUT re-normalizing. Used by session import to avoid double-escaping:
+   * a stored normalized pattern like `.*jquery.*\.js` passed through `blackboxByPattern`
+   * would be re-escaped into `\.*jquery\.*\\.js` (corrupted). Overwrites the active set.
+   * Rolls back to the previous set if the CDP call fails.
+   */
+  async restorePatterns(patterns: string[]): Promise<void> {
+    const previous = new Set(this.blackboxedPatterns);
+    this.blackboxedPatterns = new Set(patterns);
+
+    try {
+      await this.cdpSession.send('Debugger.setBlackboxPatterns', {
+        patterns: Array.from(this.blackboxedPatterns),
+      });
+
+      logger.info(`Restored ${patterns.length} blackbox patterns`);
+    } catch (error) {
+      logger.error('Failed to restore blackbox patterns:', error);
+      this.blackboxedPatterns = previous;
+      throw error;
+    }
+  }
+
   async clearAllBlackboxedPatterns(): Promise<void> {
     this.blackboxedPatterns.clear();
 

@@ -17,8 +17,8 @@ describe('debugger tool definitions', () => {
     });
 
     it('contains the expected number of core tools', async () => {
-      // 14 core tools defined in definitions.tools.core.ts
-      expect(DEBUGGER_CORE_TOOLS).toHaveLength(14);
+      // 15 core tools defined in definitions.tools.core.ts
+      expect(DEBUGGER_CORE_TOOLS).toHaveLength(15);
     });
 
     it.each(DEBUGGER_CORE_TOOLS.map((tool) => [tool.name, tool]))(

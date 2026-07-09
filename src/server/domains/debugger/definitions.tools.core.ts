@@ -139,6 +139,26 @@ Types & params:
       .query(),
   ),
   tool('debugger_get_paused_state', (t) => t.desc('Get current paused state and reason.').query()),
+  tool('debugger_disassemble', (t) =>
+    t
+      .desc(
+        'Disassemble V8 bytecode / instructions at the current paused location (or a given scriptId). ' +
+          'Resolves the target scriptId automatically from the current paused call frame — useful when paused ' +
+          'inside obfuscated/VM code to decide whether to step in. Native bytecode requires V8 natives syntax; ' +
+          'set includeSourceFallback to derive a pseudo-bytecode from source when native extraction is unavailable.',
+      )
+      .string('scriptId', 'Script ID (defaults to the current paused top frame)')
+      .string('callFrameId', 'Call frame ID (defaults to the current paused top frame)')
+      .number('functionOffset', 'Function offset within the script')
+      .boolean(
+        'includeSourceFallback',
+        'Derive pseudo-bytecode from source when native extraction unavailable',
+        {
+          default: false,
+        },
+      )
+      .query(),
+  ),
   tool('get_object_properties', (t) =>
     t
       .desc('Get properties of an object by objectId.')

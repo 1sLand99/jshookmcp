@@ -144,4 +144,30 @@ describe('BlackboxManager', () => {
     // 'mylib.js' is a valid regex (dot is not a special operator without a quantifier)
     expect(patterns[0]).toBe('mylib.js');
   });
+
+  it('restorePatterns sets pre-normalized patterns without re-escaping', async () => {
+    // Session import passes already-normalized regexes; re-normalizing would corrupt
+    // '.*jquery.*\.js' into '\.*jquery\.*\\.js'.
+    await manager.restorePatterns(['.*jquery.*\\.js', '.*react.*']);
+
+    expect(manager.getAllBlackboxedPatterns()).toEqual(['.*jquery.*\\.js', '.*react.*']);
+    expect(session.send).toHaveBeenCalledWith('Debugger.setBlackboxPatterns', {
+      patterns: ['.*jquery.*\\.js', '.*react.*'],
+    });
+  });
+
+  it('restorePatterns overwrites existing patterns', async () => {
+    await manager.blackboxByPattern('*old*.js');
+    await manager.restorePatterns(['.*new.*']);
+
+    expect(manager.getAllBlackboxedPatterns()).toEqual(['.*new.*']);
+  });
+
+  it('restorePatterns rolls back to previous set on CDP failure', async () => {
+    await manager.blackboxByPattern('*keep*.js');
+    session.send.mockRejectedValueOnce(new Error('cdp fail'));
+
+    await expect(manager.restorePatterns(['.*new.*'])).rejects.toThrow('cdp fail');
+    expect(manager.getAllBlackboxedPatterns()[0]).toContain('keep');
+  });
 });

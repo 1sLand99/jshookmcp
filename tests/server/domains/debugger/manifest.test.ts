@@ -104,6 +104,7 @@ describe('debugger manifest', () => {
       'debugger_step',
       'breakpoint',
       'get_call_stack',
+      'debugger_disassemble',
       'debugger_evaluate',
       'debugger_wait_for_paused',
       'debugger_capture_hit',

@@ -47,6 +47,10 @@ export interface DebuggerSession {
     enabled: boolean;
   }>;
   pauseOnExceptions: 'none' | 'uncaught' | 'all';
+  /** Watch expressions to restore (optional; omitted when advanced features not active). */
+  watchExpressions?: Array<{ expression: string; name: string; enabled: boolean }>;
+  /** Active blackbox patterns (already-normalized regexes; restored verbatim). */
+  blackboxPatterns?: string[];
   metadata?: {
     url?: string;
     description?: string;

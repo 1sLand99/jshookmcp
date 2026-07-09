@@ -33,6 +33,7 @@ import { EventBreakpointHandlers } from '@server/domains/debugger/handlers/event
 import { WatchExpressionsHandlers } from '@server/domains/debugger/handlers/watch-expressions';
 import { ScopeInspectionHandlers } from '@server/domains/debugger/handlers/scope-inspection';
 import { BlackboxHandlers } from '@server/domains/debugger/handlers/blackbox-handlers';
+import { DisassembleHandlers } from '@server/domains/debugger/handlers/disassemble-handlers';
 
 export class DebuggerToolHandlers {
   private debuggerManager: DebuggerManager;
@@ -50,14 +51,18 @@ export class DebuggerToolHandlers {
   private watchExpressions: WatchExpressionsHandlers;
   private scopeInspection: ScopeInspectionHandlers;
   private blackbox: BlackboxHandlers;
+  private disassemble: DisassembleHandlers;
+  private getPage?: () => Promise<unknown>;
 
   constructor(
     debuggerManager: DebuggerManager,
     runtimeInspector: RuntimeInspector,
     eventBus?: EventBus<ServerEventMap>,
+    getPage?: () => Promise<unknown>,
   ) {
     this.debuggerManager = debuggerManager;
     this.runtimeInspector = runtimeInspector;
+    this.getPage = getPage;
 
     const commonDeps = {
       debuggerManager: this.debuggerManager,
@@ -94,6 +99,10 @@ export class DebuggerToolHandlers {
     this.scopeInspection = new ScopeInspectionHandlers(commonDeps);
     this.blackbox = new BlackboxHandlers({
       debuggerManager: this.debuggerManager,
+    });
+    this.disassemble = new DisassembleHandlers({
+      debuggerManager: this.debuggerManager,
+      getPage: this.getPage,
     });
   }
 
@@ -151,6 +160,11 @@ export class DebuggerToolHandlers {
 
   async handleGetCallStack(args: Record<string, unknown>) {
     return this.debuggerState.handleGetCallStack(args);
+  }
+
+  // ── Disassembly ──
+  async handleDebuggerDisassemble(args: Record<string, unknown>) {
+    return this.disassemble.handleDebuggerDisassemble(args);
   }
 
   // ── Session Management ──
@@ -442,4 +456,5 @@ export {
   WatchExpressionsHandlers,
   ScopeInspectionHandlers,
   BlackboxHandlers,
+  DisassembleHandlers,
 };

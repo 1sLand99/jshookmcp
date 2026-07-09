@@ -28,6 +28,7 @@ const registrations = [
       { tool: 'debugger_step', method: 'handleDebuggerStep' },
       { tool: 'breakpoint', method: 'handleBreakpoint' },
       { tool: 'get_call_stack', method: 'handleGetCallStack' },
+      { tool: 'debugger_disassemble', method: 'handleDebuggerDisassemble' },
       { tool: 'debugger_evaluate', method: 'handleDebuggerEvaluateDispatch' },
       { tool: 'debugger_wait_for_paused', method: 'handleDebuggerWaitForPaused' },
       { tool: 'debugger_capture_hit', method: 'handleDebuggerCaptureHit' },
@@ -65,10 +66,12 @@ async function ensure(ctx: MCPServerContext): Promise<H> {
     if (!ctx.runtimeInspector)
       ctx.runtimeInspector = new RuntimeInspector(ctx.collector!, ctx.debuggerManager);
     if (!ctx.debuggerHandlers) {
+      const pageController = ctx.pageController;
       ctx.debuggerHandlers = new DebuggerToolHandlers(
         ctx.debuggerManager,
         ctx.runtimeInspector,
         ctx.eventBus,
+        pageController ? async () => pageController.getPage() : undefined,
       );
     }
   }
@@ -105,6 +108,12 @@ const manifest = {
       {
         condition: 'Browser must be launched',
         fix: 'Call browser_launch and debugger_lifecycle(enable) first',
+      },
+    ],
+    debugger_disassemble: [
+      {
+        condition: 'Browser must be launched and debugger enabled',
+        fix: 'Call browser_launch and debugger_lifecycle(enable); pause at a breakpoint or pass scriptId',
       },
     ],
   },

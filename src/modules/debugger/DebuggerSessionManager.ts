@@ -78,12 +78,40 @@ export class DebuggerSessionManager {
       metadata: metadata || {},
     };
 
+    // Best-effort: persist watch expressions + blackbox patterns when advanced
+    // features are initialized. The managers throw when initAdvancedFeatures()
+    // has not been called — treat that as "nothing to persist" and omit the
+    // optional fields (import tolerates their absence for backward compat).
+    session.watchExpressions = this.tryExportWatches();
+    session.blackboxPatterns = this.tryExportBlackboxPatterns();
+
     logger.info('Session exported', {
       breakpointCount: session.breakpoints.length,
       pauseOnExceptions: session.pauseOnExceptions,
+      watchCount: session.watchExpressions?.length ?? 0,
+      blackboxPatternCount: session.blackboxPatterns?.length ?? 0,
     });
 
     return session;
+  }
+
+  /** Watch exports if WatchExpressionManager is initialized, else undefined. */
+  private tryExportWatches(): DebuggerSession['watchExpressions'] {
+    try {
+      return this.debuggerManager.getWatchManager().exportWatches();
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Blackbox patterns if BlackboxManager is initialized and non-empty, else undefined. */
+  private tryExportBlackboxPatterns(): string[] | undefined {
+    try {
+      const patterns = this.debuggerManager.getBlackboxManager().getAllBlackboxedPatterns();
+      return patterns.length > 0 ? patterns : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   async saveSession(filePath?: string, metadata?: DebuggerSession['metadata']): Promise<string> {
@@ -178,11 +206,35 @@ export class DebuggerSessionManager {
       await this.debuggerManager.setPauseOnExceptions(session.pauseOnExceptions);
     }
 
+    // Best-effort restore of watch expressions + blackbox patterns. These are
+    // additive/optional; failure to restore them must NOT undo the breakpoint
+    // restore that already succeeded.
+    let restoredWatches = 0;
+    if (session.watchExpressions && session.watchExpressions.length > 0) {
+      try {
+        this.debuggerManager.getWatchManager().importWatches(session.watchExpressions);
+        restoredWatches = session.watchExpressions.length;
+      } catch (error) {
+        logger.warn('Failed to restore watch expressions:', error);
+      }
+    }
+    let restoredBlackbox = 0;
+    if (session.blackboxPatterns && session.blackboxPatterns.length > 0) {
+      try {
+        await this.debuggerManager.getBlackboxManager().restorePatterns(session.blackboxPatterns);
+        restoredBlackbox = session.blackboxPatterns.length;
+      } catch (error) {
+        logger.warn('Failed to restore blackbox patterns:', error);
+      }
+    }
+
     logger.info('Session imported', {
       totalBreakpoints: session.breakpoints.length,
       successCount,
       failCount,
       pauseOnExceptions: session.pauseOnExceptions,
+      restoredWatches,
+      restoredBlackboxPatterns: restoredBlackbox,
     });
   }
 

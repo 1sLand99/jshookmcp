@@ -197,4 +197,125 @@ describe('DebuggerSessionManager', () => {
     expect(sessions[0]?.metadata?.id).toBe('b');
     expect(sessions[1]?.metadata?.id).toBe('a');
   });
+
+  it('exportSession includes watch expressions and blackbox patterns when managers are active', () => {
+    const watchManager = {
+      exportWatches: vi.fn(() => [{ expression: 'a', name: 'a', enabled: true }]),
+    };
+    const blackboxManager = { getAllBlackboxedPatterns: vi.fn(() => ['.*jquery.*']) };
+    const managerMock = {
+      getBreakpoints: () => new Map(),
+      getPauseOnExceptionsState: () => 'none',
+      getWatchManager: () => watchManager,
+      getBlackboxManager: () => blackboxManager,
+    } as any;
+
+    const session = new DebuggerSessionManager(managerMock).exportSession();
+
+    expect(session.watchExpressions).toEqual([{ expression: 'a', name: 'a', enabled: true }]);
+    expect(session.blackboxPatterns).toEqual(['.*jquery.*']);
+  });
+
+  it('exportSession omits empty blackbox patterns', () => {
+    const managerMock = {
+      getBreakpoints: () => new Map(),
+      getPauseOnExceptionsState: () => 'none',
+      getWatchManager: () => ({ exportWatches: () => [] }),
+      getBlackboxManager: () => ({ getAllBlackboxedPatterns: () => [] }),
+    } as any;
+
+    const session = new DebuggerSessionManager(managerMock).exportSession();
+
+    expect(session.watchExpressions).toEqual([]);
+    expect(session.blackboxPatterns).toBeUndefined();
+  });
+
+  it('exportSession omits watch/blackbox when advanced managers are not initialized', () => {
+    const managerMock = {
+      getBreakpoints: () => new Map(),
+      getPauseOnExceptionsState: () => 'none',
+      getWatchManager: () => {
+        throw new Error('WatchExpressionManager not initialized');
+      },
+      getBlackboxManager: () => {
+        throw new Error('BlackboxManager not initialized');
+      },
+    } as any;
+
+    const session = new DebuggerSessionManager(managerMock).exportSession();
+
+    expect(session.watchExpressions).toBeUndefined();
+    expect(session.blackboxPatterns).toBeUndefined();
+  });
+
+  it('importSession restores watch expressions and blackbox patterns', async () => {
+    const importWatches = vi.fn();
+    const restorePatterns = vi.fn().mockResolvedValue(undefined);
+    const managerMock = {
+      isEnabled: vi.fn(() => true),
+      clearAllBreakpoints: vi.fn().mockResolvedValue(undefined),
+      setPauseOnExceptions: vi.fn().mockResolvedValue(undefined),
+      getWatchManager: () => ({ importWatches }),
+      getBlackboxManager: () => ({ restorePatterns }),
+    } as any;
+
+    await new DebuggerSessionManager(managerMock).importSession({
+      version: '1.0',
+      timestamp: Date.now(),
+      breakpoints: [],
+      pauseOnExceptions: 'none',
+      watchExpressions: [{ expression: 'x', name: 'x', enabled: true }],
+      blackboxPatterns: ['.*react.*'],
+    } as any);
+
+    expect(importWatches).toHaveBeenCalledWith([{ expression: 'x', name: 'x', enabled: true }]);
+    expect(restorePatterns).toHaveBeenCalledWith(['.*react.*']);
+  });
+
+  it('importSession backward-compat: sessions without watch/blackbox fields restore nothing extra', async () => {
+    const importWatches = vi.fn();
+    const restorePatterns = vi.fn().mockResolvedValue(undefined);
+    const managerMock = {
+      isEnabled: vi.fn(() => true),
+      clearAllBreakpoints: vi.fn().mockResolvedValue(undefined),
+      setPauseOnExceptions: vi.fn().mockResolvedValue(undefined),
+      getWatchManager: () => ({ importWatches }),
+      getBlackboxManager: () => ({ restorePatterns }),
+    } as any;
+
+    await new DebuggerSessionManager(managerMock).importSession({
+      version: '1.0',
+      timestamp: Date.now(),
+      breakpoints: [],
+      pauseOnExceptions: 'none',
+    } as any);
+
+    expect(importWatches).not.toHaveBeenCalled();
+    expect(restorePatterns).not.toHaveBeenCalled();
+  });
+
+  it('importSession fail-soft: blackbox restore failure does not reject', async () => {
+    const restorePatterns = vi.fn().mockRejectedValue(new Error('cdp down'));
+    const managerMock = {
+      isEnabled: vi.fn(() => true),
+      clearAllBreakpoints: vi.fn().mockResolvedValue(undefined),
+      setPauseOnExceptions: vi.fn().mockResolvedValue(undefined),
+      getBlackboxManager: () => ({ restorePatterns }),
+    } as any;
+
+    await expect(
+      new DebuggerSessionManager(managerMock).importSession({
+        version: '1.0',
+        timestamp: Date.now(),
+        breakpoints: [],
+        pauseOnExceptions: 'all',
+        blackboxPatterns: ['.*x.*'],
+      } as any),
+    ).resolves.toBeUndefined();
+
+    expect(loggerState.warn).toHaveBeenCalledWith(
+      'Failed to restore blackbox patterns:',
+      expect.any(Error),
+    );
+  });
 });
