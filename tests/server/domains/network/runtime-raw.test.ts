@@ -318,4 +318,60 @@ describe('AdvancedToolHandlers raw DNS/HTTP handlers', () => {
       handler.handleHttp2FrameBuild({ frameType: 'SETTINGS', settings: [{ id: 'bad', value: 1 }] }),
     ).rejects.toThrow('settings[0].id must be a number');
   });
+
+  describe('network_http2_fingerprint', () => {
+    it('computes fingerprint from SETTINGS + WINDOW_UPDATE frames', async () => {
+      const settings = parseJson<any>(
+        await handler.handleHttp2FrameBuild({
+          frameType: 'SETTINGS',
+          settings: [
+            { id: 1, value: 4096 },
+            { id: 4, value: 65535 },
+          ],
+        }),
+      );
+      const wu = parseJson<any>(
+        await handler.handleHttp2FrameBuild({
+          frameType: 'WINDOW_UPDATE',
+          streamId: 0,
+          windowSizeIncrement: 15663105,
+        }),
+      );
+      const body = parseJson<any>(
+        await handler.handleNetworkHttp2Fingerprint({
+          framesHex: settings.frameHex + wu.frameHex,
+        }),
+      );
+      expect(body.success).toBe(true);
+      expect(body.canonical).toBe('1:4096;4:65535|15663105|');
+      expect(body.hash).toHaveLength(64);
+      expect(body.frameCount).toBe(2);
+      expect(body.windowUpdateIncrement).toBe(15663105);
+      expect(body.priorities).toEqual([]);
+    });
+
+    it('detects and skips the connection preface magic', async () => {
+      const settings = parseJson<any>(
+        await handler.handleHttp2FrameBuild({
+          frameType: 'SETTINGS',
+          settings: [{ id: 1, value: 4096 }],
+        }),
+      );
+      // "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
+      const magic = '505249202a20485454502f322e300d0a0d0a534d0d0a0d0a';
+      const body = parseJson<any>(
+        await handler.handleNetworkHttp2Fingerprint({ framesHex: magic + settings.frameHex }),
+      );
+      expect(body.success).toBe(true);
+      expect(body.prefaceSkipped).toBe(true);
+      expect(body.frameCount).toBe(1);
+      expect(body.canonical).toBe('1:4096||');
+    });
+
+    it('throws when framesHex is missing', async () => {
+      await expect(handler.handleNetworkHttp2Fingerprint({})).rejects.toThrow(
+        'framesHex is required',
+      );
+    });
+  });
 });

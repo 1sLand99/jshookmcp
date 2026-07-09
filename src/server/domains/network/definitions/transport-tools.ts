@@ -145,6 +145,24 @@ export const transportTools: Tool[] = [
       )
       .requiredOpenWorld('frameHex'),
   ),
+  tool('network_http2_fingerprint', (t) =>
+    t
+      .desc(
+        'Compute an Akamai-style HTTP/2 fingerprint from one or more captured HTTP/2 frames ' +
+          '(the client connection preface: SETTINGS + stream-0 WINDOW_UPDATE + any PRIORITY frames). ' +
+          'Returns the canonical "<settings>|<window_update>|<priority>" string, a sha256 hash, ' +
+          'and the structured fields (settings entries, window update increment, priorities). ' +
+          'Ships NO hardcoded feature library — the structured fields are authoritative; the caller ' +
+          'decides what is "bad". Pair with network_tls_fingerprint for full client identity.',
+      )
+      .string(
+        'framesHex',
+        'One or more concatenated HTTP/2 frames as a hex string. The 24-byte connection ' +
+          'preface magic ("PRI * HTTP/2.0...") is auto-detected and skipped if present. ' +
+          'Whitespace tolerated.',
+      )
+      .requiredOpenWorld('framesHex'),
+  ),
   tool('dns_resolve', (t) =>
     t
       .desc(

@@ -56,4 +56,8 @@ export class RawHandlers extends RawLatencyHandlers {
   handleHttp2FrameParse(args: Record<string, unknown>) {
     return this.http2.handleHttp2FrameParse(args);
   }
+
+  handleNetworkHttp2Fingerprint(args: Record<string, unknown>) {
+    return this.http2.handleNetworkHttp2Fingerprint(args);
+  }
 }

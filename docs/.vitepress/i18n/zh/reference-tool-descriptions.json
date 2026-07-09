@@ -577,5 +577,6 @@
   "browser_font_fingerprint": "枚举本地已安装字体用于指纹分析。主路径是 Local Font Access API（queryLocalFonts，Chromium 103+）；不可用或被拒时回退到一组精简的 document.fonts.check 探针。返回检测到的字体集合、用于比对的稳定哈希，并可选地伪造字体指纹。",
   "http2_frame_parse": "解码原始 HTTP/2 帧（hex 字符串），还原头部字段与按类型解码的载荷（SETTINGS 条目、PING opaque data、WINDOW_UPDATE 窗口增量、RST_STREAM/GOAWAY 错误码、GOAWAY debug data）。是 http2_frame_build 的逆操作。宽松模式：畸形载荷会设置 decodeError 但仍返回 payloadHex。",
   "page_handle_dialog": "控制 JavaScript 对话框（alert/confirm/prompt/beforeunload）的处理方式。默认安装持久处理器，自动关闭所有后续对话框；设置 dismissAll=false 则改为单次处理下一个对话框（带 30s 超时）。",
-  "sourcemap_diff": "对比两个 source map 版本：哪些源文件被新增/移除、每个源的 mapping segment 增减，以及超过可配置阈值（默认 1 行）的生成位置偏移。"
+  "sourcemap_diff": "对比两个 source map 版本：哪些源文件被新增/移除、每个源的 mapping segment 增减，以及超过可配置阈值（默认 1 行）的生成位置偏移。",
+  "network_http2_fingerprint": "从捕获的 HTTP/2 客户端连接前言（SETTINGS 帧 + stream-0 WINDOW_UPDATE + 任意 PRIORITY 帧）计算 Akamai 风格的 HTTP/2 指纹。返回规范字符串 \"<settings>|<window_update>|<priority>\"、sha256 哈希及结构化字段。自动检测并跳过 24 字节连接前言魔数。零内置特征库——结构化字段为权威输出，\"坏\"由调用者判断。"
 }

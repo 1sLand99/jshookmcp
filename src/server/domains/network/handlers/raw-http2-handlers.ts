@@ -15,6 +15,10 @@ import {
 } from './raw-helpers';
 import { buildHttp2Frame, parseHttp2Frame } from '@server/domains/network/http2-raw';
 import type { Http2FrameBuildInput, Http2SettingsEntry } from '@server/domains/network/http2-raw';
+import {
+  parseHttp2Frames,
+  computeHttp2Fingerprint,
+} from '@server/domains/network/handlers/http2-fingerprint';
 import { emitEvent, parseNumberArg } from './shared';
 import { isLikelyTextHttpBody } from '@server/domains/network/http-raw';
 
@@ -277,6 +281,29 @@ export class RawHttp2Handlers {
 
     return R.ok()
       .merge(result as unknown as Record<string, unknown>)
+      .json();
+  }
+
+  async handleNetworkHttp2Fingerprint(args: Record<string, unknown>) {
+    const framesHex = parseRawString(args.framesHex, 'framesHex', { allowEmpty: false });
+    if (!framesHex) {
+      throw new Error('framesHex is required');
+    }
+
+    const { frames, prefaceSkipped, warnings } = parseHttp2Frames(framesHex);
+    const fingerprint = computeHttp2Fingerprint(frames);
+    // parseHttp2Frames owns preface detection; fold it + its warnings into the result.
+    fingerprint.prefaceSkipped = prefaceSkipped;
+    fingerprint.warnings = [...warnings, ...fingerprint.warnings];
+
+    emitEvent(this.eventBus, 'network:http2_fingerprint_computed', {
+      hash: fingerprint.hash,
+      frameCount: fingerprint.frameCount,
+      timestamp: new Date().toISOString(),
+    });
+
+    return R.ok()
+      .merge(fingerprint as unknown as Record<string, unknown>)
       .json();
   }
 }

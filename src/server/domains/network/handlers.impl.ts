@@ -209,6 +209,8 @@ export class AdvancedToolHandlers {
   handleHttp2Probe = (args: Record<string, unknown>) => this.raw.handleHttp2Probe(args);
   handleHttp2FrameBuild = (args: Record<string, unknown>) => this.raw.handleHttp2FrameBuild(args);
   handleHttp2FrameParse = (args: Record<string, unknown>) => this.raw.handleHttp2FrameParse(args);
+  handleNetworkHttp2Fingerprint = (args: Record<string, unknown>) =>
+    this.raw.handleNetworkHttp2Fingerprint(args);
   handleNetworkRttMeasure = (args: Record<string, unknown>) =>
     this.raw.handleNetworkRttMeasure(args);
   handleNetworkLatencyStats = (args: Record<string, unknown>) =>
