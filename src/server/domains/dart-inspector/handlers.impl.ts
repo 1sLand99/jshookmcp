@@ -25,6 +25,7 @@ import type {
 import { SnapshotFingerprint } from '@modules/dart-inspector/SnapshotFingerprint';
 import type { FingerprintOptions, ParseOptions } from '@modules/dart-inspector/snapshot-types';
 import { ObjectPoolDumper } from '@modules/dart-inspector/ObjectPoolDumper';
+import { filterPoolSlots } from '@modules/dart-inspector/pool-filter';
 import type { DumpOptions } from '@modules/dart-inspector/pool-types';
 import type { VersionFingerprint } from '@modules/dart-inspector/snapshot-types';
 import type {
@@ -296,6 +297,14 @@ export class DartInspectorHandlers {
       }
 
       const dump = await this.objectPoolDumper.dump(filePath, opts);
+      const typeFilter = argString(args, 'typeFilter');
+      const valueContains = argString(args, 'valueContains');
+      if (typeFilter || valueContains) {
+        const slots = filterPoolSlots(dump.slots, { typeFilter, valueContains });
+        return {
+          dump: { ...dump, slots, slotCount: slots.length, filtered: true },
+        };
+      }
       return { dump };
     });
   }

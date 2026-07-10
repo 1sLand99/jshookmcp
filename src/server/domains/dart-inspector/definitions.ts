@@ -216,6 +216,14 @@ export const dartInspectorTools: Tool[] = [
         },
         'Optional pre-supplied snapshot fingerprint to skip internal lookup',
       )
+      .string(
+        'typeFilter',
+        'Only return slots whose kind matches (e.g. "string", "smi", "functionRef", "classRef")',
+      )
+      .string(
+        'valueContains',
+        'Case-insensitive substring match against each slot decoded preview — collapses "is this key/URL/Smi in the pool?" to one call',
+      )
       .required('filePath')
       .query(),
   ),
