@@ -31,6 +31,10 @@ export interface TaskHandoff {
   summary?: string;
   keyFindings?: string[];
   artifacts?: string[];
+  /** Parent task this handoff was forked from (fan-out dependency edge). */
+  parentId?: string;
+  /** Other task IDs that must complete before this one (depends-on edges). */
+  dependsOn?: string[];
 }
 
 export interface SessionInsight {
@@ -140,6 +144,10 @@ export class CoordinationHandlers {
     const decision = args.decision as string | undefined;
     const risks = args.risks as string[] | undefined;
     const nextSteps = args.nextSteps as string[] | undefined;
+    const parentId = typeof args.parentId === 'string' ? args.parentId : undefined;
+    const dependsOn = Array.isArray(args.dependsOn)
+      ? (args.dependsOn.filter((d) => typeof d === 'string') as string[])
+      : undefined;
 
     // Auto-capture active page URL if available
     let pageUrl: string | undefined;
@@ -155,6 +163,20 @@ export class CoordinationHandlers {
       // No active page — that's fine
     }
 
+    // Validate dependency references against known handoffs. Non-fatal (warning):
+    // a parent/dependency may be created moments later, so forward refs are allowed.
+    const dependencyWarnings: string[] = [];
+    if (parentId && !this.handoffs.has(parentId)) {
+      dependencyWarnings.push(`parentId "${parentId}" does not match a known task`);
+    }
+    if (dependsOn) {
+      for (const dep of dependsOn) {
+        if (!this.handoffs.has(dep)) {
+          dependencyWarnings.push(`dependsOn "${dep}" does not match a known task`);
+        }
+      }
+    }
+
     const handoff: TaskHandoff = {
       id: randomUUID().slice(0, 8),
       status: 'pending',
@@ -166,6 +188,8 @@ export class CoordinationHandlers {
       nextSteps,
       pageUrl,
       createdAt: Date.now(),
+      ...(parentId ? { parentId } : {}),
+      ...(dependsOn && dependsOn.length > 0 ? { dependsOn } : {}),
     };
 
     this.handoffs.set(handoff.id, handoff);
@@ -182,6 +206,9 @@ export class CoordinationHandlers {
       nextSteps: handoff.nextSteps,
       pageUrl: handoff.pageUrl,
       createdAt: new Date(handoff.createdAt).toISOString(),
+      parentId: handoff.parentId,
+      dependsOn: handoff.dependsOn,
+      dependencyWarnings: dependencyWarnings.length > 0 ? dependencyWarnings : undefined,
       totalActiveHandoffs: this.handoffs.size,
     };
   }
@@ -307,6 +334,7 @@ export class CoordinationHandlers {
       completed,
       failed,
       sessionInsights,
+      dependencyGraph: this.buildDependencyGraph(),
       summary: {
         totalActive: active.length,
         totalCompleted: completed.length,
@@ -318,6 +346,34 @@ export class CoordinationHandlers {
   }
 
   // ── append_session_insight ──
+
+  /**
+   * Build a parent/depends-on graph over all handoffs so a Planner fan-out
+   * (A → B, C where B/C depend on A) can be reconstructed without re-deriving
+   * ordering from prose nextSteps arrays.
+   */
+  private buildDependencyGraph(): {
+    nodes: Array<{ taskId: string; status: string; description: string }>;
+    edges: Array<{ from: string; to: string; type: 'parent' | 'depends-on' }>;
+  } {
+    const nodes = [...this.handoffs.values()].map((h) => ({
+      taskId: h.id,
+      status: h.status,
+      description: h.description,
+    }));
+    const edges: Array<{ from: string; to: string; type: 'parent' | 'depends-on' }> = [];
+    for (const h of this.handoffs.values()) {
+      if (h.parentId) {
+        edges.push({ from: h.parentId, to: h.id, type: 'parent' });
+      }
+      if (h.dependsOn) {
+        for (const dep of h.dependsOn) {
+          edges.push({ from: dep, to: h.id, type: 'depends-on' });
+        }
+      }
+    }
+    return { nodes, edges };
+  }
 
   async handleAppendSessionInsightTool(args: Record<string, unknown>): Promise<ToolResponse> {
     return handleSafe(async () => await this.handleAppendSessionInsight(args));
@@ -381,6 +437,8 @@ export class CoordinationHandlers {
       summary: h.summary,
       keyFindings: h.keyFindings,
       artifacts: h.artifacts,
+      parentId: h.parentId,
+      dependsOn: h.dependsOn,
     };
   }
 

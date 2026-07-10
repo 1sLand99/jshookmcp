@@ -11,6 +11,11 @@ export const coordinationTools: Tool[] = [
       .string('decision', 'Key design decision made in this phase')
       .array('risks', { type: 'string' }, 'Identified risks for the specialist')
       .array('nextSteps', { type: 'string' }, 'Concrete next actions for the specialist')
+      .string(
+        'parentId',
+        'Existing task ID this handoff forks from (builds a parent dependency edge)',
+      )
+      .array('dependsOn', { type: 'string' }, 'Task IDs that must complete before this one')
       .required('description'),
   ),
   tool('complete_task_handoff', (t) =>
