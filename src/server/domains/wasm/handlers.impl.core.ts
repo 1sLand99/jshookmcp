@@ -109,4 +109,10 @@ export class WasmToolHandlers {
   handleWasmInstrumentTrace(args: Record<string, unknown>) {
     return this.externalTools.handleWasmInstrumentTrace(args);
   }
+  handleWasmStringExtractTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleWasmStringExtract(args));
+  }
+  handleWasmStringExtract(args: Record<string, unknown>) {
+    return this.externalTools.handleWasmStringExtract(args);
+  }
 }

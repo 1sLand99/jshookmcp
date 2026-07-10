@@ -126,4 +126,16 @@ export const wasmTools: Tool[] = [
       .string('outputPath', 'Output JS file path. If omitted, auto-generates in artifacts/wasm/')
       .required('inputPath'),
   ),
+  tool('wasm_string_extract', (t) =>
+    t
+      .desc(
+        'Extract printable strings from a .wasm binary, grouped by section, with name-section function-name recovery and classification (url/base64/hex-hash/file-path). Wasm-aware alternative to generic binary strings tools.',
+      )
+      .string('inputPath', 'Path to the .wasm file')
+      .number('minLength', 'Minimum string length to report', { default: 4 })
+      .number('maxStrings', 'Maximum number of strings to return (rest counted only)', {
+        default: 200,
+      })
+      .required('inputPath'),
+  ),
 ];

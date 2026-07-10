@@ -35,8 +35,8 @@ describe('wasm/definitions', () => {
     expect(wasmTools.length).toBeGreaterThan(0);
   });
 
-  it('exports exactly 12 tools', async () => {
-    expect(wasmTools).toHaveLength(12);
+  it('exports exactly 13 tools', async () => {
+    expect(wasmTools).toHaveLength(13);
   });
 
   it('contains all expected tool names', async () => {
@@ -52,6 +52,7 @@ describe('wasm/definitions', () => {
     expect(names).toContain('wasm_memory_inspect');
     expect(names).toContain('wasm_to_c');
     expect(names).toContain('wasm_detect_obfuscation');
+    expect(names).toContain('wasm_string_extract');
   });
 
   it('has unique tool names', async () => {
