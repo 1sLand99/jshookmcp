@@ -3,7 +3,7 @@
     "domain": "adb-bridge",
     "dims": {
       "d1_toolCount": 23,
-      "d2_testFiles": 3,
+      "d2_testFiles": 4,
       "d3_coverageExcluded": [
         "src/server/domains/adb-bridge/handlers.impl.ts",
         "src/server/domains/adb-bridge/handlers.ts"
@@ -119,7 +119,7 @@
     "domain": "coordination",
     "dims": {
       "d1_toolCount": 11,
-      "d2_testFiles": 10,
+      "d2_testFiles": 11,
       "d3_coverageExcluded": [],
       "d4_bareCatch": 5,
       "d5_handleSafeRefs": 13,
@@ -135,7 +135,7 @@
     "domain": "cross-domain",
     "dims": {
       "d1_toolCount": 7,
-      "d2_testFiles": 10,
+      "d2_testFiles": 11,
       "d3_coverageExcluded": [
         "src/server/domains/cross-domain/handlers.ts",
         "src/server/domains/cross-domain/handlers.impl.ts"
@@ -154,7 +154,7 @@
     "domain": "dart-inspector",
     "dims": {
       "d1_toolCount": 12,
-      "d2_testFiles": 17,
+      "d2_testFiles": 18,
       "d3_coverageExcluded": [],
       "d4_bareCatch": 0,
       "d5_handleSafeRefs": 14,
@@ -346,7 +346,7 @@
     "domain": "native-emulator",
     "dims": {
       "d1_toolCount": 22,
-      "d2_testFiles": 64,
+      "d2_testFiles": 65,
       "d3_coverageExcluded": [],
       "d4_bareCatch": 0,
       "d5_handleSafeRefs": 21,
@@ -403,7 +403,7 @@
     "domain": "process",
     "dims": {
       "d1_toolCount": 27,
-      "d2_testFiles": 61,
+      "d2_testFiles": 62,
       "d3_coverageExcluded": [
         "src/server/domains/process/handlers.ts",
         "src/server/domains/process/handlers.impl.core.ts",
@@ -566,14 +566,14 @@
   "wasm": {
     "domain": "wasm",
     "dims": {
-      "d1_toolCount": 12,
-      "d2_testFiles": 8,
+      "d1_toolCount": 13,
+      "d2_testFiles": 9,
       "d3_coverageExcluded": [
         "src/server/domains/wasm/handlers.ts",
         "src/server/domains/wasm/handlers.impl.ts"
       ],
-      "d4_bareCatch": 2,
-      "d5_handleSafeRefs": 13,
+      "d4_bareCatch": 4,
+      "d5_handleSafeRefs": 14,
       "d6_doc": {
         "hasClaude": true,
         "hasScore": true,
@@ -585,11 +585,11 @@
   "webgpu": {
     "domain": "webgpu",
     "dims": {
-      "d1_toolCount": 6,
-      "d2_testFiles": 13,
+      "d1_toolCount": 7,
+      "d2_testFiles": 14,
       "d3_coverageExcluded": [],
-      "d4_bareCatch": 5,
-      "d5_handleSafeRefs": 12,
+      "d4_bareCatch": 6,
+      "d5_handleSafeRefs": 14,
       "d6_doc": {
         "hasClaude": true,
         "hasScore": true,
