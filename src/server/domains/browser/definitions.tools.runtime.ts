@@ -42,6 +42,10 @@ export const browserRuntimeTools: Tool[] = [
       })
       .string('userDataDir', 'Chrome profile directory')
       .array('args', { type: 'string' }, 'Extra Chrome launch args')
+      .string(
+        'sslKeyLogFile',
+        'Path to write Chrome TLS key log (--ssl-key-log). Chrome emits NSS-format secrets (CLIENT_RANDOM/TRAFFIC_SECRET) here; pair with tls_keylog_parse to decrypt captured traffic. Chrome-only, launch-time.',
+      )
       .boolean('enableV8NativesSyntax', 'Enable V8 native syntax for launched Chrome', {
         default: true,
       })

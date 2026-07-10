@@ -307,6 +307,24 @@ describe('BoringsslInspectorHandlers', () => {
     });
   });
 
+  describe('handleTlsKeylogEnable', () => {
+    it('surfaces the browser_launch --ssl-key-log flag with the Node keylog path', async () => {
+      const body = (await handlers.handleTlsKeylogEnable({})) as {
+        enabled: boolean;
+        keyLogPath: string;
+        environmentVariable: string;
+        scope: string;
+        browserLaunch: { flag: string; hint: string };
+      };
+      expect(body.enabled).toBe(true);
+      expect(body.environmentVariable).toBe('SSLKEYLOGFILE');
+      expect(body.scope).toBe('node-process');
+      expect(body.browserLaunch.flag).toContain('--ssl-key-log=');
+      expect(body.browserLaunch.flag).toContain(body.keyLogPath);
+      expect(body.browserLaunch.hint.length).toBeGreaterThan(0);
+    });
+  });
+
   describe('handleCipherSuites', () => {
     it('lists all cipher suites without filter', async () => {
       const result = await handlers.handleCipherSuites({});

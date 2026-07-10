@@ -156,9 +156,16 @@ export class BrowserControlHandlers {
   }
 
   private parseChromeLaunchRequest(args: Record<string, unknown>): ChromeLaunchRequest {
+    const baseArgs = argStringArray(args, 'args');
+    const sslKeyLogFile = argString(args, 'sslKeyLogFile');
+    // Chrome emits NSS-format TLS secrets to this file when launched with
+    // --ssl-key-log; tls_keylog_parse can then decrypt captured traffic.
+    const mergedArgs = sslKeyLogFile
+      ? [...(baseArgs ?? []), `--ssl-key-log=${sslKeyLogFile}`]
+      : baseArgs;
     return {
       headless: this.parseHeadlessArg(args.headless),
-      args: argStringArray(args, 'args'),
+      args: mergedArgs,
       enableV8NativesSyntax: argBool(args, 'enableV8NativesSyntax'),
     };
   }

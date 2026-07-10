@@ -92,4 +92,34 @@ describe('BrowserControlHandlers launch options', () => {
     expect(body['currentUrl']).toBe('about:blank');
     expect(body['totalPages']).toBe(1);
   });
+
+  it('appends --ssl-key-log to launch args when sslKeyLogFile is set', async () => {
+    const { collector, handlers } = createHandlers();
+    await handlers.handleBrowserLaunch({
+      headless: false,
+      args: [],
+      sslKeyLogFile: '/tmp/keys.log',
+      enableV8NativesSyntax: true,
+    });
+    expect(collector.launch).toHaveBeenCalledWith({
+      headless: false,
+      args: ['--ssl-key-log=/tmp/keys.log'],
+      enableV8NativesSyntax: true,
+    });
+  });
+
+  it('merges sslKeyLogFile with existing args', async () => {
+    const { collector, handlers } = createHandlers();
+    await handlers.handleBrowserLaunch({
+      headless: false,
+      args: ['--disable-features=Foo'],
+      sslKeyLogFile: '/tmp/keys.log',
+      enableV8NativesSyntax: false,
+    });
+    expect(collector.launch).toHaveBeenCalledWith({
+      headless: false,
+      args: ['--disable-features=Foo', '--ssl-key-log=/tmp/keys.log'],
+      enableV8NativesSyntax: false,
+    });
+  });
 });

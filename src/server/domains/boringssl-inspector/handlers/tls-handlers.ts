@@ -30,6 +30,14 @@ export class BoringsslInspectorTlsHandlers extends BoringsslInspectorBaseHandler
       enabled: true,
       keyLogPath,
       environmentVariable: 'SSLKEYLOGFILE',
+      // Honesty: SSLKEYLOGFILE env only covers Node-spawned processes. A CDP-driven
+      // Chrome browser ignores it unless launched with --ssl-key-log (browser_launch
+      // sslKeyLogFile). Surface the exact flag so callers wire the browser side.
+      scope: 'node-process',
+      browserLaunch: {
+        flag: `--ssl-key-log=${keyLogPath}`,
+        hint: 'Env var covers Node-side TLS only. To keylog a CDP-driven Chrome browser, relaunch via browser_launch with sslKeyLogFile set (or pass this flag in args) so Chrome emits NSS secrets to the same path.',
+      },
     };
   }
 
