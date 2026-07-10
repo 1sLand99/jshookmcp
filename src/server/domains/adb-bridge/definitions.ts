@@ -191,6 +191,16 @@ export const adbBridgeTools = [
       .number('tail', 'Number of latest logcat records to request from Android.', { default: 500 })
       .number('maxLines', 'Maximum matching lines returned.', { default: 100 })
       .boolean('clearBefore', 'Clear logcat before capture.', { default: false })
+      .enum(
+        'minPriority',
+        ['V', 'D', 'I', 'W', 'E', 'F', 'S'],
+        'Minimum logcat priority to return (e.g. "W" keeps Warn/Error/Fatal/Silent)',
+      )
+      .boolean(
+        'structured',
+        'Parse each line into {timestamp,pid,tid,priority,tag,message} (uses threadtime format)',
+        { default: false },
+      )
       .requiredOpenWorld('serial')
       .query(),
   ),

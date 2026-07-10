@@ -37,6 +37,7 @@ import { handleSafe } from '@server/domains/shared/ResponseBuilder';
 import { asJsonResponse } from '@server/domains/shared/response';
 import type { ToolResponse } from '@server/types';
 import { captureAdbLogcat } from './logcat';
+import { parseLogcatLine, parsePriorityArg, priorityPredicate } from './logcat-parser';
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -1242,13 +1243,17 @@ export class ADBBridgeHandlers {
       }
 
       const regex = pattern ? new RegExp(pattern, 'i') : undefined;
+      const minPriority = parsePriorityArg(argString(args, 'minPriority'));
+      const structured = argBool(args, 'structured') ?? false;
+      const predicate = minPriority ? priorityPredicate(minPriority) : undefined;
       const logcat = await captureAdbLogcat({
         adb,
-        args: [...serialArgs(serial), 'shell', `logcat -d -t ${tail}`],
+        args: [...serialArgs(serial), 'shell', `logcat -d -v threadtime -t ${tail}`],
         timeoutMs: ADB_SHELL_TIMEOUT_MS,
         pid,
         packageName,
         pattern: regex,
+        ...(predicate ? { predicate } : {}),
         maxLines,
       });
 
@@ -1260,7 +1265,9 @@ export class ADBBridgeHandlers {
         pattern,
         tail,
         count: logcat.lines.length,
+        ...(minPriority ? { minPriority } : {}),
         lines: logcat.lines,
+        ...(structured ? { parsedLines: logcat.lines.map(parseLogcatLine) } : {}),
         stderr: logcat.stderr,
         exitCode: logcat.exitCode,
         ...(logcat.signal ? { signal: logcat.signal } : {}),
