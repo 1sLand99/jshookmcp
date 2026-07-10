@@ -3,7 +3,16 @@ import { tool } from '@server/registry/tool-builder';
 
 export const v8InspectorTools: Tool[] = [
   tool('v8_heap_snapshot_capture', (t) =>
-    t.desc('Capture a V8 heap snapshot for offline analysis.').query(),
+    t
+      .desc(
+        'Capture a V8 heap snapshot for offline analysis. The snapshot is persisted to ' +
+          'artifacts/heap-snapshots/ (data + sidecar meta) so it survives a server restart; ' +
+          'set persist=false to keep it in-memory only.',
+      )
+      .boolean('persist', 'Persist to artifacts/heap-snapshots/ (default: true)', {
+        default: true,
+      })
+      .query(),
   ),
   tool('v8_heap_snapshot_analyze', (t) =>
     t
@@ -261,6 +270,44 @@ export const v8InspectorTools: Tool[] = [
       .number('scanDepth', 'Prototype chain scan depth for WeakRef discovery (default: 5)', {
         default: 5,
       })
+      .query(),
+  ),
+  tool('v8_heap_snapshot_list', (t) =>
+    t
+      .desc(
+        'List V8 heap snapshots — both in-memory (current session) and persisted to ' +
+          'artifacts/heap-snapshots/ (survive a server restart). Reports id, capture time, ' +
+          'size, source (in-memory/persisted), simulated flag, and expiry status, plus ' +
+          'aggregate stats. Snapshot payloads are NOT returned (only metadata).',
+      )
+      .boolean('includeExpired', 'Include ttl-expired persisted snapshots (default: false)')
+      .number(
+        'ttlMinutes',
+        'Mark persisted snapshots older than N minutes as expired (default: 0 = no ttl flagging)',
+      )
+      .query(),
+  ),
+  tool('v8_heap_snapshot_delete', (t) =>
+    t
+      .desc(
+        'Delete persisted V8 heap snapshot artifact files (.heapsnapshot data + .meta.json ' +
+          'sidecar) and drop the matching in-memory cache entry. Use deleteAll=true to remove ' +
+          'every persisted snapshot. Does not affect the live V8 heap.',
+      )
+      .string('snapshotId', 'Snapshot ID to delete')
+      .boolean('deleteAll', 'Delete ALL persisted snapshots (snapshotId is ignored when true)')
+      .destructive(),
+  ),
+  tool('v8_heap_snapshot_export', (t) =>
+    t
+      .desc(
+        'Export a heap snapshot as a complete .heapsnapshot JSON file under ' +
+          'artifacts/heap-snapshots/, loadable by the Chrome DevTools Memory panel. The file ' +
+          'path is returned; the snapshot content is written to disk, not injected into the ' +
+          'response (it can be very large).',
+      )
+      .string('snapshotId', 'Snapshot ID to export (must be in-memory or persisted)')
+      .required('snapshotId')
       .query(),
   ),
 ];

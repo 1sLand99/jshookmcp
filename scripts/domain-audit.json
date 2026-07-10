@@ -550,11 +550,11 @@
   "v8-inspector": {
     "domain": "v8-inspector",
     "dims": {
-      "d1_toolCount": 19,
-      "d2_testFiles": 23,
+      "d1_toolCount": 22,
+      "d2_testFiles": 24,
       "d3_coverageExcluded": ["src/server/domains/v8-inspector/handlers.ts"],
-      "d4_bareCatch": 7,
-      "d5_handleSafeRefs": 17,
+      "d4_bareCatch": 16,
+      "d5_handleSafeRefs": 20,
       "d6_doc": {
         "hasClaude": true,
         "hasScore": true,

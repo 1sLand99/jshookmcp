@@ -590,5 +590,8 @@
   "debugger_disassemble": "反汇编当前暂停位置（或指定 scriptId）的 V8 字节码/指令。自动从当前暂停调用帧解析目标 scriptId——在混淆/VM 代码中暂停时很有用，可据此判断是否步入。原生字节码需 V8 natives 语法；当原生提取不可用时，设置 includeSourceFallback 可从源码派生伪字节码。",
   "trace_get_samples": "查询已记录的 CPU profile 采样：mode=top 返回按自用时间最热的函数（按函数聚合）；mode=function 返回单个函数的采样；mode=window 返回某时间戳附近的采样。不内置热点函数库——排序纯粹基于数据投影，由调用者判断何为热点。",
   "wasm_string_extract": "从 .wasm 二进制中提取可打印字符串，按 section 分组，支持 name section 函数名恢复与分类（url/base64/hex-hash/file-path）。是通用二进制字符串工具的 wasm 专用替代。",
-  "webgpu_shader_source_capture": "捕获运行中应用通过 GPUDevice.createShaderModule 编译的 WGSL shader 源码——这是揭示计算/渲染管线实际运算内容（如物理 vs. 挖矿）的唯一产物。配合 webgpu_capture_commands 可重建每次 draw/dispatch 操作的数据。"
+  "webgpu_shader_source_capture": "捕获运行中应用通过 GPUDevice.createShaderModule 编译的 WGSL shader 源码——这是揭示计算/渲染管线实际运算内容（如物理 vs. 挖矿）的唯一产物。配合 webgpu_capture_commands 可重建每次 draw/dispatch 操作的数据。",
+  "v8_heap_snapshot_list": "列出 V8 堆快照——含内存中（当前会话）与持久化到 artifacts/heap-snapshots/（重启后仍保留）的快照，返回 ID、捕获时间、大小、来源、模拟标记、过期状态及聚合统计。仅返回元数据，不含快照内容。",
+  "v8_heap_snapshot_delete": "删除持久化的 V8 堆快照文件（.heapsnapshot 数据 + .meta.json 侧车），同时清除内存中对应缓存条目。设置 deleteAll=true 可删除全部持久化快照，不影响运行中的 V8 堆。",
+  "v8_heap_snapshot_export": "将堆快照导出为完整的 .heapsnapshot JSON 文件，存入 artifacts/heap-snapshots/，可由 Chrome DevTools Memory 面板加载。返回文件路径，快照内容写入磁盘而非注入响应（文件可能很大）。"
 }

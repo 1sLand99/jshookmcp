@@ -49,6 +49,7 @@ const MANAGED_ARTIFACT_CATEGORIES: readonly ArtifactCategory[] = Object.freeze([
   'sessions',
   'offloaded',
   'tmp',
+  'heap-snapshots',
 ]);
 
 export function getArtifactRetentionConfig(

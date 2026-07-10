@@ -1,10 +1,17 @@
 import { V8InspectorClient } from '@modules/v8-inspector/V8InspectorClient';
+import { enforceSnapshotRetention, persistSnapshot } from './snapshot-persistence';
 
 export interface StoredHeapSnapshot {
   id: string;
   chunks: string[];
   capturedAt: string;
   sizeBytes: number;
+  /** True when the snapshot is a degraded/size-only capture rather than real CDP data. */
+  simulated?: boolean;
+  /** Optional provenance hint (page URL) captured alongside the snapshot. */
+  targetUrl?: string | null;
+  /** Absolute + project-relative path of the persisted .heapsnapshot file, when written. */
+  persisted?: { absolutePath: string; displayPath: string };
 }
 
 const snapshotCache = new Map<string, StoredHeapSnapshot>();
@@ -14,6 +21,10 @@ export interface HeapSnapshotHandlerOptions {
   getSnapshot: () => string | null;
   setSnapshot: (snapshot: string | null) => void;
   client?: V8InspectorClient;
+  /** Persist the captured snapshot to artifacts/heap-snapshots/ (default: true). */
+  persist?: boolean;
+  /** Optional accessor for the current page URL, recorded as snapshot provenance. */
+  getTargetUrl?: () => Promise<string | null>;
 }
 
 export function getSnapshotCache(): Map<string, StoredHeapSnapshot> {
@@ -31,6 +42,18 @@ export function storeSnapshot(snapshot: StoredHeapSnapshot): StoredHeapSnapshot 
 
 export function getSnapshot(snapshotId: string): StoredHeapSnapshot | undefined {
   return snapshotCache.get(snapshotId);
+}
+
+/**
+ * Read optional retention caps from the environment. Both default to 0
+ * (no eviction) so persistence never surprises the user with deletions; set
+ * MCP_V8_HEAP_SNAPSHOT_MAX_COUNT / MCP_V8_HEAP_SNAPSHOT_MAX_TOTAL_MB to bound it.
+ */
+function getRetentionConfig(): { maxCount: number; maxTotalBytes: number } {
+  const env = process.env;
+  const maxCount = Math.max(0, parseInt(env.MCP_V8_HEAP_SNAPSHOT_MAX_COUNT ?? '0', 10) || 0);
+  const maxTotalMb = Math.max(0, parseInt(env.MCP_V8_HEAP_SNAPSHOT_MAX_TOTAL_MB ?? '0', 10) || 0);
+  return { maxCount, maxTotalBytes: maxTotalMb * 1024 * 1024 };
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -64,10 +87,7 @@ function unwrapRuntimeValue(value: unknown): unknown {
   return value;
 }
 
-export async function handleHeapSnapshotCapture(
-  _args: Record<string, unknown>,
-  options: HeapSnapshotHandlerOptions,
-): Promise<{
+interface CaptureReturn {
   success: boolean;
   snapshotId: string;
   capturedAt: string;
@@ -75,15 +95,88 @@ export async function handleHeapSnapshotCapture(
   chunks: string[];
   simulated: boolean;
   warnings: string[];
-}> {
+  persisted?: { displayPath: string; bytesWritten: number };
+  evicted?: string[];
+}
+
+export async function handleHeapSnapshotCapture(
+  _args: Record<string, unknown>,
+  options: HeapSnapshotHandlerOptions,
+): Promise<CaptureReturn> {
   const snapshotId = `snapshot_${Date.now().toString(36)}`;
   const capturedAt = new Date().toISOString();
-  const chunks: string[] = [];
   const warnings: string[] = [];
+  const persist = options.persist !== false;
+
+  let targetUrl: string | null = null;
+  if (persist && options.getTargetUrl) {
+    try {
+      targetUrl = await options.getTargetUrl();
+    } catch {
+      targetUrl = null;
+    }
+  }
+
+  /**
+   * Persist (when enabled), enforce retention caps, and build the final
+   * capture return. Persistence is fail-soft: a disk failure pushes a warning
+   * but the in-memory snapshot remains usable.
+   */
+  const finalize = async (
+    stored: StoredHeapSnapshot,
+    simulated: boolean,
+  ): Promise<CaptureReturn> => {
+    options.setSnapshot(stored.id);
+    const base: CaptureReturn = {
+      success: true,
+      snapshotId: stored.id,
+      capturedAt: stored.capturedAt,
+      sizeBytes: stored.sizeBytes,
+      chunks: [],
+      simulated,
+      warnings,
+    };
+
+    if (!persist) {
+      return base;
+    }
+
+    try {
+      const persisted = await persistSnapshot({
+        id: stored.id,
+        chunks: stored.chunks,
+        capturedAt: stored.capturedAt,
+        sizeBytes: stored.sizeBytes,
+        simulated,
+        targetUrl,
+      });
+      // Refresh the cache entry so list/export can resolve the on-disk path.
+      snapshotCache.set(stored.id, {
+        ...stored,
+        ...(typeof targetUrl === 'string' ? { targetUrl } : {}),
+        persisted: { absolutePath: persisted.absolutePath, displayPath: persisted.displayPath },
+      });
+
+      const retention = getRetentionConfig();
+      const evicted = await enforceSnapshotRetention(retention);
+
+      return {
+        ...base,
+        persisted: { displayPath: persisted.displayPath, bytesWritten: persisted.bytesWritten },
+        ...(evicted.evictedIds.length > 0 ? { evicted: evicted.evictedIds } : {}),
+      };
+    } catch (e) {
+      warnings.push(
+        `heap snapshot persistence failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+      return base;
+    }
+  };
 
   if (options.client) {
     // Real CDP heap snapshot capture
     try {
+      const chunks: string[] = [];
       const totalSize = await options.client.takeHeapSnapshot((chunk) => {
         chunks.push(chunk);
       });
@@ -92,17 +185,9 @@ export async function handleHeapSnapshotCapture(
         chunks,
         capturedAt,
         sizeBytes: totalSize,
-      });
-      options.setSnapshot(snapshotId);
-      return {
-        success: true,
-        snapshotId: stored.id,
-        capturedAt: stored.capturedAt,
-        sizeBytes: stored.sizeBytes,
-        chunks: [],
         simulated: false,
-        warnings,
-      };
+      });
+      return await finalize(stored, false);
     } catch (e: unknown) {
       // Fall through to graceful degradation
       warnings.push(
@@ -163,17 +248,9 @@ export async function handleHeapSnapshotCapture(
         chunks: [`{"simulated":true,"sizeBytes":${sizeBytes}}`],
         capturedAt,
         sizeBytes,
-      });
-      options.setSnapshot(snapshotId);
-      return {
-        success: true,
-        snapshotId: stored.id,
-        capturedAt: stored.capturedAt,
-        sizeBytes: stored.sizeBytes,
-        chunks: [],
         simulated: true,
-        warnings,
-      }; // PageController fallback
+      });
+      return await finalize(stored, true);
     }
   } catch (e: unknown) {
     // Fall through to minimal fallback
@@ -214,17 +291,9 @@ export async function handleHeapSnapshotCapture(
         : ['{}'],
     capturedAt,
     sizeBytes: fallbackSizeBytes,
-  });
-  options.setSnapshot(snapshotId);
-  return {
-    success: true,
-    snapshotId: stored.id,
-    capturedAt: stored.capturedAt,
-    sizeBytes: stored.sizeBytes,
-    chunks: [],
     simulated: true,
-    warnings,
-  }; // Minimal fallback
+  });
+  return await finalize(stored, true);
 }
 
 export async function handleHeapSearch(

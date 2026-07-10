@@ -12,6 +12,13 @@ import { getSnapshotCache, handleHeapSnapshotCapture } from './heap-snapshot';
 import { handleBytecodeExtract } from './bytecode-extract';
 import { handleJitInspect } from './jit-inspect';
 import { getSnapshot } from './heap-snapshot';
+import {
+  deleteAllPersistedSnapshots,
+  deletePersistedSnapshot,
+  listPersistedSnapshots,
+  loadPersistedSnapshot,
+} from './snapshot-persistence';
+import { resolveArtifactPath } from '@utils/artifacts';
 
 export interface V8InspectorDomainDependencies {
   ctx: MCPServerContext;
@@ -72,6 +79,9 @@ export class V8InspectorHandlers {
       v8_heap_sampling: (toolArgs) => this.v8_heap_sampling(toolArgs),
       v8_allocation_track: (toolArgs) => this.v8_allocation_track(toolArgs),
       v8_weakrefs_inspect: (toolArgs) => this.v8_weakrefs_inspect(toolArgs),
+      v8_heap_snapshot_list: (toolArgs) => this.v8_heap_snapshot_list(toolArgs),
+      v8_heap_snapshot_delete: (toolArgs) => this.v8_heap_snapshot_delete(toolArgs),
+      v8_heap_snapshot_export: (toolArgs) => this.v8_heap_snapshot_export(toolArgs),
     };
 
     const handler = dispatchTable[toolName];
@@ -166,6 +176,8 @@ export class V8InspectorHandlers {
       requirePageController(this.deps.ctx);
       const getPage = createPageGetter(this.deps.ctx);
 
+      const persist = typeof args.persist === 'boolean' ? args.persist : true;
+
       const result = await handleHeapSnapshotCapture(args, {
         getPage,
         getSnapshot: () => this.currentSnapshotId,
@@ -173,6 +185,17 @@ export class V8InspectorHandlers {
           this.currentSnapshotId = id;
         },
         client: this.deps.client,
+        persist,
+        getTargetUrl: persist
+          ? async () => {
+              try {
+                const page = await getPage();
+                return (page as { url?: () => string })?.url?.() ?? null;
+              } catch {
+                return null;
+              }
+            }
+          : undefined,
       });
 
       // handleHeapSnapshotCapture always returns {success:true,…} (graceful
@@ -186,6 +209,176 @@ export class V8InspectorHandlers {
       }
 
       return result;
+    });
+  }
+
+  async v8_heap_snapshot_list(args: ToolArgs): Promise<ToolResponse> {
+    return handleSafe(async () => {
+      const includeExpired = typeof args.includeExpired === 'boolean' ? args.includeExpired : false;
+      const ttlMinutes =
+        typeof args.ttlMinutes === 'number' && args.ttlMinutes > 0 ? args.ttlMinutes : 0;
+      const ttlMs = ttlMinutes > 0 ? ttlMinutes * 60_000 : 0;
+
+      const memCache = getSnapshotCache();
+      const persistedAll = await listPersistedSnapshots(ttlMs > 0 ? { ttlMs } : {});
+      const persistedById = new Map(persistedAll.map((p) => [p.id, p]));
+
+      interface ListedSnapshotEntry {
+        id: string;
+        capturedAt: string;
+        sizeBytes: number;
+        simulated?: boolean;
+        targetUrl?: string | null;
+        displayPath?: string;
+        inMemory: boolean;
+        persisted: boolean;
+        expired: boolean;
+      }
+
+      const seen = new Set<string>();
+      const snapshots: ListedSnapshotEntry[] = [];
+      let totalBytes = 0;
+
+      for (const [id, snap] of memCache) {
+        seen.add(id);
+        const persistedMeta = persistedById.get(id);
+        const expired = persistedMeta?.expired ?? false;
+        if (!includeExpired && expired) {
+          continue;
+        }
+        const entry: ListedSnapshotEntry = {
+          id,
+          capturedAt: snap.capturedAt,
+          sizeBytes: snap.sizeBytes,
+          simulated: snap.simulated,
+          inMemory: true,
+          persisted: !!snap.persisted || persistedMeta !== undefined,
+          expired,
+          ...(snap.targetUrl !== null || persistedMeta?.targetUrl !== null
+            ? { targetUrl: snap.targetUrl ?? persistedMeta?.targetUrl ?? null }
+            : {}),
+          ...(snap.persisted?.displayPath ? { displayPath: snap.persisted.displayPath } : {}),
+        };
+        snapshots.push(entry);
+        totalBytes += snap.sizeBytes;
+      }
+
+      for (const p of persistedAll) {
+        if (seen.has(p.id)) {
+          continue;
+        }
+        if (!includeExpired && p.expired) {
+          continue;
+        }
+        const entry: ListedSnapshotEntry = {
+          id: p.id,
+          capturedAt: p.capturedAt,
+          sizeBytes: p.sizeBytes,
+          simulated: p.simulated,
+          inMemory: false,
+          persisted: true,
+          expired: p.expired,
+          ...(p.targetUrl !== null ? { targetUrl: p.targetUrl } : {}),
+        };
+        snapshots.push(entry);
+        totalBytes += p.sizeBytes;
+      }
+
+      snapshots.sort((a, b) =>
+        a.capturedAt < b.capturedAt ? 1 : a.capturedAt > b.capturedAt ? -1 : 0,
+      );
+
+      const inMemoryCount = snapshots.filter((s) => s.inMemory).length;
+      const persistedCount = snapshots.filter((s) => s.persisted).length;
+      const expiredCount = persistedAll.filter((p) => p.expired && !seen.has(p.id)).length;
+
+      return {
+        snapshots,
+        count: snapshots.length,
+        totalBytes,
+        expiredCount: includeExpired ? persistedAll.filter((p) => p.expired).length : expiredCount,
+        inMemoryCount,
+        persistedCount,
+      };
+    });
+  }
+
+  async v8_heap_snapshot_delete(args: ToolArgs): Promise<ToolResponse> {
+    return handleSafe(async () => {
+      const deleteAll = typeof args.deleteAll === 'boolean' ? args.deleteAll : false;
+
+      if (deleteAll) {
+        const disk = await deleteAllPersistedSnapshots();
+        // Also clear the in-memory cache so stale entries don't linger.
+        const cache = getSnapshotCache();
+        let cacheCount = 0;
+        for (const [id, snap] of cache) {
+          if (snap.persisted) {
+            cache.delete(id);
+            cacheCount += 1;
+          }
+        }
+        return {
+          deleteAll: true,
+          deletedCount: disk.deletedCount,
+          freedBytes: disk.freedBytes,
+          cacheEntriesDropped: cacheCount,
+        };
+      }
+
+      const snapshotId = argStringRequired(args, 'snapshotId');
+      const disk = await deletePersistedSnapshot(snapshotId);
+      const cache = getSnapshotCache();
+      let cacheDropped = false;
+      if (cache.has(snapshotId)) {
+        cache.delete(snapshotId);
+        cacheDropped = true;
+      }
+
+      return {
+        snapshotId,
+        deleted: disk.deleted,
+        freedBytes: disk.freedBytes,
+        cacheDropped,
+      };
+    });
+  }
+
+  async v8_heap_snapshot_export(args: ToolArgs): Promise<ToolResponse> {
+    return handleSafe(async () => {
+      const snapshotId = argStringRequired(args, 'snapshotId');
+
+      // Resolve snapshot data — in-memory first, then try disk.
+      let chunks: string[];
+      const inMem = getSnapshot(snapshotId);
+      if (inMem) {
+        chunks = inMem.chunks;
+      } else {
+        const loaded = await loadPersistedSnapshot(snapshotId);
+        if (!loaded) {
+          throw new Error(`Snapshot ${snapshotId} not found (in-memory or persisted)`);
+        }
+        chunks = loaded.chunks;
+      }
+
+      const { absolutePath, displayPath } = await resolveArtifactPath({
+        category: 'heap-snapshots',
+        toolName: 'v8_heap_snapshot_export',
+        target: snapshotId,
+        ext: 'heapsnapshot',
+      });
+
+      // Concatenate chunks into the full .heapsnapshot JSON and write atomically.
+      const body = chunks.join('');
+      const { writeFile } = await import('node:fs/promises');
+      await writeFile(absolutePath, body, 'utf8');
+
+      return {
+        snapshotId,
+        absolutePath,
+        displayPath,
+        sizeBytes: Buffer.byteLength(body, 'utf8'),
+      };
     });
   }
 

@@ -77,8 +77,14 @@ describe('V8InspectorHandlers.handle — dispatch', () => {
     }
   });
 
-  it('routes v8_object_compare, v8_wasm_inspect', async () => {
-    for (const tool of ['v8_object_compare', 'v8_wasm_inspect']) {
+  it('routes v8_object_compare, v8_wasm_inspect, v8_heap_snapshot_list, v8_heap_snapshot_delete, v8_heap_snapshot_export', async () => {
+    for (const tool of [
+      'v8_object_compare',
+      'v8_wasm_inspect',
+      'v8_heap_snapshot_list',
+      'v8_heap_snapshot_delete',
+      'v8_heap_snapshot_export',
+    ]) {
       const r = await tryDispatch(tool, {});
       expect(r).toBeDefined();
     }

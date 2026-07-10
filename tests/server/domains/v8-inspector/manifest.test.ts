@@ -32,6 +32,9 @@ describe('v8-inspector manifest', () => {
     expect(toolNames).toContain('v8_heap_diff');
     expect(toolNames).toContain('v8_object_inspect');
     expect(toolNames).toContain('v8_heap_stats');
+    expect(toolNames).toContain('v8_heap_snapshot_list');
+    expect(toolNames).toContain('v8_heap_snapshot_delete');
+    expect(toolNames).toContain('v8_heap_snapshot_export');
   });
 
   it('should have prerequisites configured', async () => {
@@ -68,6 +71,9 @@ describe('v8-inspector manifest', () => {
     expect(typeof handler.v8_heap_diff).toBe('function');
     expect(typeof handler.v8_object_inspect).toBe('function');
     expect(typeof handler.v8_heap_stats).toBe('function');
+    expect(typeof handler.v8_heap_snapshot_list).toBe('function');
+    expect(typeof handler.v8_heap_snapshot_delete).toBe('function');
+    expect(typeof handler.v8_heap_snapshot_export).toBe('function');
     expect(typeof handler.handle).toBe('function');
 
     // Clean up
@@ -110,7 +116,9 @@ describe('v8-inspector manifest', () => {
     const handler = await manifest.ensure(mockCtx);
     const result = await handler.v8_heap_snapshot_capture({});
 
-    expect(pageController.getPage).toHaveBeenCalledOnce();
+    // getPage is called twice: capture creates a CDP session, then the persist
+    // getTargetUrl callback probes again for the page URL provenance hint.
+    expect(pageController.getPage).toHaveBeenCalled();
     expect(page.createCDPSession).toHaveBeenCalledOnce();
     expect(parseBody(result)).toMatchObject({
       success: true,

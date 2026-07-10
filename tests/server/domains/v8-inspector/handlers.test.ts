@@ -41,6 +41,9 @@ describe('V8InspectorHandlers', () => {
       expect(typeof handlers.v8_heap_diff).toBe('function');
       expect(typeof handlers.v8_object_inspect).toBe('function');
       expect(typeof handlers.v8_heap_stats).toBe('function');
+      expect(typeof handlers.v8_heap_snapshot_list).toBe('function');
+      expect(typeof handlers.v8_heap_snapshot_delete).toBe('function');
+      expect(typeof handlers.v8_heap_snapshot_export).toBe('function');
       expect(typeof handlers.handle).toBe('function');
     });
   });
@@ -109,6 +112,62 @@ describe('V8InspectorHandlers', () => {
         }),
       );
       expect(body).toMatchObject({ success: false, error: 'Snapshot missing not found' });
+    });
+  });
+
+  describe('v8_heap_snapshot_list', () => {
+    it('returns structured listing with snapshots array and stats', async () => {
+      const handlers = new V8InspectorHandlers(createMockDeps());
+      const body = parseBody(await handlers.v8_heap_snapshot_list({}));
+      expect(body.success).toBe(true);
+      expect(Array.isArray((body as any).snapshots)).toBe(true);
+      // snapshots count depends on other test artifacts on disk; structure is the invariant.
+      expect(typeof (body as any).count).toBe('number');
+      expect(typeof (body as any).totalBytes).toBe('number');
+    });
+
+    it('respects includeExpired option', async () => {
+      const handlers = new V8InspectorHandlers(createMockDeps());
+      const body = parseBody(await handlers.v8_heap_snapshot_list({ includeExpired: true }));
+      expect(body.success).toBe(true);
+    });
+  });
+
+  describe('v8_heap_snapshot_delete', () => {
+    it('requires snapshotId when deleteAll is not set', async () => {
+      const handlers = new V8InspectorHandlers(createMockDeps());
+      const body = parseBody(await handlers.v8_heap_snapshot_delete({}));
+      expect(body).toMatchObject({
+        success: false,
+        error: 'Missing required string argument: "snapshotId"',
+      });
+    });
+
+    it('handles deleteAll=true without snapshotId', async () => {
+      const handlers = new V8InspectorHandlers(createMockDeps());
+      const body = parseBody(await handlers.v8_heap_snapshot_delete({ deleteAll: true }));
+      expect(body.success).toBe(true);
+      expect((body as any).deleteAll).toBe(true);
+      // deletedCount may be non-zero if snapshot-persistence tests left disk artifacts.
+      expect(typeof (body as any).deletedCount).toBe('number');
+    });
+  });
+
+  describe('v8_heap_snapshot_export', () => {
+    it('requires snapshotId', async () => {
+      const handlers = new V8InspectorHandlers(createMockDeps());
+      const body = parseBody(await handlers.v8_heap_snapshot_export({}));
+      expect(body).toMatchObject({
+        success: false,
+        error: 'Missing required string argument: "snapshotId"',
+      });
+    });
+
+    it('fails if snapshot not found', async () => {
+      const handlers = new V8InspectorHandlers(createMockDeps());
+      const body = parseBody(await handlers.v8_heap_snapshot_export({ snapshotId: 'nonexistent' }));
+      expect(body.success).toBe(false);
+      expect(String((body as any).error)).toMatch(/not found/);
     });
   });
 });

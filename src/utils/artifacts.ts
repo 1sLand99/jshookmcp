@@ -17,7 +17,8 @@ export type ArtifactCategory =
   | 'captures'
   | 'sessions'
   | 'offloaded'
-  | 'tmp';
+  | 'tmp'
+  | 'heap-snapshots';
 
 const ARTIFACT_BASE = 'artifacts';
 
