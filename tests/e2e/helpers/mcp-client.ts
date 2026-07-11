@@ -263,7 +263,14 @@ export class MCPTestClient {
 
     try {
       const resp = await withTimeout(
-        this.client.callTool({ name, arguments: args ?? {}, ...(meta ? { _meta: meta } : {}) }),
+        this.client.callTool(
+          { name, arguments: args ?? {}, ...(meta ? { _meta: meta } : {}) },
+          CallToolResultSchema,
+          // Per-request timeout overrides the MCP SDK default 60s
+          // (DEFAULT_REQUEST_TIMEOUT_MSEC) so slow tools (e.g. worker
+          // HeapProfiler captures) can complete instead of -32001 timing out.
+          { timeout: timeoutMs },
+        ),
         timeoutMs,
         name,
       );

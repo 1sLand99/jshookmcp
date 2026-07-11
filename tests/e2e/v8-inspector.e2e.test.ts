@@ -43,13 +43,30 @@ function findFirstString(value: unknown, keys: readonly string[]): string | null
 
 describe.skipIf(!TARGET_URL)('V8 Inspector E2E', { timeout: 300_000, sequential: true }, () => {
   const client = new MCPTestClient();
+  // Local HTTP origin for the worker test. E2E_TARGET_URL is unreachable in
+  // the no-network sandbox (page_navigate → chrome-error://), and dedicated
+  // workers on an error page are unstable: their borrowed CDP managed session
+  // gets reaped before capture runs, so capture falls back to the page.
+  // Serving http://127.0.0.1 gives the worker a stable origin without network.
+  let httpServer: import('node:http').Server | null = null;
+  let workerOrigin = '';
 
   beforeAll(async () => {
     await client.connect();
+    const http = await import('node:http');
+    httpServer = http.createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end('<!doctype html><html><body><script>window.__httpReady=true;</script></body></html>');
+    });
+    await new Promise<void>((resolve) => httpServer!.listen(0, '127.0.0.1', resolve));
+    const addr = httpServer!.address();
+    const port = typeof addr === 'object' && addr ? addr.port : 0;
+    workerOrigin = `http://127.0.0.1:${port}/`;
   });
 
   afterAll(async () => {
     await client.cleanup();
+    if (httpServer) await new Promise<void>((resolve) => httpServer!.close(() => resolve()));
   });
 
   test('browser launch, attach, capture heap snapshot, search by address', async () => {
@@ -157,12 +174,11 @@ describe.skipIf(!TARGET_URL)('V8 Inspector E2E', { timeout: 300_000, sequential:
       return;
     }
 
-    // Dedicated workers (blob URL) need a real HTTP(S) origin — data: URLs are
-    // opaque-origin and Worker construction fails. TARGET_URL is guaranteed by
-    // the describe.skipIf(!TARGET_URL) guard above.
+    // Navigate to the local HTTP origin so the dedicated worker has a stable
+    // http origin (not the network-unreachable error page).
     const navigate = await client.call(
       'page_navigate',
-      { url: TARGET_URL, waitUntil: 'load' },
+      { url: workerOrigin, waitUntil: 'load' },
       60_000,
     );
     expect(navigate.result.status).not.toBe('FAIL');

@@ -87,7 +87,7 @@
     "format": "oxfmt \"src/**\" \"tests/**\" \"!tests/tmp/**\" --write --no-error-on-unmatched-pattern",
     "format:check": "oxfmt \"src/**\" \"tests/**\" \"!tests/tmp/**\" --check --no-error-on-unmatched-pattern",
     "test": "node scripts/run-vitest-smart.mjs run",
-    "test:e2e": "cross-env E2E_TARGET_URL=https://vmoranv.github.io/jshookmcp/ vitest run --config tests/e2e/vitest.e2e.config.ts",
+    "test:e2e": "node scripts/build.mjs && cross-env E2E_TARGET_URL=https://vmoranv.github.io/jshookmcp/ vitest run --config tests/e2e/vitest.e2e.config.ts",
     "test:e2e:portable": "cross-env E2E_TARGET_URL=https://vmoranv.github.io/jshookmcp/ PUPPETEER_HEADLESS=true vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/portable-smoke.e2e.test.ts tests/e2e/process-lifecycle.test.ts",
     "test:e2e:protocol": "vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/protocol-pure-compute.e2e.test.ts",
     "test:e2e:protocol-runtime": "vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/protocol-runtime-assisted.e2e.test.ts",
