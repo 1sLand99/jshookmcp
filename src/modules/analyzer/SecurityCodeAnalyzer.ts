@@ -96,6 +96,36 @@ export function identifySecurityRisks(
               recommendation: 'Use modern DOM manipulation methods instead',
             });
           }
+
+          // Prototype pollution: obj.__proto__ = val or obj.constructor.prototype.x = val
+          const assignFullName = getMemberExpressionName(left);
+          if (
+            propName === '__proto__' ||
+            /(^|\.)constructor\.prototype(\.|$)/.test(assignFullName)
+          ) {
+            risks.push({
+              type: 'prototype-pollution',
+              severity: 'high',
+              location: { file: 'current', line },
+              description: `Potential prototype pollution: assignment to ${assignFullName}`,
+              recommendation:
+                'Avoid __proto__/constructor.prototype assignment; use Object.create(null) or Map for untrusted keys',
+            });
+          }
+
+          // Open redirect: location.href/assign/replace = non-literal
+          if (/^location\.(href|assign|replace)$/i.test(assignFullName)) {
+            const right = path.node.right;
+            if (!t.isStringLiteral(right) && !t.isNumericLiteral(right)) {
+              risks.push({
+                type: 'open-redirect',
+                severity: 'high',
+                location: { file: 'current', line },
+                description: `Potential open redirect: ${assignFullName} assigned a non-literal value`,
+                recommendation: 'Validate redirect targets against an allowlist of trusted origins',
+              });
+            }
+          }
         }
       },
 
@@ -156,6 +186,106 @@ export function identifySecurityRisks(
                 description: 'Potential SQL injection: Query built with string concatenation',
                 recommendation: 'Use parameterized queries or prepared statements',
               });
+            }
+          }
+        }
+
+        // Prototype pollution: recursive merge/extend/deepCopy/defaults with 2+ args
+        const mergeNames = new Set([
+          'merge',
+          'extend',
+          'deepCopy',
+          'deepMerge',
+          'defaults',
+          'assign',
+        ]);
+        if (
+          t.isIdentifier(callee) &&
+          mergeNames.has(callee.name) &&
+          path.node.arguments.length >= 2
+        ) {
+          risks.push({
+            type: 'prototype-pollution',
+            severity: 'medium',
+            location: { file: 'current', line },
+            description: `Potential prototype pollution: ${callee.name}() merges untrusted data`,
+            recommendation:
+              'Use a merge that blocks __proto__/constructor keys, or Object.create(null)',
+          });
+        }
+        // Object.assign({}, userInput) — empty-target assign with untrusted source
+        if (t.isMemberExpression(callee)) {
+          const calleeFullName = getMemberExpressionName(callee);
+          if (calleeFullName === 'Object.assign' && path.node.arguments.length >= 2) {
+            const target = path.node.arguments[0];
+            if (t.isObjectExpression(target) && target.properties.length === 0) {
+              risks.push({
+                type: 'prototype-pollution',
+                severity: 'medium',
+                location: { file: 'current', line },
+                description:
+                  'Potential prototype pollution: Object.assign({}, untrusted) copies __proto__',
+                recommendation: 'Use Object.create(null) as the target or sanitize source keys',
+              });
+            }
+          }
+        }
+
+        // SSRF: fetch/axios/request or http/https/xhr.<method> with a non-literal URL
+        const ssrfIdCallees = new Set(['fetch', 'axios', 'request']);
+        const ssrfMethods = new Set(['get', 'post', 'put', 'delete', 'request', 'open']);
+        const ssrfObjects = new Set(['http', 'https', 'axios', 'xhr']);
+        const urlArg = path.node.arguments[0];
+        const isNonLiteralUrl =
+          urlArg !== undefined && !t.isStringLiteral(urlArg) && !t.isNumericLiteral(urlArg);
+        if (
+          isNonLiteralUrl &&
+          ((t.isIdentifier(callee) && ssrfIdCallees.has(callee.name)) ||
+            (t.isMemberExpression(callee) &&
+              t.isIdentifier(callee.property) &&
+              ssrfMethods.has(callee.property.name) &&
+              t.isIdentifier(callee.object) &&
+              ssrfObjects.has(callee.object.name)))
+        ) {
+          risks.push({
+            type: 'ssrf',
+            severity: 'high',
+            location: { file: 'current', line },
+            description: 'Potential SSRF: network request with a non-literal URL argument',
+            recommendation:
+              'Validate the URL against an allowlist of trusted hosts before requesting',
+          });
+        }
+
+        // Path traversal: fs.readFile/writeFile/etc or path.join/resolve with a user-input-named arg
+        const fsMethods = new Set([
+          'readFile',
+          'writeFile',
+          'readFileSync',
+          'writeFileSync',
+          'createReadStream',
+          'createWriteStream',
+          'unlink',
+          'open',
+        ]);
+        const userInputRe = /^(path|file|dir|name|filename|userInput|req|query|params|input)/i;
+        const isFsCall =
+          (t.isMemberExpression(callee) &&
+            t.isIdentifier(callee.property) &&
+            fsMethods.has(callee.property.name)) ||
+          (t.isIdentifier(callee) && (callee.name === 'join' || callee.name === 'resolve'));
+        if (isFsCall) {
+          for (const arg of path.node.arguments) {
+            if (t.isIdentifier(arg) && userInputRe.test(arg.name)) {
+              risks.push({
+                type: 'path-traversal',
+                severity: 'high',
+                location: { file: 'current', line },
+                description: `Potential path traversal: filesystem call with user-input-named arg "${arg.name}"`,
+                recommendation:
+                  'Normalize and confine paths to a trusted base directory (path.resolve + prefix check)',
+              });
+              break;
             }
           }
         }

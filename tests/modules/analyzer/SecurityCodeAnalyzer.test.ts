@@ -74,6 +74,45 @@ describe('SecurityCodeAnalyzer', () => {
     expect(risks.some((r) => r.description.includes('Math.random'))).toBe(true);
   });
 
+  it('detects prototype pollution, SSRF, open redirect, and path traversal', () => {
+    const code = `
+      obj.__proto__ = malicious;
+      merge(defaults, userInput);
+      fetch(userUrl);
+      location.href = redirectTarget;
+      fs.readFile(filePath, cb);
+    `;
+    const risks = identifySecurityRisks(code, {});
+
+    expect(risks.some((r) => r.type === 'prototype-pollution')).toBe(true);
+    expect(risks.some((r) => r.type === 'ssrf')).toBe(true);
+    expect(risks.some((r) => r.type === 'open-redirect')).toBe(true);
+    expect(risks.some((r) => r.type === 'path-traversal')).toBe(true);
+  });
+
+  it('does not flag literal URLs / redirect targets / clean merges (regression)', () => {
+    const code = `
+      fetch('https://api.example.com/data');
+      location.href = '/home';
+      merge(defaults, fixedConfig);
+      fs.readStaticBuffer();
+    `;
+    const risks = identifySecurityRisks(code, {});
+
+    expect(risks.some((r) => r.type === 'ssrf')).toBe(false);
+    expect(risks.some((r) => r.type === 'open-redirect')).toBe(false);
+  });
+
+  it('flags Object.assign({}, untrusted) and constructor.prototype writes as prototype pollution', () => {
+    const code = `
+      Object.assign({}, req.body);
+      target.constructor.prototype.tainted = true;
+    `;
+    const risks = identifySecurityRisks(code, {});
+
+    expect(risks.filter((r) => r.type === 'prototype-pollution').length).toBeGreaterThanOrEqual(2);
+  });
+
   it('covers remaining assignment, call, and hardcoded secret branches', () => {
     const code = `
       element.outerHTML = html;

@@ -147,7 +147,16 @@ export interface TaintPath {
 }
 
 export interface SecurityRisk {
-  type: 'xss' | 'sql-injection' | 'csrf' | 'sensitive-data' | 'other';
+  type:
+    | 'xss'
+    | 'sql-injection'
+    | 'csrf'
+    | 'sensitive-data'
+    | 'prototype-pollution'
+    | 'ssrf'
+    | 'open-redirect'
+    | 'path-traversal'
+    | 'other';
   severity: 'critical' | 'high' | 'medium' | 'low';
   location: CodeLocation;
   description: string;

@@ -60,6 +60,23 @@ describe('ObfuscationDetector', () => {
     expect(result.features.some((f) => f.includes('JSVMP'))).toBe(true);
   });
 
+  it('detects WASM-VM obfuscation (WebAssembly + embedded magic bytes)', () => {
+    const detector = new ObfuscationDetector();
+    const wasmVmCode = `
+      const bytes = new Uint8Array([0,97,115,109,1,0,0,0,1,7,1,60,3,127,0,0]);
+      WebAssembly.instantiate(bytes).then(({instance}) => instance.exports.main());
+    `;
+    const result = detector.detect(wasmVmCode);
+    expect(result.types).toContain('wasm-vm');
+    expect(result.features.some((f) => f.includes('WebAssembly VM'))).toBe(true);
+  });
+
+  it('does not flag clean WebAssembly.instantiate without embedded bytecode', () => {
+    const detector = new ObfuscationDetector();
+    const result = detector.detect('const m = await WebAssembly.instantiate(blob);');
+    expect(result.types).not.toContain('wasm-vm');
+  });
+
   it('falls back to heuristic VM detection when parser throws', () => {
     const detector = new ObfuscationDetector();
     const heuristicVmCode = `

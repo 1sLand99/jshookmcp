@@ -62,6 +62,13 @@ export class ObfuscationDetector {
       recommendations.push('Use JSVMPDeobfuscator for advanced deobfuscation');
     }
 
+    if (this.detectWasmVM(code)) {
+      types.push('wasm-vm');
+      confidence['wasm-vm'] = 0.9;
+      features.push('WebAssembly VM with embedded bytecode');
+      recommendations.push('Use wasm_disassemble / wasm_string_extract to inspect the .wasm blob');
+    }
+
     if (this.detectInvisibleUnicode(code)) {
       types.push('invisible-unicode');
       confidence['invisible-unicode'] = 1.0;
@@ -416,6 +423,26 @@ export class ObfuscationDetector {
     ];
 
     return vmPatterns.filter((p) => p.test(code)).length >= 2;
+  }
+
+  /**
+   * Detect a thin JS loader that fetches/decodes a .wasm blob and runs a
+   * virtual dispatcher inside WebAssembly (jsvmp-wasm, WASM-protected DRM,
+   * commercial packers). Signal: WebAssembly.instantiate/Module/Instance/compile
+   * plus either the wasm magic bytes (0x00 'a' 's' 'm') embedded as a decimal
+   * array / hex escapes / 32-bit word, or a large embedded bytecode array.
+   */
+  private detectWasmVM(code: string): boolean {
+    const hasWasmApi = /\bWebAssembly\s*\.\s*(instantiate|Module|Instance|compile)\b/.test(code);
+    if (!hasWasmApi) return false;
+    const hasWasmMagic =
+      /\[\s*0\s*,\s*97\s*,\s*115\s*,\s*109\b/.test(code) || // new Uint8Array([0,97,115,109,...])
+      /\\x00\\x61\\x73\\x6d/.test(code) || // "\x00\x61\x73\x6d"
+      /0x6d736100|0x0061736d/i.test(code); // magic as a 32-bit word (LE/BE)
+    const hasLargeBytecode =
+      /new\s+Uint8Array\s*\(\s*\[[\s\S]{8000,}\]/.test(code) ||
+      (/\[\s*(?:0x[0-9a-fA-F]+|\d+)\s*,/.test(code) && code.length > 12000);
+    return hasWasmMagic || hasLargeBytecode;
   }
 
   private detectInvisibleUnicode(code: string): boolean {

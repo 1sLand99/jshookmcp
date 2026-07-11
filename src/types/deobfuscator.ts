@@ -3,6 +3,7 @@ export type ObfuscationType =
   | 'webpack'
   | 'uglify'
   | 'vm-protection'
+  | 'wasm-vm'
   | 'self-modifying'
   | 'invisible-unicode'
   | 'control-flow-flattening'
