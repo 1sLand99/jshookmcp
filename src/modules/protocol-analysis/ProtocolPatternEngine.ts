@@ -195,6 +195,101 @@ export class ProtocolPatternEngine {
     return lines.join('\n');
   }
 
+  /**
+   * Export a pattern as Kaitai Struct (.ksy) — the de-facto binary-schema
+   * interchange format consumable by Wireshark / 010 Editor / kaitai tools.
+   * Research #6.
+   */
+  exportKsy(pattern: PatternSpec | ProtocolPattern): string {
+    const legacyPattern = this.isLegacyPattern(pattern)
+      ? pattern
+      : this.createLegacyPatternFromSpec(pattern.name, pattern);
+    const endian = legacyPattern.byteOrder === 'big' ? 'be' : 'le';
+    const lines = [
+      'meta:',
+      `  id: ${this.sanitizeKsyId(legacyPattern.name)}`,
+      `  endian: ${endian}`,
+      'seq:',
+    ];
+    for (const field of legacyPattern.fields) {
+      if (!field) continue;
+      lines.push(`  - id: ${field.name}`);
+      const ksyType = this.toKsyType(field.type);
+      if (ksyType) lines.push(`    type: ${ksyType}`);
+      if (field.description) lines.push(`    doc: ${field.description}`);
+    }
+    return lines.join('\n');
+  }
+
+  /**
+   * Export a pattern as JSON Schema (draft-07). Byte fields surface as hex
+   * strings. Research #6.
+   */
+  exportJsonSchema(pattern: PatternSpec | ProtocolPattern): string {
+    const legacyPattern = this.isLegacyPattern(pattern)
+      ? pattern
+      : this.createLegacyPatternFromSpec(pattern.name, pattern);
+    const properties: Record<string, { type: string; description?: string }> = {};
+    for (const field of legacyPattern.fields) {
+      if (!field) continue;
+      const prop: { type: string; description?: string } = { type: this.toJsonType(field.type) };
+      if (field.description) prop.description = field.description;
+      properties[field.name] = prop;
+    }
+    return JSON.stringify(
+      {
+        $schema: 'http://json-schema.org/draft-07/schema#',
+        title: legacyPattern.name,
+        type: 'object',
+        properties,
+      },
+      null,
+      2,
+    );
+  }
+
+  private sanitizeKsyId(name: string): string {
+    return name.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase() || 'message';
+  }
+
+  private toKsyType(type: ProtocolField['type']): string | null {
+    switch (type) {
+      case 'uint8':
+        return 'u1';
+      case 'uint16':
+        return 'u2';
+      case 'uint32':
+        return 'u4';
+      case 'int64':
+        return 's8';
+      case 'float':
+        return 'f4';
+      case 'string':
+        return 'str';
+      case 'bytes':
+        return null;
+      default:
+        return null;
+    }
+  }
+
+  private toJsonType(type: ProtocolField['type']): string {
+    switch (type) {
+      case 'uint8':
+      case 'uint16':
+      case 'uint32':
+      case 'int64':
+        return 'integer';
+      case 'float':
+        return 'number';
+      case 'string':
+      case 'bytes':
+        return 'string';
+      default:
+        return 'string';
+    }
+  }
+
   private payloadContainsDelimiter(payload: Buffer, delimiter: string): boolean {
     const delimiterBuffer = this.parseDelimiter(delimiter);
     if (delimiterBuffer.length === 0) {

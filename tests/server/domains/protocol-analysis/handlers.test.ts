@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProtocolAnalysisHandlers } from '@server/domains/protocol-analysis/handlers';
+import { parseTlsClientHello } from '@server/domains/protocol-analysis/handlers/fingerprint-utils';
 import { parseJson } from '@tests/server/domains/shared/mock-factories';
 
 describe('ProtocolAnalysisHandlers', () => {
@@ -149,6 +150,76 @@ describe('ProtocolAnalysisHandlers', () => {
       });
 
       expect(result.schema).toContain('message EmptyProto');
+    });
+
+    it('exports Kaitai Struct (.ksy) format', async () => {
+      await handlers.handleDefinePattern({
+        name: 'ksydemo',
+        fields: [
+          { name: 'magic', type: 'uint16', offset: 0, length: 2 },
+          { name: 'count', type: 'uint8', offset: 2, length: 1 },
+          { name: 'label', type: 'string', offset: 3, length: 8 },
+        ],
+      });
+      const result = await handlers.handleExportSchema({ patternId: 'ksydemo', format: 'ksy' });
+
+      expect(result.format).toBe('ksy');
+      expect(result.schema).toContain('meta:');
+      expect(result.schema).toContain('endian: be'); // default byteOrder is 'big'
+      expect(result.schema).toContain('- id: magic');
+      expect(result.schema).toContain('type: u2');
+    });
+
+    it('exports json-schema format', async () => {
+      await handlers.handleDefinePattern({
+        name: 'jsondemo',
+        fields: [{ name: 'version', type: 'uint32', offset: 0, length: 4 }],
+      });
+      const result = await handlers.handleExportSchema({
+        patternId: 'jsondemo',
+        format: 'json-schema',
+      });
+
+      expect(result.format).toBe('json-schema');
+      const parsed = JSON.parse(result.schema);
+      expect(parsed.$schema).toContain('json-schema.org');
+      expect(parsed.properties.version.type).toBe('integer');
+    });
+  });
+
+  describe('pcap PCAPNG auto-redirect + TLS extension dissect', () => {
+    it('pcap_read auto-redirects PCAPNG files transparently (research #5)', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'pa-redirect-'));
+      tempDirs.push(dir);
+      const path = join(dir, 'capture.pcapng');
+      const writeResult = await handlers.handlePcapngWrite({
+        path,
+        interfaces: [{ linkType: 1 }],
+        packets: [{ dataHex: 'aabbccdd' }],
+      });
+      expect(writeResult.success).toBe(true);
+
+      const result = await handlers.handlePcapRead({ path });
+      expect(result.format).toBe('pcapng');
+      expect(result.success).toBe(true);
+    });
+
+    it('parseTlsClientHello decodes per-extension bodies (ALPN/supported_versions, research #2)', () => {
+      // Minimal ClientHello: TLS 1.3, one cipher, supported_versions(0304) +
+      // supported_groups(001d) + signature_algorithms(0403) + ALPN(h2).
+      const VALID_CH =
+        '160301004f0100004b03030000000000000000000000000000000000000000000000000000000000000000000002130101000020002b0003020304000a00040002001d000d000400020403001000050003026832';
+      const result = parseTlsClientHello(VALID_CH);
+      expect(result).not.toBeNull();
+      const extensions = result!.extensions as Array<{
+        type: string;
+        details?: { kind: string; protocols?: string[]; versions?: string[] };
+      }>;
+      const alpn = extensions.find((e) => e.type === '0010');
+      expect(alpn?.details?.kind).toBe('alpn');
+      expect(alpn?.details?.protocols).toContain('h2');
+      const sv = extensions.find((e) => e.type === '002b');
+      expect(sv?.details?.kind).toBe('supported_versions');
     });
   });
 

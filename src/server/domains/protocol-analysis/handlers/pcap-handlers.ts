@@ -13,6 +13,7 @@ import {
   buildClassicPcap,
   parsePcapLinkType,
   parsePcapPacketInput,
+  parsePcapng,
   parsePacketEndianness,
   parsePositiveInteger,
   parseTimestampPrecision,
@@ -83,8 +84,12 @@ export class ProtocolAnalysisPcapHandlers extends ProtocolAnalysisPacketBuildHan
 
   async handlePcapRead(args: ToolArgs): Promise<{
     path: string;
+    format: 'pcap' | 'pcapng';
     header: PcapHeader | null;
     packets: PcapPacketSummary[];
+    endianness?: string | null;
+    blockCount?: number;
+    warnings?: string[];
     success?: boolean;
     error?: string;
   }> {
@@ -99,6 +104,32 @@ export class ProtocolAnalysisPcapHandlers extends ProtocolAnalysisPacketBuildHan
           ? undefined
           : parsePositiveInteger(args.maxBytesPerPacket, 'maxBytesPerPacket');
       const buffer = await readFile(path);
+      // Auto-detect PCAPNG (Section Header Block magic 0x0a0d0d0a at byte 0)
+      // and dispatch transparently — the file extension is unreliable and this
+      // is the most common user mistake (research #5).
+      if (buffer.length >= 4 && buffer.readUInt32BE(0) === 0x0a0d0d0a) {
+        const offloadPacket = (hex: string, packetIndex: number): string =>
+          this.detailedDataManager.store({ packetIndex, hex });
+        const result = parsePcapng(buffer, {
+          maxPackets,
+          maxBytesPerPacket,
+          offloadPacket,
+        });
+        this.emitEvent('protocol:pcap_read', {
+          path,
+          packetCount: result.packets.length,
+        });
+        return {
+          path,
+          format: 'pcapng',
+          header: null,
+          packets: result.packets as unknown as PcapPacketSummary[],
+          endianness: result.endianness,
+          blockCount: result.blockCount,
+          warnings: result.warnings,
+          success: true,
+        };
+      }
       const { header, packets } = readClassicPcap(buffer, maxPackets, maxBytesPerPacket);
       this.emitEvent('protocol:pcap_read', {
         path,
@@ -106,6 +137,7 @@ export class ProtocolAnalysisPcapHandlers extends ProtocolAnalysisPacketBuildHan
       });
       return {
         path,
+        format: 'pcap',
         header,
         packets,
         success: true,
@@ -113,6 +145,7 @@ export class ProtocolAnalysisPcapHandlers extends ProtocolAnalysisPacketBuildHan
     } catch (error) {
       return {
         path: typeof args.path === 'string' ? args.path : '',
+        format: 'pcap',
         header: null,
         packets: [],
         success: false,

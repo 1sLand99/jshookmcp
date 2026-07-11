@@ -157,17 +157,114 @@ export function parseTlsClientHello(hex: string): Record<string, unknown> | null
   const extTotalLen = readU16(hex, pos);
   pos += 2;
   const extEnd = pos + extTotalLen;
-  const extensions: Array<{ type: string; length: number; name?: string }> = [];
+  const extensions: Array<{
+    type: string;
+    length: number;
+    name?: string;
+    details?: Record<string, unknown>;
+  }> = [];
   while (pos + 4 <= extEnd && pos + 4 <= hex.length / 2) {
     const extType = hexSlice(hex, pos, 2).toLowerCase();
     const extLen = readU16(hex, pos + 2);
-    extensions.push({ type: extType, length: extLen, name: TLS_EXTENSION_NAMES[extType] });
+    const extBody = hexSlice(hex, pos + 4, extLen);
+    const entry: {
+      type: string;
+      length: number;
+      name?: string;
+      details?: Record<string, unknown>;
+    } = { type: extType, length: extLen, name: TLS_EXTENSION_NAMES[extType] };
+    const details = parseTlsExtensionBody(extType, extBody);
+    if (details) entry.details = details;
+    extensions.push(entry);
     pos += 4 + extLen;
   }
   result.extensions = extensions;
   result.extensionCount = extensions.length;
 
   return result;
+}
+
+/**
+ * Decode the body of a known TLS ClientHello extension into structured fields.
+ * Returns null for unknown/unparseable extensions (the caller keeps the raw
+ * type/length). Covers the high-value extensions a reverse engineer needs:
+ * SNI (0x0000), ALPN (0x0010), supported_versions (0x002b),
+ * signature_algorithms (0x000d), key_share (0x0033). Research #2 (dissect_tls),
+ * delivered by deepening proto_fingerprint's TLS path.
+ */
+function parseTlsExtensionBody(type: string, body: string): Record<string, unknown> | null {
+  try {
+    if (type === '0000') {
+      // SNI: server_name_list_len(2) + [name_type(1) + name_len(2) + name]
+      if (body.length < 10) return null;
+      const listLen = readU16(body, 0);
+      if (listLen === 0) return null;
+      const nameType = readU8(body, 2);
+      const nameLen = readU16(body, 3);
+      const hostname = hexToAscii(body.substring(10, 10 + nameLen * 2));
+      return { kind: 'server_name', nameType, hostname };
+    }
+    if (type === '0010') {
+      // ALPN: alpn_list_len(2) + [name_len(1) + name]+
+      if (body.length < 4) return null;
+      const listLen = readU16(body, 0);
+      const protocols: string[] = [];
+      let p = 2;
+      while (p + 1 <= 2 + listLen && p < body.length / 2) {
+        const l = readU8(body, p);
+        protocols.push(hexToAscii(body.substring((p + 1) * 2, (p + 1 + l) * 2)));
+        p += 1 + l;
+      }
+      return { kind: 'alpn', protocols };
+    }
+    if (type === '002b') {
+      // supported_versions: list_len(1) + versions(2 each)
+      if (body.length < 2) return null;
+      const listLen = readU8(body, 0);
+      const versions: string[] = [];
+      for (let i = 0; i < listLen / 2 && 1 + i * 2 + 2 <= body.length / 2; i++) {
+        const v = hexSlice(body, 1 + i * 2, 2);
+        versions.push(TLS_VERSIONS[v] ?? v);
+      }
+      return { kind: 'supported_versions', versions };
+    }
+    if (type === '000d') {
+      // signature_algorithms: list_len(2) + schemes(2 each)
+      if (body.length < 4) return null;
+      const listLen = readU16(body, 0);
+      const schemes: string[] = [];
+      for (let i = 0; i < listLen / 2 && 2 + i * 2 + 2 <= body.length / 2; i++) {
+        schemes.push(hexSlice(body, 2 + i * 2, 2));
+      }
+      return { kind: 'signature_algorithms', schemeCount: schemes.length, schemes };
+    }
+    if (type === '0033') {
+      // key_share (client): list_len(2) + [group(2) + key_len(2) + key]+
+      if (body.length < 4) return null;
+      const listLen = readU16(body, 0);
+      const shares: Array<{ group: string; keyLength: number }> = [];
+      let p = 2;
+      while (p + 4 <= 2 + listLen && p + 4 <= body.length / 2) {
+        const group = hexSlice(body, p, 2);
+        const keyLen = readU16(body, p + 2);
+        shares.push({ group, keyLength: keyLen });
+        p += 4 + keyLen;
+      }
+      return { kind: 'key_share', shares };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function hexToAscii(hex: string): string {
+  let out = '';
+  for (let i = 0; i + 2 <= hex.length; i += 2) {
+    const code = Number.parseInt(hex.substring(i, i + 2), 16);
+    if (code >= 32 && code <= 126) out += String.fromCharCode(code);
+  }
+  return out;
 }
 
 export function parseDnsHeader(hex: string): Record<string, unknown> | null {

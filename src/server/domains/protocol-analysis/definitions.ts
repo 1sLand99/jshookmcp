@@ -372,8 +372,13 @@ export const protocolAnalysisTools: Tool[] = [
   ),
   tool('proto_export_schema', (t) =>
     t
-      .desc('Export a protocol pattern to a .proto-like schema definition.')
+      .desc(
+        'Export a protocol pattern to a schema definition. format: proto (default, .proto-like text), ksy (Kaitai Struct for Wireshark/010 Editor), json-schema (draft-07).',
+      )
       .string('patternId', 'Pattern ID to export')
+      .enum('format', ['proto', 'ksy', 'json-schema'], 'Output schema format', {
+        default: 'proto',
+      })
       .required('patternId')
       .query(),
   ),

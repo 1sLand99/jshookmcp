@@ -8,7 +8,12 @@ import type {
   ProtocolPattern,
   StateMachine,
 } from '@modules/protocol-analysis';
-import { argObject, argStringArray, argStringRequired } from '@server/domains/shared/parse-args';
+import {
+  argObject,
+  argString,
+  argStringArray,
+  argStringRequired,
+} from '@server/domains/shared/parse-args';
 import type { ToolArgs } from '@server/types';
 import {
   isRecord,
@@ -140,18 +145,28 @@ export class ProtocolAnalysisPatternHandlers extends ProtocolAnalysisBaseHandler
     }
   }
 
-  async handleExportSchema(args: ToolArgs): Promise<{ schema: string }> {
+  async handleExportSchema(
+    args: ToolArgs,
+  ): Promise<{ schema: string; format: 'proto' | 'ksy' | 'json-schema' }> {
     try {
       const patternId = argStringRequired(args, 'patternId');
+      const format =
+        (argString(args, 'format', 'proto') as 'proto' | 'ksy' | 'json-schema') || 'proto';
       const pattern = this.getEngine().getPattern(patternId);
       if (!pattern) {
-        return { schema: `// Error: pattern '${patternId}' not found` };
+        return { schema: `// Error: pattern '${patternId}' not found`, format };
       }
 
-      return { schema: this.getEngine().exportProto(pattern) };
+      const engine = this.getEngine();
+      let schema: string;
+      if (format === 'ksy') schema = engine.exportKsy(pattern);
+      else if (format === 'json-schema') schema = engine.exportJsonSchema(pattern);
+      else schema = engine.exportProto(pattern);
+      return { schema, format };
     } catch (error) {
       return {
         schema: `// Error: ${this.errorMessage(error)}`,
+        format: 'proto',
       };
     }
   }
