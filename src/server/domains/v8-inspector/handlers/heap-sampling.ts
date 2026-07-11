@@ -11,7 +11,8 @@
  */
 
 import { argNumber } from '@server/domains/shared/parse-args';
-import { createCDPSession } from './cdp-session';
+import { normalizeSessionSource, resolveTargetSession } from './cdp-session';
+import type { SessionSource } from './cdp-session';
 
 export interface SamplingNode {
   functionName: string;
@@ -36,7 +37,7 @@ export interface HeapSamplingResult {
 
 export async function handleHeapSampling(
   args: Record<string, unknown>,
-  getPage?: () => Promise<unknown>,
+  source?: SessionSource,
 ): Promise<HeapSamplingResult> {
   const durationRaw = argNumber(args, 'durationMs', 5000);
   const durationMs = Math.min(
@@ -45,7 +46,7 @@ export async function handleHeapSampling(
   );
   const topN = Math.min(500, Math.max(1, argNumber(args, 'topN', 50)));
 
-  const session = await createCDPSession(getPage);
+  const { session, owned } = await resolveTargetSession(normalizeSessionSource(source));
   if (!session) {
     return {
       success: false,
@@ -137,7 +138,7 @@ export async function handleHeapSampling(
       summary: 'Sampling failed',
     };
   } finally {
-    await session.detach().catch(() => undefined);
+    if (owned) await session.detach().catch(() => undefined);
   }
 }
 

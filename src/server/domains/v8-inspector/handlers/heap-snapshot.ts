@@ -1,4 +1,5 @@
 import { V8InspectorClient } from '@modules/v8-inspector/V8InspectorClient';
+import type { CDPSessionLike, TargetProvenance, TargetSessionResolver } from './cdp-session';
 import { enforceSnapshotRetention, persistSnapshot } from './snapshot-persistence';
 
 export interface StoredHeapSnapshot {
@@ -10,6 +11,10 @@ export interface StoredHeapSnapshot {
   simulated?: boolean;
   /** Optional provenance hint (page URL) captured alongside the snapshot. */
   targetUrl?: string | null;
+  /** CDP target type when captured against an attached non-page target (worker/service_worker/shared_worker). Omitted for the page target. */
+  targetType?: string | null;
+  /** CDP targetId when captured against an attached target. Omitted for the page target. */
+  targetId?: string | null;
   /** Absolute + project-relative path of the persisted .heapsnapshot file, when written. */
   persisted?: { absolutePath: string; displayPath: string };
 }
@@ -25,6 +30,8 @@ export interface HeapSnapshotHandlerOptions {
   persist?: boolean;
   /** Optional accessor for the current page URL, recorded as snapshot provenance. */
   getTargetUrl?: () => Promise<string | null>;
+  /** Target-aware session resolver — when an attached CDP target (worker/SW) is present, the snapshot is captured from it instead of the page. */
+  resolver?: TargetSessionResolver;
 }
 
 export function getSnapshotCache(): Map<string, StoredHeapSnapshot> {
@@ -97,6 +104,42 @@ interface CaptureReturn {
   warnings: string[];
   persisted?: { displayPath: string; bytesWritten: number };
   evicted?: string[];
+  /** Which target the snapshot was captured from (set for attached non-page targets). */
+  target?: TargetProvenance;
+}
+
+/**
+ * Capture a full heap snapshot via HeapProfiler over a given CDP session.
+ * Used for the attached-target path (worker/SW) where the session is owned by
+ * the collector and must NOT be detached here. Uses optional on/off guards so
+ * it tolerates minimal session shapes.
+ */
+async function captureHeapSnapshotViaSession(
+  session: CDPSessionLike,
+  onChunk: (chunk: string) => void,
+): Promise<number> {
+  await session.send('HeapProfiler.enable').catch(() => undefined);
+  return new Promise<number>((resolve, reject) => {
+    let totalSize = 0;
+    const chunkHandler = (data: unknown) => {
+      const chunk = (data as { chunk?: string } | null)?.chunk;
+      if (typeof chunk === 'string') {
+        totalSize += Buffer.byteLength(chunk, 'utf8');
+        onChunk(chunk);
+      }
+    };
+    session.on?.('HeapProfiler.addHeapSnapshotChunk', chunkHandler);
+    session
+      .send('HeapProfiler.takeHeapSnapshot', { reportProgress: false })
+      .then(() => {
+        session.off?.('HeapProfiler.addHeapSnapshotChunk', chunkHandler);
+        resolve(totalSize);
+      })
+      .catch((error: unknown) => {
+        session.off?.('HeapProfiler.addHeapSnapshotChunk', chunkHandler);
+        reject(error);
+      });
+  });
 }
 
 export async function handleHeapSnapshotCapture(
@@ -117,6 +160,8 @@ export async function handleHeapSnapshotCapture(
     }
   }
 
+  const pageTarget: TargetProvenance = { type: 'page', url: targetUrl, targetId: null };
+
   /**
    * Persist (when enabled), enforce retention caps, and build the final
    * capture return. Persistence is fail-soft: a disk failure pushes a warning
@@ -125,6 +170,7 @@ export async function handleHeapSnapshotCapture(
   const finalize = async (
     stored: StoredHeapSnapshot,
     simulated: boolean,
+    target: TargetProvenance,
   ): Promise<CaptureReturn> => {
     options.setSnapshot(stored.id);
     const base: CaptureReturn = {
@@ -135,6 +181,7 @@ export async function handleHeapSnapshotCapture(
       chunks: [],
       simulated,
       warnings,
+      target,
     };
 
     if (!persist) {
@@ -173,6 +220,41 @@ export async function handleHeapSnapshotCapture(
     }
   };
 
+  // Attached CDP target (worker/SW/page via browser_attach_cdp_target) —
+  // snapshot that target directly. This is the path that lets v8 heap
+  // forensics run inside a worker, not only the page. The session is owned
+  // by the collector; we must NOT detach it (captureHeapSnapshotViaSession
+  // only enables HeapProfiler and listens, never detaches).
+  const attachedSession = options.resolver?.getAttachedTargetSession?.() ?? null;
+  if (attachedSession) {
+    try {
+      const chunks: string[] = [];
+      const totalSize = await captureHeapSnapshotViaSession(attachedSession, (chunk) => {
+        chunks.push(chunk);
+      });
+      const info = options.resolver?.getAttachedTargetInfo?.() ?? null;
+      const attachedTarget: TargetProvenance = {
+        type: info?.type ?? null,
+        url: info?.url ?? targetUrl,
+        targetId: info?.targetId ?? null,
+      };
+      const stored = storeSnapshot({
+        id: snapshotId,
+        chunks,
+        capturedAt,
+        sizeBytes: totalSize,
+        simulated: false,
+        ...(attachedTarget.type ? { targetType: attachedTarget.type } : {}),
+        ...(attachedTarget.targetId ? { targetId: attachedTarget.targetId } : {}),
+      });
+      return await finalize(stored, false, attachedTarget);
+    } catch (e: unknown) {
+      warnings.push(
+        `Attached-target heap snapshot failed: ${e instanceof Error ? e.message : String(e)}. Trying page fallback...`,
+      );
+    }
+  }
+
   if (options.client) {
     // Real CDP heap snapshot capture
     try {
@@ -187,7 +269,7 @@ export async function handleHeapSnapshotCapture(
         sizeBytes: totalSize,
         simulated: false,
       });
-      return await finalize(stored, false);
+      return await finalize(stored, false, pageTarget);
     } catch (e: unknown) {
       // Fall through to graceful degradation
       warnings.push(
@@ -250,7 +332,7 @@ export async function handleHeapSnapshotCapture(
         sizeBytes,
         simulated: true,
       });
-      return await finalize(stored, true);
+      return await finalize(stored, true, pageTarget);
     }
   } catch (e: unknown) {
     // Fall through to minimal fallback
@@ -293,7 +375,7 @@ export async function handleHeapSnapshotCapture(
     sizeBytes: fallbackSizeBytes,
     simulated: true,
   });
-  return await finalize(stored, true);
+  return await finalize(stored, true, pageTarget);
 }
 
 export async function handleHeapSearch(

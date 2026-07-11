@@ -15,7 +15,8 @@
  */
 
 import { argNumber } from '@server/domains/shared/parse-args';
-import { createCDPSession } from './cdp-session';
+import { normalizeSessionSource, resolveTargetSession } from './cdp-session';
+import type { SessionSource } from './cdp-session';
 
 export interface LiveAllocation {
   objectId: number;
@@ -44,7 +45,7 @@ interface LastSeenObjectIdEvent {
 
 export async function handleAllocationTrack(
   args: Record<string, unknown>,
-  getPage?: () => Promise<unknown>,
+  source?: SessionSource,
 ): Promise<AllocationTrackResult> {
   const durationRaw = argNumber(args, 'durationMs', 3000);
   const durationMs = Math.min(
@@ -53,7 +54,7 @@ export async function handleAllocationTrack(
   );
   const topN = Math.min(500, Math.max(1, argNumber(args, 'topN', 50)));
 
-  const session = await createCDPSession(getPage);
+  const { session, owned } = await resolveTargetSession(normalizeSessionSource(source));
   if (!session) {
     return {
       success: false,
@@ -143,6 +144,6 @@ export async function handleAllocationTrack(
       cdp.off('HeapProfiler.lastSeenObjectId', objectIdHandler);
     }
     await session.send('HeapProfiler.stopObjectTracking').catch(() => undefined);
-    await session.detach().catch(() => undefined);
+    if (owned) await session.detach().catch(() => undefined);
   }
 }

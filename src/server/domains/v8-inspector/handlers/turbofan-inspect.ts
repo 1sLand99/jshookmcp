@@ -11,7 +11,8 @@
  */
 
 import { argString, argNumber } from '@server/domains/shared/parse-args';
-import { createCDPSession } from './cdp-session';
+import { normalizeSessionSource, resolveTargetSession } from './cdp-session';
+import type { SessionSource } from './cdp-session';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -56,13 +57,13 @@ function mapTier(status: number): { optimized: boolean; tier: FunctionOptStatus[
 
 // ── CDP Helpers ────────────────────────────────────────────────────────────────
 
-// createCDPSession imported from shared cdp-session.ts
+// resolveTargetSession imported from shared cdp-session.ts
 
 // ── Handler ────────────────────────────────────────────────────────────────────
 
 export async function handleTurbofanInspect(
   args: Record<string, unknown>,
-  getPage?: () => Promise<unknown>,
+  source?: SessionSource,
 ): Promise<TurboFanInspectResult> {
   const scriptId = argString(args, 'scriptId', '').trim();
   if (scriptId.length === 0) {
@@ -80,7 +81,8 @@ export async function handleTurbofanInspect(
   const action = argString(args, 'action', 'inspect').trim(); // inspect | optimize | deoptimize
   const topN = argNumber(args, 'topN', 10);
 
-  const session = await createCDPSession(getPage);
+  const resolver = normalizeSessionSource(source);
+  const { session, owned } = await resolveTargetSession(resolver);
   if (!session) {
     return {
       success: false,
@@ -196,7 +198,7 @@ export async function handleTurbofanInspect(
     } else {
       // Heuristic mode — use JITInspector for basic info
       const { JITInspector } = await import('@modules/v8-inspector');
-      const inspector = new JITInspector(getPage);
+      const inspector = new JITInspector(resolver.getPage);
       const inspection = await inspector.inspectJIT(scriptId);
 
       for (const info of inspection.functions) {
@@ -217,7 +219,7 @@ export async function handleTurbofanInspect(
       functions,
     };
   } finally {
-    await session.detach().catch(() => {});
+    if (owned) await session.detach().catch(() => {});
   }
 
   return {

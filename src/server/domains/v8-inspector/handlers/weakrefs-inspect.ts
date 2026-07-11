@@ -15,7 +15,8 @@
  */
 
 import { argNumber } from '@server/domains/shared/parse-args';
-import { createCDPSession } from './cdp-session';
+import { normalizeSessionSource, resolveTargetSession } from './cdp-session';
+import type { SessionSource } from './cdp-session';
 
 export interface FinalizationRegistryInfo {
   source: string;
@@ -44,11 +45,11 @@ export interface WeakRefsInspectResult {
 
 export async function handleWeakRefsInspect(
   args: Record<string, unknown>,
-  getPage?: () => Promise<unknown>,
+  source?: SessionSource,
 ): Promise<WeakRefsInspectResult> {
   const scanDepth = Math.min(20, Math.max(1, argNumber(args, 'scanDepth', 5)));
 
-  const session = await createCDPSession(getPage);
+  const { session, owned } = await resolveTargetSession(normalizeSessionSource(source));
   if (!session) {
     return {
       success: false,
@@ -166,6 +167,6 @@ export async function handleWeakRefsInspect(
       summary: 'WeakRef inspection failed',
     };
   } finally {
-    await session.detach().catch(() => undefined);
+    if (owned) await session.detach().catch(() => undefined);
   }
 }

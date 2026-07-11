@@ -18,8 +18,8 @@
  */
 
 import { argNumber, argBool } from '@server/domains/shared/parse-args';
-import { createCDPSession } from './cdp-session';
-import type { CDPSessionLike } from './cdp-session';
+import { normalizeSessionSource, resolveTargetSession } from './cdp-session';
+import type { CDPSessionLike, SessionSource } from './cdp-session';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -46,7 +46,7 @@ interface DeoptTraceResult {
 
 // ── CDP Helpers ────────────────────────────────────────────────────────────────
 
-// createCDPSession + CDPSessionLike imported from shared cdp-session.ts
+// resolveTargetSession + CDPSessionLike imported from shared cdp-session.ts
 
 async function checkNativesSupport(session: CDPSessionLike): Promise<boolean> {
   try {
@@ -66,7 +66,7 @@ async function checkNativesSupport(session: CDPSessionLike): Promise<boolean> {
 
 export async function handleDeoptTrace(
   args: Record<string, unknown>,
-  getPage?: () => Promise<unknown>,
+  source?: SessionSource,
 ): Promise<DeoptTraceResult> {
   const durationRaw = argNumber(args, 'durationMs', 5000);
   // Mirror definitions.ts minimum:100 / maximum:60000 constraints at runtime
@@ -79,7 +79,7 @@ export async function handleDeoptTrace(
   const maxEvents = Math.min(1000, Math.max(1, Number.isFinite(maxEventsRaw) ? maxEventsRaw : 50));
   const enableTracing = argBool(args, 'enable', true);
 
-  const session = await createCDPSession(getPage);
+  const { session, owned } = await resolveTargetSession(normalizeSessionSource(source));
   if (!session) {
     return {
       success: false,
@@ -97,7 +97,7 @@ export async function handleDeoptTrace(
   const nativesAvailable = await checkNativesSupport(session);
 
   if (!nativesAvailable) {
-    await session.detach().catch(() => {});
+    if (owned) await session.detach().catch(() => {});
     return {
       success: true,
       mode: 'unavailable',
@@ -214,7 +214,7 @@ export async function handleDeoptTrace(
     } else if (typeof cdp.removeListener === 'function') {
       cdp.removeListener('Runtime.consoleAPICalled', consoleHandler);
     }
-    await session.detach().catch(() => {});
+    if (owned) await session.detach().catch(() => {});
   }
 
   const actualDuration = Date.now() - startTime;

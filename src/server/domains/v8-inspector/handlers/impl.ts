@@ -9,6 +9,11 @@ import { handleSafe, type ToolResponse } from '@server/domains/shared/ResponseBu
 import { argStringRequired } from '@server/domains/shared/parse-args';
 import { v8InspectorTools } from '../definitions';
 import { getSnapshotCache, handleHeapSnapshotCapture } from './heap-snapshot';
+import {
+  attachSessionAsPage,
+  type CDPSessionLike,
+  type TargetSessionResolver,
+} from './cdp-session';
 import { handleBytecodeExtract } from './bytecode-extract';
 import { handleJitInspect } from './jit-inspect';
 import { getSnapshot } from './heap-snapshot';
@@ -53,6 +58,31 @@ function createPageGetter(ctx: MCPServerContext): () => Promise<unknown> {
   return async () => await pageController.getPage();
 }
 
+/**
+ * Build a target-aware session resolver. When the browser domain's collector
+ * has an attached CDP target (page/worker/service_worker set via
+ * browser_attach_cdp_target), CDP-backed v8 tools resolve against THAT
+ * session so heap/allocation/WASM/WeakRef state can be captured inside
+ * workers, not only the page. Falls back to the page otherwise.
+ */
+function createTargetSessionResolver(ctx: MCPServerContext): TargetSessionResolver {
+  const collector = ctx.collector;
+  const resolver: TargetSessionResolver = {
+    getPage: ctx.pageController ? createPageGetter(ctx) : undefined,
+  };
+  if (collector) {
+    resolver.getAttachedTargetSession = () =>
+      (collector.getAttachedTargetSession() ?? null) as CDPSessionLike | null;
+    resolver.getAttachedTargetInfo = () => {
+      const info = collector.getAttachedTargetInfo();
+      return info
+        ? { type: info.type ?? null, url: info.url ?? null, targetId: info.targetId ?? null }
+        : null;
+    };
+  }
+  return resolver;
+}
+
 export class V8InspectorHandlers {
   private currentSnapshotId: string | null = null;
 
@@ -94,13 +124,13 @@ export class V8InspectorHandlers {
   // ── Standard dispatch: heap snapshot capture ──
   async v8_deopt_trace(args: ToolArgs): Promise<unknown> {
     const { handleDeoptTrace } = await import('@server/domains/v8-inspector/handlers/deopt-trace');
-    return handleDeoptTrace(args, createPageGetter(this.deps.ctx));
+    return handleDeoptTrace(args, createTargetSessionResolver(this.deps.ctx));
   }
 
   async v8_turbofan_inspect(args: ToolArgs): Promise<unknown> {
     const { handleTurbofanInspect } =
       await import('@server/domains/v8-inspector/handlers/turbofan-inspect');
-    return handleTurbofanInspect(args, createPageGetter(this.deps.ctx));
+    return handleTurbofanInspect(args, createTargetSessionResolver(this.deps.ctx));
   }
 
   async v8_turbofan_graph(args: ToolArgs): Promise<unknown> {
@@ -114,7 +144,7 @@ export class V8InspectorHandlers {
       requirePageController(this.deps.ctx);
       const { handleHeapSampling } =
         await import('@server/domains/v8-inspector/handlers/heap-sampling');
-      return handleHeapSampling(args, createPageGetter(this.deps.ctx));
+      return handleHeapSampling(args, createTargetSessionResolver(this.deps.ctx));
     });
   }
 
@@ -123,7 +153,7 @@ export class V8InspectorHandlers {
       requirePageController(this.deps.ctx);
       const { handleAllocationTrack } =
         await import('@server/domains/v8-inspector/handlers/allocation-track');
-      return handleAllocationTrack(args, createPageGetter(this.deps.ctx));
+      return handleAllocationTrack(args, createTargetSessionResolver(this.deps.ctx));
     });
   }
 
@@ -132,7 +162,7 @@ export class V8InspectorHandlers {
       requirePageController(this.deps.ctx);
       const { handleWeakRefsInspect } =
         await import('@server/domains/v8-inspector/handlers/weakrefs-inspect');
-      return handleWeakRefsInspect(args, createPageGetter(this.deps.ctx));
+      return handleWeakRefsInspect(args, createTargetSessionResolver(this.deps.ctx));
     });
   }
 
@@ -186,6 +216,7 @@ export class V8InspectorHandlers {
         },
         client: this.deps.client,
         persist,
+        resolver: createTargetSessionResolver(this.deps.ctx),
         getTargetUrl: persist
           ? async () => {
               try {
@@ -736,14 +767,25 @@ export class V8InspectorHandlers {
         };
       }
 
-      const getPage = createPageGetter(this.deps.ctx);
-      const page = await getPage();
-      if (!page) {
-        throw new Error('No active page. Call browser_launch or browser_attach first.');
+      const resolver = createTargetSessionResolver(this.deps.ctx);
+      const attachedSession = resolver.getAttachedTargetSession?.() ?? null;
+      let wasmPage: unknown;
+      if (attachedSession) {
+        // Attached CDP target (worker/SW via browser_attach_cdp_target) — run
+        // WASM inspection against that target. The session is collector-owned;
+        // attachSessionAsPage wraps it so inspectWasmGc's internal detach is
+        // a no-op and the browser attach state survives.
+        wasmPage = attachSessionAsPage(attachedSession);
+      } else {
+        const page = await resolver.getPage?.();
+        if (!page) {
+          throw new Error('No active page. Call browser_launch or browser_attach first.');
+        }
+        wasmPage = page;
       }
 
       const { inspectWasmGc } = await import('@modules/v8-inspector/WasmGcInspector');
-      const result = await inspectWasmGc(page, { scriptId, includeStructs });
+      const result = await inspectWasmGc(wasmPage, { scriptId, includeStructs });
 
       return {
         success: result.success,

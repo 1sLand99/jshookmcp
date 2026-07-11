@@ -386,6 +386,10 @@ describe('v8-inspector handler coverage', () => {
         getPage: vi.fn().mockResolvedValue({}),
         getSnapshot: vi.fn().mockReturnValue(null),
         setSnapshot: vi.fn(),
+        // persist:false keeps these logic-focused capture tests from writing
+        // snapshot_* files to the shared artifacts/heap-snapshots/ dir, which
+        // otherwise races snapshot-persistence.test's eviction assertions.
+        persist: false,
         ...overrides,
       };
     }
@@ -635,7 +639,9 @@ describe('v8-inspector handler coverage', () => {
       it('should throw without pageController', async () => {
         const deps = createMockDepsWithoutPage();
         const handlers = new V8InspectorHandlers(deps);
-        expect(parseBody(await handlers.v8_heap_snapshot_capture({})).success).toBe(false);
+        expect(parseBody(await handlers.v8_heap_snapshot_capture({ persist: false })).success).toBe(
+          false,
+        );
       });
 
       it('should capture snapshot and emit event on success', async () => {
@@ -646,7 +652,7 @@ describe('v8-inspector handler coverage', () => {
         const deps = createMockDeps();
         const handlers = new V8InspectorHandlers(deps);
 
-        const result = parseBody(await handlers.v8_heap_snapshot_capture({}));
+        const result = parseBody(await handlers.v8_heap_snapshot_capture({ persist: false }));
 
         expect(result.success).toBe(true);
         expect(result.simulated).toBe(false);
@@ -692,7 +698,7 @@ describe('v8-inspector handler coverage', () => {
           }),
         );
 
-        const result = parseBody(await handlers.v8_heap_snapshot_capture({}));
+        const result = parseBody(await handlers.v8_heap_snapshot_capture({ persist: false }));
 
         expect(result).toMatchObject({
           // verify minimum result shape; internal call counts may vary
