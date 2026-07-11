@@ -180,17 +180,23 @@ describe('TargetControlHandlers', () => {
         targetId: 'sw-1',
         type: 'service_worker',
         title: 'SW',
-        url: 'https://x/sw.js',
+        url: withPath(TEST_URLS.root, 'sw.js'),
         attached: false,
       },
       {
         targetId: 'sh-1',
         type: 'shared_worker',
         title: 'SH',
-        url: 'https://x/sh.js',
+        url: withPath(TEST_URLS.root, 'sh.js'),
         attached: true,
       },
-      { targetId: 'w-1', type: 'worker', title: 'W', url: 'https://x/w.js', attached: false },
+      {
+        targetId: 'w-1',
+        type: 'worker',
+        title: 'W',
+        url: withPath(TEST_URLS.root, 'w.js'),
+        attached: false,
+      },
     ]);
 
     const body = parseJson<any>(await handlers.handleBrowserListWorkers({}));
@@ -222,7 +228,7 @@ describe('TargetControlHandlers', () => {
         targetId: 'sw-1',
         type: 'service_worker',
         title: 'SW',
-        url: 'https://app/sw.js',
+        url: withPath(TEST_URLS.root, 'app/sw.js'),
         attached: false,
       },
     ]);
@@ -275,8 +281,8 @@ describe('TargetControlHandlers', () => {
       returnedScripts: 2,
       truncated: true,
       scripts: [
-        { scriptId: '1', url: 'https://x/sw.js' },
-        { scriptId: '2', url: 'https://x/a.js' },
+        { scriptId: '1', url: withPath(TEST_URLS.root, 'sw.js') },
+        { scriptId: '2', url: withPath(TEST_URLS.root, 'a.js') },
       ],
     });
 
@@ -309,7 +315,7 @@ describe('TargetControlHandlers', () => {
 
     const body = parseJson<any>(
       await handlers.handleServiceWorkerDeliverPush({
-        origin: 'https://app.example',
+        origin: TEST_URLS.root,
         registrationId: 'reg-42',
         data: '{"event":"test"}',
       }),
@@ -319,11 +325,11 @@ describe('TargetControlHandlers', () => {
     expect(body.delivered).toBe(true);
     expect(body.scope).toBe('cdp-arg-level');
     expect(body.verified).toBe(false);
-    expect(body.origin).toBe('https://app.example');
+    expect(body.origin).toBe(TEST_URLS.root);
     expect(body.registrationId).toBe('reg-42');
     expect(send).toHaveBeenCalledWith('ServiceWorker.enable');
     expect(send).toHaveBeenCalledWith('ServiceWorker.deliverPushMessage', {
-      origin: 'https://app.example',
+      origin: TEST_URLS.root,
       registrationId: 'reg-42',
       data: '{"event":"test"}',
     });
@@ -331,7 +337,7 @@ describe('TargetControlHandlers', () => {
 
   it('requires origin and registrationId for deliverPush', async () => {
     const body = parseJson<any>(
-      await handlers.handleServiceWorkerDeliverPush({ origin: 'https://x' }),
+      await handlers.handleServiceWorkerDeliverPush({ origin: TEST_URLS.root }),
     );
 
     expect(body.success).toBe(false);
@@ -344,7 +350,7 @@ describe('TargetControlHandlers', () => {
 
     const body = parseJson<any>(
       await handlers.handleServiceWorkerDeliverPush({
-        origin: 'https://x',
+        origin: TEST_URLS.root,
         registrationId: 'r1',
       }),
     );
@@ -359,7 +365,7 @@ describe('TargetControlHandlers', () => {
 
     const body = parseJson<any>(
       await handlers.handleServiceWorkerDispatchSync({
-        origin: 'https://app.example',
+        origin: TEST_URLS.root,
         registrationId: 'reg-42',
         tag: 'sync-messages',
         lastChance: true,
@@ -374,7 +380,7 @@ describe('TargetControlHandlers', () => {
     expect(body.lastChance).toBe(true);
     expect(send).toHaveBeenCalledWith('ServiceWorker.enable');
     expect(send).toHaveBeenCalledWith('ServiceWorker.dispatchSyncEvent', {
-      origin: 'https://app.example',
+      origin: TEST_URLS.root,
       registrationId: 'reg-42',
       tag: 'sync-messages',
       lastChance: true,
@@ -393,7 +399,7 @@ describe('TargetControlHandlers', () => {
 
     const body = parseJson<any>(
       await handlers.handleServiceWorkerDispatchSync({
-        origin: 'https://x',
+        origin: TEST_URLS.root,
         registrationId: 'r1',
       }),
     );
@@ -410,7 +416,7 @@ describe('TargetControlHandlers', () => {
 
     const body = parseJson<any>(
       await handlers.handleServiceWorkerDeliverPush({
-        origin: 'https://x',
+        origin: TEST_URLS.root,
         registrationId: 'r1',
       }),
     );
