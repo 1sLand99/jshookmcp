@@ -12,6 +12,11 @@ export const wasmTools: Tool[] = [
       .string(
         'outputPath',
         'Custom output file path. If omitted, auto-generates in artifacts/wasm/',
+      )
+      .boolean(
+        'autoInject',
+        'If no WASM is captured, auto-inject a bytes-capturing hook (stores raw bytes to window.__wasmModuleStorage — the stock webassembly-full preset only records events), reload the page, and retry. The page must instantiate its WASM on load for the re-capture to succeed.',
+        { default: false },
       ),
   ),
   tool('wasm_disassemble', (t) =>

@@ -5,7 +5,7 @@
 import { writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolveArtifactPath } from '@utils/artifacts';
-import { argNumber, argString } from '@server/domains/shared/parse-args';
+import { argBool, argNumber, argString } from '@server/domains/shared/parse-args';
 import type { WasmSharedState } from './shared';
 import { validateOutputPath, hasErrorResult } from './shared';
 import type {
@@ -13,6 +13,78 @@ import type {
   WasmVmpTraceEvalResult,
   WasmMemoryInspectEvalResult,
 } from './shared';
+
+/**
+ * Auto-inject capture script for `wasm_dump` `autoInject`. The stock
+ * `webassembly-full` preset records instantiate/import-call/memory events but
+ * does NOT store raw module bytes, so `wasm_dump` cannot recover the binary
+ * from it. This script hooks `WebAssembly.instantiate` / `compile` (plus their
+ * streaming variants) to push raw bytes into `window.__wasmModuleStorage` and
+ * an `instantiated` event into the same `__aiHooks['preset-webassembly-full']`
+ * channel the reader expects, then delegates to the original API. Streaming
+ * variants are funneled through the (hooked) buffer-source overloads so a
+ * `fetch().then(arrayBuffer())` path still captures bytes.
+ *
+ * ES5 syntax on purpose: this runs in the page before any site script.
+ */
+const WASM_CAPTURE_SCRIPT = `(function () {
+  if (typeof WebAssembly === 'undefined') return;
+  window.__wasmModuleStorage = [];
+  window.__aiHooks = window.__aiHooks || {};
+  window.__aiHooks['preset-webassembly-full'] = [];
+  function toBytes(bs) {
+    try {
+      if (bs instanceof ArrayBuffer) return new Uint8Array(bs);
+      if (ArrayBuffer.isView(bs)) return new Uint8Array(bs.buffer, bs.byteOffset, bs.byteLength);
+      if (bs && typeof bs.byteLength === 'number') return new Uint8Array(bs);
+    } catch (_) {}
+    return null;
+  }
+  function record(bs, inst, importObject) {
+    var u8 = toBytes(bs);
+    if (u8) window.__wasmModuleStorage.push(Array.from(u8));
+    var exp = inst && inst.exports ? Object.keys(inst.exports) : [];
+    var imps = importObject && typeof importObject === 'object' ? Object.keys(importObject) : [];
+    window.__aiHooks['preset-webassembly-full'].push({
+      type: 'instantiated', size: u8 ? u8.length : 0, exports: exp, importMods: imps, ts: Date.now()
+    });
+  }
+  var origInst = WebAssembly.instantiate;
+  WebAssembly.instantiate = function (bs, importObject) {
+    return origInst.call(this, bs, importObject).then(function (result) {
+      var inst = result && result.instance ? result.instance : result;
+      record(bs, inst, importObject);
+      return result;
+    });
+  };
+  var origInstStream = WebAssembly.instantiateStreaming;
+  if (origInstStream) {
+    WebAssembly.instantiateStreaming = function (source, importObject) {
+      return fetch(source).then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
+        return WebAssembly.instantiate(buf, importObject);
+      });
+    };
+  }
+  var origCompile = WebAssembly.compile;
+  WebAssembly.compile = function (bs) {
+    return origCompile.call(this, bs).then(function (mod) {
+      var u8 = toBytes(bs);
+      if (u8) window.__wasmModuleStorage.push(Array.from(u8));
+      window.__aiHooks['preset-webassembly-full'].push({
+        type: 'instantiated', size: u8 ? u8.length : 0, exports: [], importMods: [], ts: Date.now()
+      });
+      return mod;
+    });
+  };
+  var origCompileStream = WebAssembly.compileStreaming;
+  if (origCompileStream) {
+    WebAssembly.compileStreaming = function (source) {
+      return fetch(source).then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
+        return WebAssembly.compile(buf);
+      });
+    };
+  }
+})();`;
 
 export class BrowserHandlers {
   private state: WasmSharedState;
@@ -24,35 +96,54 @@ export class BrowserHandlers {
   async handleWasmDump(args: Record<string, unknown>) {
     const moduleIndex = argNumber(args, 'moduleIndex', 0);
     const outputPath = argString(args, 'outputPath');
+    const autoInject = argBool(args, 'autoInject', false);
 
     const page = await this.state.collector.getActivePage();
 
-    const result: WasmDumpEvalResult = await page.evaluate((idx: number) => {
-      const win = window as unknown as { __aiHooks?: Record<string, unknown> };
-      const hooksRaw = win.__aiHooks?.['preset-webassembly-full'];
-      if (!Array.isArray(hooksRaw) || hooksRaw.length === 0) {
-        return {
-          error:
-            'No WASM modules captured. Ensure the webassembly-full hook preset is active and the page has loaded WASM.',
-        };
-      }
+    // Read the instantiated-module metadata for `moduleIndex`. Captured as a
+    // closure so the autoInject retry re-reads after reload without duplicating
+    // the evaluate body. It closes over `page` + `moduleIndex`, so it is not
+    // flagged by unicorn/consistent-function-scoping.
+    const readEvents = (): Promise<WasmDumpEvalResult> =>
+      page.evaluate((idx: number) => {
+        const win = window as unknown as { __aiHooks?: Record<string, unknown> };
+        const hooksRaw = win.__aiHooks?.['preset-webassembly-full'];
+        if (!Array.isArray(hooksRaw) || hooksRaw.length === 0) {
+          return {
+            error:
+              'No WASM modules captured. Ensure the webassembly-full hook preset is active and the page has loaded WASM.',
+          };
+        }
 
-      const hooks = hooksRaw as Array<Record<string, unknown>>;
-      const instantiatedEvents = hooks.filter((e) => e.type === 'instantiated');
-      if (idx >= instantiatedEvents.length) {
-        return {
-          error: `Module index ${idx} out of range. Found ${instantiatedEvents.length} instantiated modules.`,
-        };
-      }
+        const hooks = hooksRaw as Array<Record<string, unknown>>;
+        const instantiatedEvents = hooks.filter((e) => e.type === 'instantiated');
+        if (idx >= instantiatedEvents.length) {
+          return {
+            error: `Module index ${idx} out of range. Found ${instantiatedEvents.length} instantiated modules.`,
+          };
+        }
 
-      const event = instantiatedEvents[idx]!;
-      return {
-        exports: event.exports,
-        importMods: event.importMods,
-        size: event.size,
-        moduleCount: instantiatedEvents.length,
-      };
-    }, moduleIndex);
+        const event = instantiatedEvents[idx]!;
+        return {
+          exports: event.exports,
+          importMods: event.importMods,
+          size: event.size,
+          moduleCount: instantiatedEvents.length,
+        };
+      }, moduleIndex);
+
+    let result: WasmDumpEvalResult = await readEvents();
+
+    // Auto-inject path: when no WASM is captured and the caller opts in, install
+    // a bytes-capturing hook (the webassembly-full preset records events only,
+    // not raw bytes), reload so the hook runs against page WASM, then re-read.
+    // The page must instantiate its WASM at load time for the re-capture to
+    // observe anything.
+    if (hasErrorResult(result) && autoInject) {
+      await page.evaluateOnNewDocument(WASM_CAPTURE_SCRIPT);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      result = await readEvents();
+    }
 
     if (hasErrorResult(result)) {
       return {
