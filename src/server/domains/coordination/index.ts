@@ -545,12 +545,32 @@ export class CoordinationHandlers {
       // Storage capture may fail on some pages — proceed without
     }
 
+    // Capture IndexedDB metadata (database / store / keyPath / count) for
+    // forensic diagnosis. Modern web apps keep auth tokens / draft state in
+    // IndexedDB (not localStorage); without this the snapshot misses the
+    // dominant "restore logged-in session" surface. Data payloads are NOT
+    // captured (size + cross-origin limits) — only schema + counts. The probe
+    // is a serialized async IIFE run via page.evaluate(string), so it carries
+    // no Node-side type/lint surface.
+    let indexedDB: IndexedDBDatabaseSummary[] | undefined;
+    try {
+      const captured = (await page.evaluate(INDEXEDDB_CAPTURE_SCRIPT)) as
+        | IndexedDBDatabaseSummary[]
+        | null;
+      if (Array.isArray(captured) && captured.length > 0) {
+        indexedDB = captured;
+      }
+    } catch {
+      // IndexedDB capture may fail (no browser / cross-origin) — proceed without
+    }
+
     const snapshot: PageSnapshot = {
       id: randomUUID().slice(0, 8),
       url,
       cookies,
       localStorage,
       sessionStorage,
+      ...(indexedDB ? { indexedDB } : {}),
       timestamp: Date.now(),
       label,
     };
@@ -563,6 +583,7 @@ export class CoordinationHandlers {
       cookieCount: snapshot.cookies.length,
       localStorageKeys: Object.keys(snapshot.localStorage).length,
       sessionStorageKeys: Object.keys(snapshot.sessionStorage).length,
+      indexedDBDatabaseCount: snapshot.indexedDB?.length ?? 0,
       label: snapshot.label,
     };
   }
@@ -659,12 +680,86 @@ export class CoordinationHandlers {
 
 // ── Snapshot type ──
 
+/**
+ * In-page IndexedDB metadata capture, run via `page.evaluate(string)`. Returns
+ * database → store summaries (name / count / keyPath). Serialized as a string
+ * so it carries no Node-side type/lint surface and runs self-contained in the
+ * page. Uses `indexedDB.databases()` (Chromium 71+); older browsers return [].
+ * Fail-soft: an unopenable DB (cross-origin / blocked) is surfaced with
+ * `{ name, error }` rather than aborting the whole capture.
+ */
+const INDEXEDDB_CAPTURE_SCRIPT = `(async () => {
+  const idb = globalThis.indexedDB;
+  if (!idb) return [];
+  let dbs = [];
+  try { if (typeof idb.databases === 'function') dbs = await idb.databases(); } catch (e) {}
+  const out = [];
+  for (const info of dbs) {
+    const name = info && info.name;
+    if (typeof name !== 'string') continue;
+    try {
+      const db = await new Promise((resolve, reject) => {
+        const r = idb.open(name);
+        r.onsuccess = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+      });
+      const storeNames = Array.from(db.objectStoreNames);
+      const stores = [];
+      if (storeNames.length) {
+        await new Promise((resolve) => {
+          const tx = db.transaction(storeNames, 'readonly');
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => resolve();
+          tx.onabort = () => resolve();
+          for (const sn of storeNames) {
+            const s = tx.objectStore(sn);
+            const c = s.count();
+            c.onsuccess = () => {
+              const kp = s.keyPath;
+              stores.push(kp === null || kp === undefined ? { name: sn, count: c.result } : { name: sn, count: c.result, keyPath: kp });
+            };
+            c.onerror = () => stores.push({ name: sn, count: 0 });
+          }
+        });
+      }
+      const version = typeof db.version === 'number' ? db.version : undefined;
+      db.close();
+      out.push(version === undefined ? { name, stores } : { name, version, stores });
+    } catch (e) {
+      out.push({ name, error: (e && e.message) ? String(e.message) : 'open-failed' });
+    }
+  }
+  return out;
+})()`;
+
+export interface IndexedDBStoreSummary {
+  name: string;
+  count: number;
+  keyPath?: string | string[];
+}
+
+export interface IndexedDBDatabaseSummary {
+  name: string;
+  version?: number;
+  stores?: IndexedDBStoreSummary[];
+  /** Present when a database is listed but cannot be opened (cross-origin / blocked). */
+  error?: string;
+}
+
 export interface PageSnapshot {
   id: string;
   url: string;
   cookies: Array<{ name: string; value: string; domain: string; path: string }>;
   localStorage: Record<string, string>;
   sessionStorage: Record<string, string>;
+  /**
+   * IndexedDB metadata (database / store / keyPath / count) captured for
+   * forensic diagnosis. Modern apps keep auth tokens / draft state here rather
+   * than in localStorage. Data payloads are intentionally NOT captured (size +
+   * cross-origin limits); IndexedDB is also NOT restored — restore only
+   * re-applies cookies + Web Storage.
+   */
+  indexedDB?: IndexedDBDatabaseSummary[];
   timestamp: number;
   label?: string;
 }
