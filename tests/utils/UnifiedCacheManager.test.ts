@@ -139,4 +139,77 @@ describe('UnifiedCacheManager', () => {
     expect(clearA).toHaveBeenCalledOnce();
     expect(clearB).toHaveBeenCalledOnce();
   });
+
+  it('namespace-scoped smartCleanup only touches whitelisted caches', async () => {
+    const manager = UnifiedCacheManager.getInstance();
+
+    const protectedState = { size: mb(220), entries: 2, hits: 1, misses: 19, hitRate: 0.05 };
+    const protectedClear = vi.fn(async () => undefined);
+    const largeState = { size: mb(220), entries: 2, hits: 1, misses: 19, hitRate: 0.05 };
+    const largeClear = vi.fn(async () => {
+      largeState.size = 0;
+      largeState.entries = 0;
+    });
+
+    manager.registerCache({
+      name: 'protected-namespace',
+      getStats: vi.fn(async () => ({ ...protectedState })),
+      clear: protectedClear,
+      cleanup: vi.fn(async () => undefined),
+    });
+    manager.registerCache({
+      name: 'target-namespace',
+      getStats: vi.fn(async () => ({ ...largeState })),
+      clear: largeClear,
+      cleanup: vi.fn(async () => undefined),
+    });
+
+    const result = await manager.smartCleanup(mb(10), {
+      namespaces: ['target-namespace'],
+    });
+
+    // The whitelisted cache is cleared; the protected one is never touched.
+    expect(largeClear).toHaveBeenCalled();
+    expect(protectedClear).not.toHaveBeenCalled();
+    // `after` reflects only the filtered subset (target-namespace went to 0).
+    expect(result.after).toBeLessThanOrEqual(mb(10));
+  });
+
+  it('smartCleanup with empty namespaces array behaves like the unfiltered path', async () => {
+    const manager = UnifiedCacheManager.getInstance();
+    const clearA = vi.fn(async () => undefined);
+    const clearB = vi.fn(async () => undefined);
+
+    manager.registerCache({
+      name: 'cache-a',
+      getStats: vi.fn(async () => ({ entries: 1, size: mb(300), hits: 0, misses: 5, hitRate: 0 })),
+      clear: clearA,
+      cleanup: vi.fn(async () => undefined),
+    });
+    manager.registerCache({
+      name: 'cache-b',
+      getStats: vi.fn(async () => ({ entries: 1, size: mb(300), hits: 0, misses: 5, hitRate: 0 })),
+      clear: clearB,
+      cleanup: vi.fn(async () => undefined),
+    });
+
+    await manager.smartCleanup(mb(10), { namespaces: [] });
+    // No namespace restriction → both caches are eligible for cleanup.
+    expect(clearA).toHaveBeenCalled();
+    expect(clearB).toHaveBeenCalled();
+  });
+
+  it('smartCleanup with a namespace matching nothing is a no-op', async () => {
+    const manager = UnifiedCacheManager.getInstance();
+    const clear = vi.fn(async () => undefined);
+    manager.registerCache({
+      name: 'untouchable',
+      getStats: vi.fn(async () => ({ entries: 1, size: mb(500), hits: 0, misses: 1, hitRate: 0 })),
+      clear,
+    });
+
+    const result = await manager.smartCleanup(mb(10), { namespaces: ['does-not-exist'] });
+    expect(clear).not.toHaveBeenCalled();
+    expect(result.freed).toBe(0);
+  });
 });

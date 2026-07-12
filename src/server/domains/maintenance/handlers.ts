@@ -67,8 +67,16 @@ export class CoreMaintenanceHandlers {
     return handleSafe(async () => this.unifiedCache.getGlobalStats());
   }
 
-  async handleSmartCacheCleanup(targetSize?: number): Promise<ToolResponse> {
-    return handleSafe(async () => this.unifiedCache.smartCleanup(targetSize));
+  async handleSmartCacheCleanup(
+    targetSize?: number,
+    namespaces?: readonly string[],
+  ): Promise<ToolResponse> {
+    return handleSafe(async () =>
+      this.unifiedCache.smartCleanup(
+        targetSize,
+        namespaces && namespaces.length > 0 ? { namespaces } : undefined,
+      ),
+    );
   }
 
   async handleClearAllCaches(): Promise<ToolResponse> {

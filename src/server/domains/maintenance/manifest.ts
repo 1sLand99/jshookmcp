@@ -52,7 +52,10 @@ const coreRegistrations = defineMethodRegistrations<
     {
       tool: 'smart_cache_cleanup',
       method: 'handleSmartCacheCleanup',
-      mapArgs: (args) => [args.targetSize as number | undefined],
+      mapArgs: (args) => [
+        args.targetSize as number | undefined,
+        args.namespaces as readonly string[] | undefined,
+      ],
     },
     { tool: 'clear_all_caches', method: 'handleClearAllCaches' },
     {
@@ -91,6 +94,7 @@ const extensionRegistrations = defineMethodRegistrations<
       tool: 'list_extensions',
       method: 'handleListExtensions',
       profiles: ['workflow', 'full'],
+      mapArgs: (args) => [{ includeIntegrity: args.includeIntegrity as boolean | undefined }],
     },
     { tool: 'reload_extensions', method: 'handleReloadExtensions' },
     {

@@ -154,7 +154,7 @@ describe('CoreMaintenanceHandlers', () => {
   it('smart cache cleanup forwards targetSize', async () => {
     unifiedCache.smartCleanup.mockResolvedValue({ freed: 1024 });
     const body = parseJson<any>(await handlers.handleSmartCacheCleanup(5000));
-    expect(unifiedCache.smartCleanup).toHaveBeenCalledWith(5000);
+    expect(unifiedCache.smartCleanup).toHaveBeenCalledWith(5000, undefined);
     expect(body.success).toBe(true);
     expect(body.freed).toBe(1024);
   });

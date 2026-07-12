@@ -21,7 +21,14 @@ export const tokenBudgetTools: Tool[] = [
 
 export const extensionTools: Tool[] = [
   tool('list_extensions', (t) =>
-    t.desc('List all loaded plugins, workflows, and extension tools.').query(),
+    t
+      .desc('List all loaded plugins, workflows, and extension tools.')
+      .boolean(
+        'includeIntegrity',
+        'When true, enrich each extension with package version, entry-file SHA-256 digest, ' +
+          'and registry-install provenance (pinned commit). Slower (hashes files).',
+      )
+      .query(),
   ),
   tool('reload_extensions', (t) =>
     t
@@ -54,7 +61,12 @@ export const cacheTools: Tool[] = [
   tool('smart_cache_cleanup', (t) =>
     t
       .desc('Evict LRU and stale entries while preserving hot data.')
-      .number('targetSize', 'Target size in bytes'),
+      .number('targetSize', 'Target size in bytes')
+      .array(
+        'namespaces',
+        { type: 'string' },
+        'Restrict eviction to these cache namespaces (by name). Empty/omitted = all caches.',
+      ),
   ),
   tool('clear_all_caches', (t) =>
     t.desc('Clear all internal caches. Destructive — prefer smart_cache_cleanup.').destructive(),

@@ -5,6 +5,7 @@ import { logger } from '@utils/logger';
 import type { MCPServerContext } from '@server/MCPServer.context';
 import type { ToolResponse } from '@server/types';
 import { asJsonResponse, serializeError } from '@server/domains/shared/response';
+import { INSTALLED_EXTENSION_METADATA_FILENAME } from '@server/extensions/types';
 import {
   EXTENSION_GIT_CHECKOUT_TIMEOUT_MS,
   EXTENSION_GIT_CLONE_TIMEOUT_MS,
@@ -24,6 +25,7 @@ import {
   serializeRegistryFetchError,
   writeInstalledExtensionMetadata,
 } from './handlers/extension-registry-utils';
+import { summarizeExtensionIntegrity } from './handlers/extension-integrity-utils';
 
 export class ExtensionManagementHandlers {
   private readonly ctx: MCPServerContext;
@@ -32,10 +34,43 @@ export class ExtensionManagementHandlers {
     this.ctx = ctx;
   }
 
-  async handleListExtensions(): Promise<ToolResponse> {
+  async handleListExtensions(args: { includeIntegrity?: boolean } = {}): Promise<ToolResponse> {
     try {
       const result = this.ctx.listExtensions();
-      return asJsonResponse({ success: true, ...result });
+      if (!args.includeIntegrity) {
+        return asJsonResponse({ success: true, ...result });
+      }
+
+      // Best-effort enrichment — never let an integrity-resolution failure break the listing.
+      try {
+        const summary = await summarizeExtensionIntegrity(
+          result,
+          INSTALLED_EXTENSION_METADATA_FILENAME,
+        );
+        const bySource = new Map(summary.entries.map((entry) => [entry.source, entry]));
+        const merge = <T extends { source: string }>(record: T): T & { integrity?: unknown } => {
+          const entry = bySource.get(record.source);
+          if (!entry) {
+            return record;
+          }
+          const { source: _source, ...rest } = entry;
+          return { ...record, integrity: rest };
+        };
+        return asJsonResponse({
+          success: true,
+          ...result,
+          plugins: result.plugins.map(merge),
+          workflows: result.workflows.map(merge),
+          integrity: {
+            managedCount: summary.managedCount,
+            digestedCount: summary.digestedCount,
+            entryCount: summary.entries.length,
+          },
+        });
+      } catch (enrichError) {
+        logger.warn('Failed to enrich extension integrity:', enrichError);
+        return asJsonResponse({ success: true, ...result });
+      }
     } catch (error) {
       logger.error('Failed to list extensions:', error);
       return asJsonResponse(serializeError(error));

@@ -65,7 +65,37 @@ export class UnifiedCacheManager {
   }
 
   async getGlobalStats(): Promise<GlobalCacheStats> {
-    let totalEntries = 0;
+    const { caches, totalSize, hitRate } = await this.getFilteredStats(() => true);
+    const totalEntries = caches.reduce((sum, cache) => sum + cache.entries, 0);
+    const recommendations = this.generateRecommendations(totalSize, hitRate, caches);
+
+    return {
+      totalEntries,
+      totalSize,
+      totalSizeMB: (totalSize / 1024 / 1024).toFixed(2),
+      hitRate,
+      caches,
+      recommendations,
+    };
+  }
+
+  /**
+   * Internal: aggregate stats for caches passing `filter`. Used by both
+   * `getGlobalStats` (passthrough filter) and `smartCleanup` (namespace filter)
+   * so the two paths can never drift apart.
+   */
+  private async getFilteredStats(filter: (name: string) => boolean): Promise<{
+    caches: Array<{
+      name: string;
+      entries: number;
+      size: number;
+      sizeMB: string;
+      hitRate?: number;
+      ttl?: number;
+    }>;
+    totalSize: number;
+    hitRate: number;
+  }> {
     let totalSize = 0;
     let totalHits = 0;
     let totalMisses = 0;
@@ -80,14 +110,12 @@ export class UnifiedCacheManager {
     }> = [];
 
     for (const [name, cache] of this.caches) {
+      if (!filter(name)) continue;
       try {
         const stats = await cache.getStats();
-
-        totalEntries += stats.entries;
         totalSize += stats.size;
         totalHits += stats.hits || 0;
         totalMisses += stats.misses || 0;
-
         cacheStats.push({
           name,
           entries: stats.entries,
@@ -102,27 +130,33 @@ export class UnifiedCacheManager {
     }
 
     const hitRate = totalHits + totalMisses > 0 ? totalHits / (totalHits + totalMisses) : 0;
-
-    const recommendations = this.generateRecommendations(totalSize, hitRate, cacheStats);
-
-    return {
-      totalEntries,
-      totalSize,
-      totalSizeMB: (totalSize / 1024 / 1024).toFixed(2),
-      hitRate,
-      caches: cacheStats,
-      recommendations,
-    };
+    return { caches: cacheStats, totalSize, hitRate };
   }
 
-  async smartCleanup(targetSize?: number): Promise<{
+  /**
+   * Smart eviction: expired → low-hit-rate → largest, until the filtered subset
+   * fits within `targetSize`.
+   *
+   * `options.namespaces` restricts every step to the listed cache names. An
+   * empty/undefined list means "all caches" (backwards compatible). This lets a
+   * caller say "evict the search cache but never touch instrumentation" without
+   * reaching for the destructive `clearAll`.
+   */
+  async smartCleanup(
+    targetSize?: number,
+    options?: { namespaces?: readonly string[] },
+  ): Promise<{
     before: number;
     after: number;
     freed: number;
     freedPercentage: number;
   }> {
+    const namespaces = options?.namespaces;
+    const namespaceFilter = (name: string): boolean =>
+      !namespaces || namespaces.length === 0 || namespaces.includes(name);
+
     const target = targetSize || this.GLOBAL_MAX_SIZE * 0.7;
-    const beforeStats = await this.getGlobalStats();
+    const beforeStats = await this.getFilteredStats(namespaceFilter);
     const beforeSize = beforeStats.totalSize;
 
     if (beforeSize <= target) {
@@ -136,34 +170,36 @@ export class UnifiedCacheManager {
     }
 
     logger.info(
-      `Smart cleanup: current ${beforeStats.totalSizeMB}MB, ` +
-        `target ${(target / 1024 / 1024).toFixed(2)}MB`,
+      `Smart cleanup: current ${(beforeSize / 1024 / 1024).toFixed(2)}MB, ` +
+        `target ${(target / 1024 / 1024).toFixed(2)}MB` +
+        (namespaces && namespaces.length > 0 ? ` (namespaces: ${namespaces.join(', ')})` : ''),
     );
 
-    await this.cleanupExpired();
+    await this.cleanupExpired(namespaceFilter);
 
-    let currentStats = await this.getGlobalStats();
+    let currentStats = await this.getFilteredStats(namespaceFilter);
     if (currentStats.totalSize <= target) {
       return this.calculateCleanupResult(beforeSize, currentStats.totalSize);
     }
 
-    await this.cleanupLowHitRate();
+    await this.cleanupLowHitRate(namespaceFilter);
 
-    currentStats = await this.getGlobalStats();
+    currentStats = await this.getFilteredStats(namespaceFilter);
     if (currentStats.totalSize <= target) {
       return this.calculateCleanupResult(beforeSize, currentStats.totalSize);
     }
 
-    await this.cleanupLargeItems();
+    await this.cleanupLargeItems(namespaceFilter);
 
-    const afterStats = await this.getGlobalStats();
+    const afterStats = await this.getFilteredStats(namespaceFilter);
     return this.calculateCleanupResult(beforeSize, afterStats.totalSize);
   }
 
-  private async cleanupExpired(): Promise<void> {
+  private async cleanupExpired(filter: (name: string) => boolean): Promise<void> {
     logger.info('Cleaning up expired data...');
 
     for (const [name, cache] of this.caches) {
+      if (!filter(name)) continue;
       if (cache.cleanup) {
         try {
           await cache.cleanup();
@@ -175,10 +211,10 @@ export class UnifiedCacheManager {
     }
   }
 
-  private async cleanupLowHitRate(): Promise<void> {
+  private async cleanupLowHitRate(filter: (name: string) => boolean): Promise<void> {
     logger.info('Cleaning up low hit rate caches...');
 
-    const stats = await this.getGlobalStats();
+    const stats = await this.getFilteredStats(filter);
     const avgHitRate = stats.hitRate;
 
     for (const cacheStats of stats.caches) {
@@ -202,10 +238,10 @@ export class UnifiedCacheManager {
     }
   }
 
-  private async cleanupLargeItems(): Promise<void> {
+  private async cleanupLargeItems(filter: (name: string) => boolean): Promise<void> {
     logger.info('Cleaning up large caches...');
 
-    const stats = await this.getGlobalStats();
+    const stats = await this.getFilteredStats(filter);
 
     const sortedCaches = stats.caches.toSorted((a, b) => b.size - a.size);
 

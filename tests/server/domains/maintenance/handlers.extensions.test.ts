@@ -1,8 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ExtensionManagementHandlers } from '@server/domains/maintenance/handlers.extensions';
+import {
+  summarizeExtensionIntegrity,
+  type ExtensionIntegrityEntry,
+} from '@server/domains/maintenance/handlers/extension-integrity-utils';
 import * as child_process from 'node:child_process';
 import * as fs from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
+
+vi.mock('@server/domains/maintenance/handlers/extension-integrity-utils', () => ({
+  summarizeExtensionIntegrity: vi.fn(),
+}));
 
 vi.mock('node:child_process', () => ({
   execFile: vi.fn(
@@ -63,6 +71,89 @@ describe('ExtensionManagementHandlers', () => {
       const data = JSON.parse(res.content[0].text);
       expect(data.success).toBe(false);
       expect(data.error).toBe('err');
+    });
+
+    it('passes through unchanged when includeIntegrity is false', async () => {
+      ctx.listExtensions.mockReturnValue({ plugins: [], workflows: [], toolCount: 0 });
+      const res = (await handlers.handleListExtensions({ includeIntegrity: false })) as any;
+      const data = JSON.parse(res.content[0].text);
+      expect(data.success).toBe(true);
+      expect(data.integrity).toBeUndefined();
+      expect(vi.mocked(summarizeExtensionIntegrity)).not.toHaveBeenCalled();
+    });
+
+    it('enriches each plugin/workflow with integrity when includeIntegrity is true', async () => {
+      ctx.listExtensions.mockReturnValue({
+        plugins: [
+          {
+            id: 'p1',
+            name: 'p1',
+            source: '/plugins/p1/dist/index.js',
+            domains: [],
+            workflows: [],
+            tools: [],
+          },
+        ],
+        workflows: [{ id: 'w1', displayName: 'w1', source: '/workflows/w1.js' }],
+        toolCount: 2,
+      });
+      const pluginEntry: ExtensionIntegrityEntry = {
+        source: '/plugins/p1/dist/index.js',
+        version: '1.4.2',
+        digest: 'abc',
+        managed: true,
+        pinnedCommit: 'deadbeef',
+      };
+      const workflowEntry: ExtensionIntegrityEntry = {
+        source: '/workflows/w1.js',
+        digest: 'def',
+        managed: false,
+      };
+      vi.mocked(summarizeExtensionIntegrity).mockResolvedValue({
+        entries: [pluginEntry, workflowEntry],
+        managedCount: 1,
+        digestedCount: 2,
+      });
+
+      const res = (await handlers.handleListExtensions({ includeIntegrity: true })) as any;
+      const data = JSON.parse(res.content[0].text);
+
+      expect(vi.mocked(summarizeExtensionIntegrity)).toHaveBeenCalledOnce();
+      // The `source` field is stripped from the embedded integrity object.
+      expect(data.plugins[0].integrity).toEqual({
+        version: '1.4.2',
+        digest: 'abc',
+        managed: true,
+        pinnedCommit: 'deadbeef',
+      });
+      expect(data.workflows[0].integrity).toEqual({ digest: 'def', managed: false });
+      expect(data.integrity).toEqual({ managedCount: 1, digestedCount: 2, entryCount: 2 });
+    });
+
+    it('omits integrity for sources not present in the summary', async () => {
+      ctx.listExtensions.mockReturnValue({
+        plugins: [{ id: 'p1', name: 'p1', source: '/a.js', domains: [], workflows: [], tools: [] }],
+        workflows: [],
+      });
+      vi.mocked(summarizeExtensionIntegrity).mockResolvedValue({
+        entries: [],
+        managedCount: 0,
+        digestedCount: 0,
+      });
+
+      const res = (await handlers.handleListExtensions({ includeIntegrity: true })) as any;
+      const data = JSON.parse(res.content[0].text);
+      expect(data.plugins[0].integrity).toBeUndefined();
+    });
+
+    it('falls back to the plain listing when enrichment throws', async () => {
+      ctx.listExtensions.mockReturnValue({ plugins: [], workflows: [], toolCount: 0 });
+      vi.mocked(summarizeExtensionIntegrity).mockRejectedValue(new Error('hash fail'));
+
+      const res = (await handlers.handleListExtensions({ includeIntegrity: true })) as any;
+      const data = JSON.parse(res.content[0].text);
+      expect(data.success).toBe(true);
+      expect(data.integrity).toBeUndefined();
     });
   });
 
