@@ -609,5 +609,7 @@
   "apktool_build": "待补充中文：Rebuild an APK from a decoded apktool source directory (closes the patch-and-repack loop with apk_sign).",
   "apk_sign": "待补充中文：Sign an APK with apksigner using a caller-supplied keystore. Pairs with apktool_build for a full repack-and-sign workflow.",
   "frida_memory_scan": "待补充中文：Scan process memory for a byte pattern via Frida Memory.scanSync. Searches a named module, an explicit address range, or all readable ranges by default.",
-  "frida_memory_read": "待补充中文：Read raw bytes from a Frida session via ptr(address).readByteArray. Returns hex; capped at 65536 bytes per call."
+  "frida_memory_read": "待补充中文：Read raw bytes from a Frida session via ptr(address).readByteArray. Returns hex; capped at 65536 bytes per call.",
+  "instrumentation_session_diff": "待补充中文：Diff two instrumentation session snapshots: operations added/removed/common (by id) plus artifact fingerprints and per-type counts. Pure compare, mutates nothing.",
+  "instrumentation_session_merge": "待补充中文：Merge two sessions into a new session: copies operations (with id remapping) and artifacts from both sources. Original sessions are untouched."
 }

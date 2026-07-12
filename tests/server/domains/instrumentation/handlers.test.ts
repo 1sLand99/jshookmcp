@@ -142,6 +142,96 @@ describe('InstrumentationHandlers', () => {
     });
   });
 
+  describe('handleSessionDiff', () => {
+    it('diffs operations and artifacts across two sessions', async () => {
+      const aCreate = await handlers.handleSessionCreate({});
+      const aId = (parseResponse(aCreate).session as Record<string, unknown>).id as string;
+      const aOp = parseResponse(
+        await handlers.handleOperationRegister({
+          sessionId: aId,
+          type: InstrumentationType.RUNTIME_HOOK,
+          target: 'onlyInA',
+        }),
+      ).operation as Record<string, unknown>;
+      await handlers.handleArtifactRecord({ operationId: aOp.id as string, data: { x: 1 } });
+
+      const bCreate = await handlers.handleSessionCreate({});
+      const bId = (parseResponse(bCreate).session as Record<string, unknown>).id as string;
+      await handlers.handleOperationRegister({
+        sessionId: bId,
+        type: InstrumentationType.RUNTIME_HOOK,
+        target: 'onlyInB',
+      });
+
+      const result = await handlers.handleSessionDiff({ sessionIdA: aId, sessionIdB: bId });
+      const data = parseResponse(result);
+      expect(data.success).toBe(true);
+      const diff = data.diff as Record<string, unknown>;
+      const ops = diff.operations as Record<string, unknown>;
+      expect((ops.removedFromA as unknown[]).length).toBe(1);
+      expect((ops.addedInB as unknown[]).length).toBe(1);
+    });
+
+    it('errors when a source session is missing', async () => {
+      const result = await handlers.handleSessionDiff({ sessionIdA: 'a', sessionIdB: 'b' });
+      const data = parseResponse(result);
+      expect(data.success).toBe(false);
+      expect(data.error).toContain('not found');
+    });
+  });
+
+  describe('handleSessionMerge', () => {
+    it('merges operations and artifacts from two sessions with id remapping', async () => {
+      const aCreate = await handlers.handleSessionCreate({});
+      const aId = (parseResponse(aCreate).session as Record<string, unknown>).id as string;
+      const aOp = parseResponse(
+        await handlers.handleOperationRegister({
+          sessionId: aId,
+          type: InstrumentationType.RUNTIME_HOOK,
+          target: 'fa',
+        }),
+      ).operation as Record<string, unknown>;
+      await handlers.handleArtifactRecord({ operationId: aOp.id as string, data: { a: 1 } });
+
+      const bCreate = await handlers.handleSessionCreate({});
+      const bId = (parseResponse(bCreate).session as Record<string, unknown>).id as string;
+      const bOp = parseResponse(
+        await handlers.handleOperationRegister({
+          sessionId: bId,
+          type: InstrumentationType.NETWORK_INTERCEPT,
+          target: 'fb',
+        }),
+      ).operation as Record<string, unknown>;
+      await handlers.handleArtifactRecord({ operationId: bOp.id as string, data: { b: 2 } });
+
+      const result = await handlers.handleSessionMerge({
+        sessionIdA: aId,
+        sessionIdB: bId,
+        name: 'merged',
+      });
+      const data = parseResponse(result);
+      expect(data.success).toBe(true);
+      expect(data.operationsMerged).toBe(2);
+      expect(data.artifactsMerged).toBe(2);
+      const snap = data.snapshot as Record<string, unknown>;
+      expect((snap.operations as unknown[]).length).toBe(2);
+      expect((snap.artifacts as unknown[]).length).toBe(2);
+
+      // Original sessions are untouched.
+      const aSnap = manager.getSessionSnapshot(aId);
+      expect(aSnap?.operations.length).toBe(1);
+      const bSnap = manager.getSessionSnapshot(bId);
+      expect(bSnap?.operations.length).toBe(1);
+    });
+
+    it('errors when a source session is missing', async () => {
+      const result = await handlers.handleSessionMerge({ sessionIdA: 'a', sessionIdB: 'b' });
+      const data = parseResponse(result);
+      expect(data.success).toBe(false);
+      expect(data.error).toContain('not found');
+    });
+  });
+
   describe('handleOperationList', () => {
     it('returns operations for given session', async () => {
       const createResult = await handlers.handleSessionCreate({});

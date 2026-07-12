@@ -7,6 +7,8 @@ const queryTypes = [
   'runtime-hook',
   'network-intercept',
   'function-trace',
+  'storage-mutation',
+  'dom-observation',
 ] as const;
 
 export const instrumentationTools: Tool[] = [
@@ -24,6 +26,26 @@ export const instrumentationTools: Tool[] = [
       .string('sessionId', 'Session ID to export')
       .string('outputDir', 'Optional project-relative output directory under the workspace')
       .required('sessionId'),
+  ),
+  tool('instrumentation_session_diff', (t) =>
+    t
+      .desc(
+        'Diff two instrumentation session snapshots: operations added/removed/common (by id) plus artifact fingerprints and per-type counts. Pure compare, mutates nothing.',
+      )
+      .string('sessionIdA', 'Baseline session ID')
+      .string('sessionIdB', 'Compared session ID')
+      .required('sessionIdA', 'sessionIdB')
+      .query(),
+  ),
+  tool('instrumentation_session_merge', (t) =>
+    t
+      .desc(
+        'Merge two sessions into a new session: copies operations (with id remapping) and artifacts from both sources. Original sessions are untouched.',
+      )
+      .string('sessionIdA', 'First source session ID')
+      .string('sessionIdB', 'Second source session ID')
+      .string('name', 'Optional name for the merged session')
+      .required('sessionIdA', 'sessionIdB'),
   ),
   tool('instrumentation_operation', (t) =>
     t

@@ -44,6 +44,8 @@ const instrumentationRegistrations = defineMethodRegistrations<
   entries: [
     { tool: 'instrumentation_session', method: 'handleSessionDispatch' },
     { tool: 'instrumentation_session_export', method: 'handleSessionExport' },
+    { tool: 'instrumentation_session_diff', method: 'handleSessionDiff' },
+    { tool: 'instrumentation_session_merge', method: 'handleSessionMerge' },
     { tool: 'instrumentation_operation', method: 'handleOperationDispatch' },
     { tool: 'instrumentation_artifact', method: 'handleArtifactDispatch' },
     { tool: 'instrumentation_hook_preset', method: 'handleHookPreset' },
@@ -185,6 +187,8 @@ const manifest = {
     tools: [
       'instrumentation_session',
       'instrumentation_session_export',
+      'instrumentation_session_diff',
+      'instrumentation_session_merge',
       'instrumentation_operation',
       'instrumentation_artifact',
       'instrumentation_hook_preset',

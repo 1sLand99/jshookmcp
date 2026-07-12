@@ -21,12 +21,14 @@
 - instrumentation + network
 - instrumentation + browser
 
-## 工具清单（11）
+## 工具清单（13）
 
 | 工具 | 说明 |
 | --- | --- |
 | `instrumentation_session` | 管理 instrumentation 会话，将 Hook、拦截和 Trace 收拢为统一的可查询容器。 |
 | `instrumentation_session_export` | 将插桩会话快照导出为 JSON artifacts 文件 |
+| `instrumentation_session_diff` | 待补充中文：Diff two instrumentation session snapshots: operations added/removed/common (by id) plus artifact fingerprints and per-type counts. Pure compare, mutates nothing. |
+| `instrumentation_session_merge` | 待补充中文：Merge two sessions into a new session: copies operations (with id remapping) and artifacts from both sources. Original sessions are untouched. |
 | `instrumentation_operation` | 管理 instrumentation 会话内的操作（Hook、拦截、Trace）。 |
 | `instrumentation_artifact` | 管理 instrumentation 操作捕获的产物（参数、返回值、拦截数据等）。 |
 | `instrumentation_hook_preset` | 在会话内应用预设的 Hook 模板，自动记录捕获到的数据。 |

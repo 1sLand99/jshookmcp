@@ -21,12 +21,14 @@ Unified instrumentation-session domain that groups hooks, intercepts, traces, ev
 - instrumentation + network
 - instrumentation + browser
 
-## Full tool list (11)
+## Full tool list (13)
 
 | Tool | Description |
 | --- | --- |
 | `instrumentation_session` | Start, stop, or query status of an instrumentation recording session. |
 | `instrumentation_session_export` | Export an instrumentation session snapshot to an artifacts JSON file. |
+| `instrumentation_session_diff` | Diff two instrumentation session snapshots: operations added/removed/common (by id) plus artifact fingerprints and per-type counts. Pure compare, mutates nothing. |
+| `instrumentation_session_merge` | Merge two sessions into a new session: copies operations (with id remapping) and artifacts from both sources. Original sessions are untouched. |
 | `instrumentation_operation` | Manage operations inside an instrumentation session. |
 | `instrumentation_artifact` | Manage artifacts captured by instrumentation operations. |
 | `instrumentation_hook_preset` | Apply hook presets inside an instrumentation session. |

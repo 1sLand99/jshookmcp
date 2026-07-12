@@ -1,4 +1,5 @@
 import type { InstrumentationSessionManager } from '@server/instrumentation/InstrumentationSession';
+import { diffSessionSnapshots } from '@server/instrumentation/snapshot-diff';
 import { InstrumentationType } from '@server/instrumentation/types';
 import { argString } from '@server/domains/shared/parse-args';
 import { asJsonResponse } from '@server/domains/shared/response';
@@ -147,6 +148,65 @@ export class InstrumentationHandlers {
         operationCount: snapshot.operations.length,
         artifactCount: snapshot.artifacts.length,
         bytesWritten: Buffer.byteLength(content, 'utf8'),
+      };
+    });
+  }
+
+  async handleSessionDiff(args: Record<string, unknown>) {
+    return handleSafe(async () => {
+      const sessionIdA = argString(args, 'sessionIdA', '');
+      const sessionIdB = argString(args, 'sessionIdB', '');
+      if (!sessionIdA) throw new Error('sessionIdA is required');
+      if (!sessionIdB) throw new Error('sessionIdB is required');
+      const snapA = this.sessionManager.getSessionSnapshot(sessionIdA);
+      const snapB = this.sessionManager.getSessionSnapshot(sessionIdB);
+      if (!snapA) throw new Error(`Session "${sessionIdA}" not found`);
+      if (!snapB) throw new Error(`Session "${sessionIdB}" not found`);
+      return { diff: diffSessionSnapshots(snapA, snapB) };
+    });
+  }
+
+  async handleSessionMerge(args: Record<string, unknown>) {
+    return handleSafe(async () => {
+      const sessionIdA = argString(args, 'sessionIdA', '');
+      const sessionIdB = argString(args, 'sessionIdB', '');
+      const name = argString(args, 'name');
+      if (!sessionIdA) throw new Error('sessionIdA is required');
+      if (!sessionIdB) throw new Error('sessionIdB is required');
+      const snapA = this.sessionManager.getSessionSnapshot(sessionIdA);
+      const snapB = this.sessionManager.getSessionSnapshot(sessionIdB);
+      if (!snapA) throw new Error(`Session "${sessionIdA}" not found`);
+      if (!snapB) throw new Error(`Session "${sessionIdB}" not found`);
+
+      const mergedName = name || `merge:${snapA.session.id}+${snapB.session.id}`;
+      const merged = this.sessionManager.createSession(mergedName);
+      // Copy operations (id remap) then artifacts using the remapped op ids.
+      // Artifacts whose source operation is missing are skipped defensively.
+      const opIdMap = new Map<string, string>();
+      for (const op of [...snapA.operations, ...snapB.operations]) {
+        const newOp = this.sessionManager.registerOperation(
+          merged.id,
+          op.type,
+          op.target,
+          op.config,
+        );
+        opIdMap.set(op.id, newOp.id);
+      }
+      let artifactsMerged = 0;
+      for (const art of [...snapA.artifacts, ...snapB.artifacts]) {
+        const newOpId = opIdMap.get(art.operationId);
+        if (newOpId) {
+          this.sessionManager.recordArtifact(newOpId, art.data);
+          artifactsMerged++;
+        }
+      }
+      const snapshot = this.sessionManager.getSessionSnapshot(merged.id);
+      return {
+        mergedSessionId: merged.id,
+        sourceSessions: [sessionIdA, sessionIdB],
+        operationsMerged: opIdMap.size,
+        artifactsMerged,
+        snapshot,
       };
     });
   }

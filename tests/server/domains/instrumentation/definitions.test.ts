@@ -44,7 +44,14 @@ describe('instrumentation domain definitions', () => {
       enum: ['register', 'list', 'status', 'stop'],
     });
     expect(operationTool?.inputSchema.properties?.type).toMatchObject({
-      enum: ['before-load-inject', 'runtime-hook', 'network-intercept', 'function-trace'],
+      enum: [
+        'before-load-inject',
+        'runtime-hook',
+        'network-intercept',
+        'function-trace',
+        'storage-mutation',
+        'dom-observation',
+      ],
     });
   });
 
@@ -54,7 +61,14 @@ describe('instrumentation domain definitions', () => {
     );
 
     expect(artifactTool?.inputSchema.properties?.type).toMatchObject({
-      enum: ['before-load-inject', 'runtime-hook', 'network-intercept', 'function-trace'],
+      enum: [
+        'before-load-inject',
+        'runtime-hook',
+        'network-intercept',
+        'function-trace',
+        'storage-mutation',
+        'dom-observation',
+      ],
     });
     expect(artifactTool?.inputSchema.properties?.limit).toMatchObject({
       minimum: 1,
