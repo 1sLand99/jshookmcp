@@ -42,6 +42,8 @@ export class CapabilityHandlers {
               'frida_generate_script',
               'frida_enumerate_functions',
               'frida_find_symbols',
+              'frida_memory_scan',
+              'frida_memory_read',
             ],
             ...(fridaAvailability.path ? { path: fridaAvailability.path } : {}),
             ...(fridaAvailability.version ? { version: fridaAvailability.version } : {}),

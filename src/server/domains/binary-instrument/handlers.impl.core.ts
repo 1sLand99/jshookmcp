@@ -117,6 +117,12 @@ export class BinaryInstrumentHandlers {
   handleFridaFindSymbols(args: Record<string, unknown>) {
     return this.fridaSession.handleFridaFindSymbols(args);
   }
+  handleFridaMemoryScan(args: Record<string, unknown>) {
+    return this.fridaSession.handleFridaMemoryScan(args);
+  }
+  handleFridaMemoryRead(args: Record<string, unknown>) {
+    return this.fridaSession.handleFridaMemoryRead(args);
+  }
   handleFridaDexDump(args: Record<string, unknown>) {
     return this.fridaDexDump.handleFridaDexDump(args);
   }
@@ -143,6 +149,12 @@ export class BinaryInstrumentHandlers {
   }
   handleApktoolDecode(args: Record<string, unknown>) {
     return this.apktool.handleApktoolDecode(args);
+  }
+  handleApktoolBuild(args: Record<string, unknown>) {
+    return this.apktool.handleApktoolBuild(args);
+  }
+  handleApktoolSign(args: Record<string, unknown>) {
+    return this.apktool.handleApktoolSign(args);
   }
   handleApkNativeLibsList(args: Record<string, unknown>) {
     return this.nativeLibs.handleApkNativeLibsList(args);

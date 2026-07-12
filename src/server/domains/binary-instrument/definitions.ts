@@ -214,6 +214,32 @@ export const binaryInstrumentTools: Tool[] = [
       .boolean('force', 'Overwrite output directory if it already exists', { default: false })
       .required('apkPath'),
   ),
+  tool('apktool_build', (t) =>
+    t
+      .desc(
+        'Rebuild an APK from a decoded apktool source directory (closes the patch-and-repack loop with apk_sign).',
+      )
+      .string('sourceDir', 'Path to the decoded apktool source directory')
+      .string('outputPath', 'Optional output APK path (defaults to sourceDir/dist/*.apk)')
+      .boolean('force', 'Force build, overwriting any previous build output', { default: false })
+      .required('sourceDir'),
+  ),
+  tool('apk_sign', (t) =>
+    t
+      .desc(
+        'Sign an APK with apksigner using a caller-supplied keystore. Pairs with apktool_build for a full repack-and-sign workflow.',
+      )
+      .string('apkPath', 'Path to the APK file to sign')
+      .string(
+        'keystore',
+        'Path to the keystore (.jks/.keystore). Required — without it the tool honestly refuses rather than silently debug-signing.',
+      )
+      .string('keystorePassword', 'Keystore password')
+      .string('keyAlias', 'Key alias inside the keystore')
+      .string('keyPassword', 'Password for the key (defaults to keystorePassword when omitted)')
+      .string('outputPath', 'Optional signed output APK path (defaults to in-place signing)')
+      .required('apkPath'),
+  ),
   tool('apk_manifest_dump', (t) =>
     t
       .desc('Extract AndroidManifest.xml from an APK for quick inspection.')
@@ -393,6 +419,34 @@ export const binaryInstrumentTools: Tool[] = [
       .string('sessionId', 'Session id returned by frida_attach')
       .string('pattern', 'Symbol search pattern (e.g. "exports:*libssl*SSL*")')
       .required('sessionId', 'pattern')
+      .query(),
+  ),
+  tool('frida_memory_scan', (t) =>
+    t
+      .desc(
+        'Scan process memory for a byte pattern via Frida Memory.scanSync. Searches a named module, an explicit address range, or all readable ranges by default.',
+      )
+      .string('sessionId', 'Session id returned by frida_attach')
+      .string('pattern', 'Frida byte pattern, e.g. "DE AD BE EF" or "cafebabe"')
+      .string('moduleName', 'Optional module name to scope the scan to that module range.')
+      .string(
+        'address',
+        'Optional absolute start address (used with size) to scan an explicit range.',
+      )
+      .number('size', 'Optional number of bytes to scan when address is given.')
+      .number('max', 'Maximum matches to return (default 1000, capped at 10000).')
+      .required('sessionId', 'pattern')
+      .query(),
+  ),
+  tool('frida_memory_read', (t) =>
+    t
+      .desc(
+        'Read raw bytes from a Frida session via ptr(address).readByteArray. Returns hex; capped at 65536 bytes per call.',
+      )
+      .string('sessionId', 'Session id returned by frida_attach')
+      .string('address', 'Absolute address to read from (hex or decimal)')
+      .number('size', 'Number of bytes to read (1-65536)')
+      .required('sessionId', 'address', 'size')
       .query(),
   ),
   tool('jadx_search_code', (t) =>

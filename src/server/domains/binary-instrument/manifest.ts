@@ -38,6 +38,8 @@ const registrations = defineMethodRegistrations<H, (typeof binaryInstrumentTools
     { tool: 'jadx_decompile_apk', method: 'handleJadxDecompileApk' },
     { tool: 'jadx_search_code', method: 'handleJadxSearchCode' },
     { tool: 'apktool_decode', method: 'handleApktoolDecode' },
+    { tool: 'apktool_build', method: 'handleApktoolBuild' },
+    { tool: 'apk_sign', method: 'handleApktoolSign' },
     { tool: 'apk_manifest_dump', method: 'handleApkManifestDump' },
     { tool: 'apk_manifest_query', method: 'handleApkManifestQuery' },
     { tool: 'apk_static_triage', method: 'handleApkStaticTriage' },
@@ -52,6 +54,8 @@ const registrations = defineMethodRegistrations<H, (typeof binaryInstrumentTools
     { tool: 'export_hook_script', method: 'handleExportHookScript' },
     { tool: 'frida_enumerate_functions', method: 'handleFridaEnumerateFunctions' },
     { tool: 'frida_find_symbols', method: 'handleFridaFindSymbols' },
+    { tool: 'frida_memory_scan', method: 'handleFridaMemoryScan' },
+    { tool: 'frida_memory_read', method: 'handleFridaMemoryRead' },
   ],
 });
 

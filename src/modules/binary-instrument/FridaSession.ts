@@ -32,6 +32,24 @@ export interface FridaSymbolInfo {
   demangled?: string;
 }
 
+export interface FridaMemoryMatch {
+  address: string;
+  size: number;
+}
+
+export interface FridaMemoryRead {
+  address: string;
+  size: number;
+  hex: string;
+}
+
+export interface MemoryScanOptions {
+  moduleName?: string;
+  address?: string;
+  size?: number;
+  max?: number;
+}
+
 export type FridaSessionMode = 'attach' | 'spawn';
 
 export interface FridaSessionInfo {
@@ -249,6 +267,97 @@ export class FridaSession {
     }
 
     return [];
+  }
+
+  async memoryScan(pattern: string, options: MemoryScanOptions = {}): Promise<FridaMemoryMatch[]> {
+    const session = this.requireActiveSession();
+    const trimmedPattern = pattern.trim();
+    if (trimmedPattern.length === 0) {
+      return [];
+    }
+    const safePattern = JSON.stringify(trimmedPattern);
+    const max = Math.max(1, Math.min(options.max ?? 1000, 10000));
+
+    // Determine scan ranges: explicit address+size wins, then a named module,
+    // else all readable ranges (broad memory search). scanSync is synchronous
+    // and throws on unreadable ranges, so each range is independently guarded.
+    const rangeSetup: string[] = [];
+    if (options.address && typeof options.size === 'number' && options.size > 0) {
+      const addr = JSON.stringify(options.address);
+      const sz = Math.min(options.size, 64 * 1024 * 1024);
+      rangeSetup.push(`var ranges = [{ base: ptr(${addr}), size: ${sz} }];`);
+    } else if (options.moduleName) {
+      const mod = JSON.stringify(options.moduleName);
+      rangeSetup.push(
+        `var mod = Process.getModuleByName(${mod});`,
+        'var ranges = [{ base: mod.base, size: mod.size }];',
+      );
+    } else {
+      rangeSetup.push(
+        `var ranges = Process.enumerateRanges({ protection: 'r--', coalesce: false });`,
+      );
+    }
+
+    const result = await this.runFridaCommandForSession(
+      session,
+      [
+        ...rangeSetup,
+        'var results = [];',
+        `var max = ${max};`,
+        'for (var i = 0; i < ranges.length && results.length < max; i++) {',
+        '  try {',
+        `    Memory.scanSync(ranges[i].base, ranges[i].size, ${safePattern}).forEach(function (m) {`,
+        '      if (results.length < max) results.push({ address: String(m.address), size: m.size });',
+        '    });',
+        '  } catch (e) { /* range not readable, skip */ }',
+        '}',
+        'console.log(JSON.stringify(results));',
+      ].join('\n'),
+    );
+    const parsed = this.parseMemoryMatchList(result.output);
+
+    if (parsed.length > 0) {
+      return parsed;
+    }
+
+    if (result.error) {
+      session.status = 'error';
+      session.lastError = result.error;
+    }
+
+    return [];
+  }
+
+  async memoryRead(address: string, size: number): Promise<FridaMemoryRead> {
+    const session = this.requireActiveSession();
+    const trimmedAddress = address.trim();
+    const safeAddr = JSON.stringify(trimmedAddress);
+    const safeSize = Math.max(1, Math.min(size, 65536)); // cap 64KB per read
+
+    const result = await this.runFridaCommandForSession(
+      session,
+      [
+        `var buf = ptr(${safeAddr}).readByteArray(${safeSize});`,
+        'var view = new Uint8Array(buf);',
+        'var hex = "";',
+        'for (var i = 0; i < view.length; i++) {',
+        '  hex += ("00" + view[i].toString(16)).slice(-2);',
+        '}',
+        `console.log(JSON.stringify({ address: ${safeAddr}, size: ${safeSize}, hex: hex }));`,
+      ].join('\n'),
+    );
+    const parsed = this.parseMemoryReadResult(result.output, trimmedAddress, safeSize);
+
+    if (parsed) {
+      return parsed;
+    }
+
+    if (result.error) {
+      session.status = 'error';
+      session.lastError = result.error;
+    }
+
+    return { address: trimmedAddress, size: safeSize, hex: '' };
   }
 
   listSessions(): FridaSessionInfo[] {
@@ -478,6 +587,48 @@ export class FridaSession {
     }
 
     return symbols;
+  }
+
+  private parseMemoryMatchList(output: string): FridaMemoryMatch[] {
+    const data = this.extractJsonData(output);
+    if (!Array.isArray(data)) {
+      return [];
+    }
+
+    const matches: FridaMemoryMatch[] = [];
+    for (const entry of data) {
+      if (!this.isRecord(entry)) {
+        continue;
+      }
+      const address = this.normalizeHex(entry['address']);
+      const size = this.readNumberField(entry, 'size') ?? 0;
+      if (!address) {
+        continue;
+      }
+      matches.push({ address, size });
+    }
+
+    return matches;
+  }
+
+  private parseMemoryReadResult(
+    output: string,
+    fallbackAddress: string,
+    fallbackSize: number,
+  ): FridaMemoryRead | undefined {
+    const data = this.extractJsonData(output);
+    if (!this.isRecord(data)) {
+      return undefined;
+    }
+
+    const hex = this.readStringField(data, 'hex');
+    if (hex === undefined) {
+      return undefined;
+    }
+
+    const address = this.normalizeHex(data['address']) ?? fallbackAddress;
+    const size = this.readNumberField(data, 'size') ?? fallbackSize;
+    return { address, size, hex };
   }
 
   private extractJsonData(output: string): unknown {

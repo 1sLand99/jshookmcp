@@ -20,7 +20,7 @@
 - binary-instrument + memory
 - binary-instrument + process
 
-## 工具清单（40）
+## 工具清单（44）
 
 | 工具 | 说明 |
 | --- | --- |
@@ -46,6 +46,8 @@
 | `jadx_decompile_apk` | 高层 JADX APK 反编译：将整个 APK 反编译到稳定的输出目录，并返回供 jadx_search_code 使用的 sourcesDir。 |
 | `jadx_search_code` | 对已有的 jadx 反编译输出目录执行只读 ripgrep 搜索（带 Node 纯回退引擎）。内置 ReDoS 双重防护。 |
 | `apktool_decode` | 使用 apktool 解包 APK，便于检查资源、Manifest 和 smali 输出。 |
+| `apktool_build` | 待补充中文：Rebuild an APK from a decoded apktool source directory (closes the patch-and-repack loop with apk_sign). |
+| `apk_sign` | 待补充中文：Sign an APK with apksigner using a caller-supplied keystore. Pairs with apktool_build for a full repack-and-sign workflow. |
 | `apk_manifest_dump` | 从 APK 中提取 AndroidManifest.xml；优先返回可读 XML，二进制 AXML 会尝试通过跨平台的 JADX CLI 解码，失败时再返回原始 Base64 载荷。 |
 | `apk_manifest_query` | 返回紧凑的结构化 AndroidManifest 摘要：包名、启动 Activity、Application 类、SDK、权限、组件、Provider 以及 SDK/厂商线索。 |
 | `apk_static_triage` | 一次性 APK 静态分诊：ZIP 元数据、清单摘要、native 库、资源线索、可能的加固/保护方案，以及推荐的后续步骤。 |
@@ -60,6 +62,8 @@
 | `export_hook_script` | 将生成的 hook 模板导出为完整可运行的 Frida 脚本。 |
 | `frida_enumerate_functions` | 枚举 Frida 会话中指定模块的导出函数。 |
 | `frida_find_symbols` | 使用 ApiResolver 在 Frida 会话中搜索匹配模式的符号。 |
+| `frida_memory_scan` | 待补充中文：Scan process memory for a byte pattern via Frida Memory.scanSync. Searches a named module, an explicit address range, or all readable ranges by default. |
+| `frida_memory_read` | 待补充中文：Read raw bytes from a Frida session via ptr(address).readByteArray. Returns hex; capped at 65536 bytes per call. |
 | `apk_packer_detect` | 通过匹配 `lib/&lt;abi&gt;/lib*.so` 文件名识别 Android APK 加固层；框架不内置签名表，调用方通过 customSignatures 提供（ReDoS 防护正则编译）。**不脱壳、不动态执行、不与加固载荷交互。** |
 | `apk_packer_list_signatures` | 返回框架当前的签名表（默认为空）。可按 vendor 子串过滤。纯声明式数据查询，无需 APK 输入。 |
 | `apk_signing_block_parse` | 只读解析 APK Signing Block（v2/v3/v3.1/v4 签名方案），检测密钥轮换谱系及残留块/dex 前缀/魔数偏移异常标记。不修改 APK。 |

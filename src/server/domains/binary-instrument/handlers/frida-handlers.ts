@@ -548,6 +548,129 @@ export class FridaHandlers {
     });
   }
 
+  async handleFridaMemoryScan(args: Record<string, unknown>): Promise<unknown> {
+    const sessionId = readRequiredString(args, 'sessionId');
+    const pattern = readRequiredString(args, 'pattern');
+    const moduleName = readOptionalString(args, 'moduleName');
+    const address = readOptionalString(args, 'address');
+    const rawSize = typeof args.size === 'number' ? args.size : undefined;
+    const rawMax = typeof args.max === 'number' ? args.max : undefined;
+    const frida = this.getFridaSession();
+    const availability = await frida.getAvailability();
+
+    if (!availability.available) {
+      return {
+        success: false,
+        available: false,
+        capability: 'frida_cli',
+        fix: 'Install frida-tools and ensure the frida CLI is on PATH.',
+        sessionId,
+        pattern,
+        reason: availability.reason ?? 'Frida CLI is not available',
+        matches: [],
+      };
+    }
+
+    if (!frida.useSession(sessionId)) {
+      return {
+        success: false,
+        available: false,
+        capability: 'frida_session',
+        fix: 'Call frida_attach first and reuse the returned sessionId.',
+        sessionId,
+        reason: `Unknown Frida session: ${sessionId}`,
+        matches: [],
+      };
+    }
+
+    const matches = await frida.memoryScan(pattern, {
+      moduleName: moduleName ?? undefined,
+      address: address ?? undefined,
+      size: rawSize,
+      max: rawMax,
+    });
+    const diagnostics = frida.getSessionDiagnostics(sessionId);
+    if (diagnostics?.status === 'error' && diagnostics.lastError) {
+      return jsonResponse({
+        success: false,
+        available: true,
+        sessionId,
+        pattern,
+        reason: diagnostics.lastError,
+        matches,
+        count: matches.length,
+      });
+    }
+
+    return jsonResponse({
+      success: true,
+      available: true,
+      sessionId,
+      pattern,
+      matches,
+      count: matches.length,
+    });
+  }
+
+  async handleFridaMemoryRead(args: Record<string, unknown>): Promise<unknown> {
+    const sessionId = readRequiredString(args, 'sessionId');
+    const address = readRequiredString(args, 'address');
+    const size = typeof args.size === 'number' ? args.size : 0;
+    if (size <= 0) {
+      return jsonResponse({
+        success: false,
+        available: true,
+        sessionId,
+        address,
+        reason: 'size must be a positive number of bytes (capped at 65536)',
+      });
+    }
+    const frida = this.getFridaSession();
+    const availability = await frida.getAvailability();
+
+    if (!availability.available) {
+      return {
+        success: false,
+        available: false,
+        capability: 'frida_cli',
+        fix: 'Install frida-tools and ensure the frida CLI is on PATH.',
+        sessionId,
+        address,
+        reason: availability.reason ?? 'Frida CLI is not available',
+      };
+    }
+
+    if (!frida.useSession(sessionId)) {
+      return {
+        success: false,
+        available: false,
+        capability: 'frida_session',
+        fix: 'Call frida_attach first and reuse the returned sessionId.',
+        sessionId,
+        reason: `Unknown Frida session: ${sessionId}`,
+      };
+    }
+
+    const read = await frida.memoryRead(address, size);
+    const diagnostics = frida.getSessionDiagnostics(sessionId);
+    if (diagnostics?.status === 'error' && diagnostics.lastError) {
+      return jsonResponse({
+        success: false,
+        available: true,
+        sessionId,
+        reason: diagnostics.lastError,
+        ...read,
+      });
+    }
+
+    return jsonResponse({
+      success: true,
+      available: true,
+      sessionId,
+      ...read,
+    });
+  }
+
   private buildInterceptorScript(options: InterceptorScriptOptions): string {
     const targetExpression = options.address
       ? `ptr(${JSON.stringify(options.address)})`

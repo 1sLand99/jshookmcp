@@ -418,6 +418,116 @@ describe('BinaryInstrumentHandlers', () => {
       expect(fsPromises.mkdir).toHaveBeenCalled();
     });
 
+    it('handleApktoolBuild runs apktool b with source/output/force flags', async () => {
+      vi.mocked(probeCommand).mockResolvedValueOnce({
+        available: true,
+        path: 'apktool',
+      } as Awaited<ReturnType<typeof probeCommand>>);
+
+      const execCalls: string[][] = [];
+      vi.mocked(childProcess.execFile).mockImplementation(((
+        _file: string,
+        args: readonly string[] | null | undefined,
+        _opts: unknown,
+        cb?: ((error: Error | null, stdout: string, stderr: string) => void) | null,
+      ) => {
+        if (args) execCalls.push([...args]);
+        cb?.(null, 'built', '');
+        return {} as never;
+      }) as unknown as typeof childProcess.execFile);
+
+      const handlers = createHandlers();
+      const result = await handlers.handleApktoolBuild({
+        sourceDir: '/tmp/src',
+        outputPath: '/tmp/out.apk',
+        force: true,
+      });
+
+      const text = (result as { content: Array<{ text: string }> }).content[0]?.text ?? '';
+      const parsed = JSON.parse(text);
+      expect(parsed.available).toBe(true);
+      expect(parsed.sourceDir).toBe('/tmp/src');
+      expect(parsed.outputPath).toBe('/tmp/out.apk');
+      expect(execCalls[0]).toEqual(['b', '/tmp/src', '-o', '/tmp/out.apk', '-f']);
+    });
+
+    it('handleApktoolBuild reports unavailable when apktool missing', async () => {
+      vi.mocked(probeCommand).mockResolvedValueOnce({
+        available: false,
+        reason: 'apktool not found',
+      } as Awaited<ReturnType<typeof probeCommand>>);
+
+      const handlers = createHandlers();
+      const result = await handlers.handleApktoolBuild({ sourceDir: '/tmp/src' });
+
+      const text = (result as { content: Array<{ text: string }> }).content[0]?.text ?? '';
+      const parsed = JSON.parse(text);
+      expect(parsed.available).toBe(false);
+      expect(parsed.capability).toBe('apktool_cli');
+    });
+
+    it('handleApktoolSign honestly refuses without a keystore', async () => {
+      vi.mocked(probeCommand).mockResolvedValueOnce({
+        available: true,
+        path: 'apksigner',
+      } as Awaited<ReturnType<typeof probeCommand>>);
+
+      const handlers = createHandlers();
+      const result = await handlers.handleApktoolSign({ apkPath: '/tmp/app.apk' });
+
+      const text = (result as { content: Array<{ text: string }> }).content[0]?.text ?? '';
+      const parsed = JSON.parse(text);
+      expect(parsed.available).toBe(true);
+      expect(parsed.signed).toBe(false);
+      expect(parsed.fix).toContain('keystore');
+    });
+
+    it('handleApktoolSign signs with apksigner when keystore provided', async () => {
+      vi.mocked(probeCommand).mockResolvedValueOnce({
+        available: true,
+        path: 'apksigner',
+      } as Awaited<ReturnType<typeof probeCommand>>);
+
+      const execCalls: string[][] = [];
+      vi.mocked(childProcess.execFile).mockImplementation(((
+        _file: string,
+        args: readonly string[] | null | undefined,
+        _opts: unknown,
+        cb?: ((error: Error | null, stdout: string, stderr: string) => void) | null,
+      ) => {
+        if (args) execCalls.push([...args]);
+        cb?.(null, 'signed', '');
+        return {} as never;
+      }) as unknown as typeof childProcess.execFile);
+
+      const handlers = createHandlers();
+      const result = await handlers.handleApktoolSign({
+        apkPath: '/tmp/app.apk',
+        keystore: '/tmp/debug.keystore',
+        keystorePassword: 'android',
+        keyAlias: 'androiddebugkey',
+        outputPath: '/tmp/signed.apk',
+      });
+
+      const text = (result as { content: Array<{ text: string }> }).content[0]?.text ?? '';
+      const parsed = JSON.parse(text);
+      expect(parsed.available).toBe(true);
+      expect(parsed.signed).toBe(true);
+      expect(parsed.outputPath).toBe('/tmp/signed.apk');
+      expect(execCalls[0]).toEqual([
+        'sign',
+        '--ks',
+        '/tmp/debug.keystore',
+        '--ks-pass',
+        'pass:android',
+        '--ks-key-alias',
+        'androiddebugkey',
+        '--out',
+        '/tmp/signed.apk',
+        '/tmp/app.apk',
+      ]);
+    });
+
     it('handleApkManifestDump extracts AndroidManifest.xml from apk', async () => {
       mockZipEntries([
         {

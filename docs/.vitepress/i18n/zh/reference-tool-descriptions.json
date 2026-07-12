@@ -605,5 +605,9 @@
   "service_worker_deliver_push": "通过 CDP ServiceWorker.deliverPushMessage 向 Service Worker 投递一条合成的 push 消息，用于测试 push 事件处理逻辑。需先在 SW 目标上挂载 CDP 会话。",
   "service_worker_dispatch_sync": "通过 CDP ServiceWorker.dispatchSyncEvent 向 Service Worker 派发 Background Sync 事件，用于触发并测试后台同步逻辑。需先在 SW 目标上挂载 CDP 会话。",
   "canvas_inject_draw_hook": "待补充中文：Intercept Canvas 2D (drawImage/fillText/strokeText) and WebGL (drawArrays/drawElements) draw calls into a ring buffer on the page. Actions: install (wrap prototypes), read (dump captured calls), uninstall (restore).",
-  "graphql_subscribe": "待补充中文：Open a GraphQL subscription WebSocket, perform the graphql-transport-ws (or legacy graphql-ws) handshake, send a subscribe frame, and collect frames for collectMs. Runs in-page so the browser-session auth (cookies + connectionPayload) is preserved. Pairs with graphql_replay for targets that expose queries/mutations only via the authed WebSocket session."
+  "graphql_subscribe": "待补充中文：Open a GraphQL subscription WebSocket, perform the graphql-transport-ws (or legacy graphql-ws) handshake, send a subscribe frame, and collect frames for collectMs. Runs in-page so the browser-session auth (cookies + connectionPayload) is preserved. Pairs with graphql_replay for targets that expose queries/mutations only via the authed WebSocket session.",
+  "apktool_build": "待补充中文：Rebuild an APK from a decoded apktool source directory (closes the patch-and-repack loop with apk_sign).",
+  "apk_sign": "待补充中文：Sign an APK with apksigner using a caller-supplied keystore. Pairs with apktool_build for a full repack-and-sign workflow.",
+  "frida_memory_scan": "待补充中文：Scan process memory for a byte pattern via Frida Memory.scanSync. Searches a named module, an explicit address range, or all readable ranges by default.",
+  "frida_memory_read": "待补充中文：Read raw bytes from a Frida session via ptr(address).readByteArray. Returns hex; capped at 65536 bytes per call."
 }
