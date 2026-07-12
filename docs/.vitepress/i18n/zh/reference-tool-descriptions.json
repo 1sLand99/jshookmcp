@@ -604,13 +604,14 @@
   "page_storage_info": "查询 navigator.storage.estimate() 获取当前源的存储用量与配额，并检查 navigator.storage.persisted() 的持久化状态，用于 PWA / 离线应用的存储预算与持久化分析。",
   "service_worker_deliver_push": "通过 CDP ServiceWorker.deliverPushMessage 向 Service Worker 投递一条合成的 push 消息，用于测试 push 事件处理逻辑。需先在 SW 目标上挂载 CDP 会话。",
   "service_worker_dispatch_sync": "通过 CDP ServiceWorker.dispatchSyncEvent 向 Service Worker 派发 Background Sync 事件，用于触发并测试后台同步逻辑。需先在 SW 目标上挂载 CDP 会话。",
-  "canvas_inject_draw_hook": "待补充中文：Intercept Canvas 2D (drawImage/fillText/strokeText) and WebGL (drawArrays/drawElements) draw calls into a ring buffer on the page. Actions: install (wrap prototypes), read (dump captured calls), uninstall (restore).",
-  "graphql_subscribe": "待补充中文：Open a GraphQL subscription WebSocket, perform the graphql-transport-ws (or legacy graphql-ws) handshake, send a subscribe frame, and collect frames for collectMs. Runs in-page so the browser-session auth (cookies + connectionPayload) is preserved. Pairs with graphql_replay for targets that expose queries/mutations only via the authed WebSocket session.",
-  "apktool_build": "待补充中文：Rebuild an APK from a decoded apktool source directory (closes the patch-and-repack loop with apk_sign).",
-  "apk_sign": "待补充中文：Sign an APK with apksigner using a caller-supplied keystore. Pairs with apktool_build for a full repack-and-sign workflow.",
-  "frida_memory_scan": "待补充中文：Scan process memory for a byte pattern via Frida Memory.scanSync. Searches a named module, an explicit address range, or all readable ranges by default.",
-  "frida_memory_read": "待补充中文：Read raw bytes from a Frida session via ptr(address).readByteArray. Returns hex; capped at 65536 bytes per call.",
-  "instrumentation_session_diff": "待补充中文：Diff two instrumentation session snapshots: operations added/removed/common (by id) plus artifact fingerprints and per-type counts. Pure compare, mutates nothing.",
-  "instrumentation_session_merge": "待补充中文：Merge two sessions into a new session: copies operations (with id remapping) and artifacts from both sources. Original sessions are untouched.",
-  "dart_call_graph": "待补充中文：Build a best-effort static call graph from a Dart AOT snapshot: nodes are Code objects, edges are ObjectPool entries whose value matches another Code entry point (caller to callee). Honest boundary: indirect/dynamic calls without a pool entry, and PcDescriptors-level mapping, require instruction decoding (deferred — cross-Dart-SDK version work)."
+  "canvas_inject_draw_hook": "拦截 Canvas 2D（drawImage/fillText/strokeText）与 WebGL（drawArrays/drawElements）的绘制调用，写入页面内的环形缓冲区。动作：install（包装原型）、read（转储已捕获的调用）、uninstall（还原）。",
+  "graphql_subscribe": "打开 GraphQL subscription 的 WebSocket，完成 graphql-transport-ws（或旧版 graphql-ws）握手，发送 subscribe 帧并在 collectMs 内收集返回帧。在页面内执行，以保留浏览器会话凭据（cookies + connectionPayload）。配合 graphql_replay 用于仅通过已认证 WebSocket 会话暴露 query/mutation 的目标。",
+  "apktool_build": "从已解码的 apktool 源目录重新构建 APK（与 apk_sign 闭合 patch-and-repack 循环）。",
+  "apk_sign": "使用调用方提供的 keystore，通过 apksigner 对 APK 签名。与 apktool_build 配合完成完整的重打包与签名流程。",
+  "frida_memory_scan": "通过 Frida Memory.scanSync 在进程内存中扫描字节模式。可搜索命名模块、显式地址区间，或默认所有可读区间。",
+  "frida_memory_read": "通过 Frida ptr(address).readByteArray 从会话读取原始字节。返回 hex，单次调用上限 65536 字节。",
+  "instrumentation_session_diff": "对比两个插桩会话快照：按 id 统计 operation 的 added/removed/common，并给出 artifact 指纹与按类型计数。纯比较，不修改任何数据。",
+  "instrumentation_session_merge": "将两个会话合并为一个新会话：从两边复制 operation（带 id 重映射）与 artifact。原始会话保持不变。",
+  "dart_call_graph": "从 Dart AOT 快照构建尽力而为的静态调用图：节点为 Code 对象，边为其值匹配另一个 Code 入口点（caller→callee）的 ObjectPool 表项。诚实边界：没有 pool 表项的间接/动态调用，以及 PcDescriptors 级别的映射，需要指令解码（暂缓——属跨 Dart SDK 版本工作）。",
+  "wasm_instrument_binary": "真正的 wasm 级二进制插桩：通过 wasm2wat 反汇编，在每个函数入口插入对导入 trace 函数的调用，再通过 wat2wasm 重新汇编。与 wasm_instrument_trace（仅代理 JS 可见导出）不同，它重写 code section 使每个函数入口可观测。诚实边界：函数入口级追踪，非基本块——宿主需在实例化时提供 trace_fn 导入。"
 }

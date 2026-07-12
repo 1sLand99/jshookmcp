@@ -28,5 +28,5 @@ GraphQL 发现、提取、重放与 introspection 能力。
 | `graphql_introspect` | 对目标端点执行 GraphQL introspection 并返回模式数据。 |
 | `graphql_extract_queries` | 从页面内捕获的网络轨迹中提取 GraphQL 查询与变更。 |
 | `graphql_replay` | 通过页面内 fetch 重放 GraphQL 操作，支持变量与请求头覆盖。 |
-| `graphql_subscribe` | 待补充中文：Open a GraphQL subscription WebSocket, perform the graphql-transport-ws (or legacy graphql-ws) handshake, send a subscribe frame, and collect frames for collectMs. Runs in-page so the browser-session auth (cookies + connectionPayload) is preserved. Pairs with graphql_replay for targets that expose queries/mutations only via the authed WebSocket session. |
+| `graphql_subscribe` | 打开 GraphQL subscription 的 WebSocket，完成 graphql-transport-ws（或旧版 graphql-ws）握手，发送 subscribe 帧并在 collectMs 内收集返回帧。在页面内执行，以保留浏览器会话凭据（cookies + connectionPayload）。配合 graphql_replay 用于仅通过已认证 WebSocket 会话暴露 query/mutation 的目标。 |
 | `graphql_enum_schema` | 利用服务端建议错误枚举 GraphQL 字段，introspection 不可用时自动回退探测。 |

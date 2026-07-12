@@ -19,7 +19,7 @@ WebAssembly dump、反汇编、反编译、优化与离线执行域。
 - browser + wasm
 - core + wasm
 
-## 工具清单（14）
+## 工具清单（15）
 
 | 工具 | 说明 |
 | --- | --- |
@@ -37,3 +37,4 @@ WebAssembly dump、反汇编、反编译、优化与离线执行域。
 | `wasm_instrument_trace` | 为 .wasm 模块生成 JS 插桩包装，追踪调用、内存和控制流。 |
 | `wasm_string_extract` | 从 .wasm 二进制中提取可打印字符串，按 section 分组，支持 name section 函数名恢复与分类（url/base64/hex-hash/file-path）。是通用二进制字符串工具的 wasm 专用替代。 |
 | `wasm_diff` | 对两个 .wasm 二进制（原版 vs 补丁版）做 patch-diff 用于漏洞研究：通过 wasm2wat 反汇编两者，输出结构化的函数级差异（新增/删除/变更）+ 每函数 WAT 行级 unified diff。完整 diff 写入工件，响应携带摘要与预览。 |
+| `wasm_instrument_binary` | 真正的 wasm 级二进制插桩：通过 wasm2wat 反汇编，在每个函数入口插入对导入 trace 函数的调用，再通过 wat2wasm 重新汇编。与 wasm_instrument_trace（仅代理 JS 可见导出）不同，它重写 code section 使每个函数入口可观测。诚实边界：函数入口级追踪，非基本块——宿主需在实例化时提供 trace_fn 导入。 |

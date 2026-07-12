@@ -36,4 +36,4 @@
 | `dart_call_function` | 在 ARM64 仿真器中按地址或名称执行 Dart 函数，带简化运行时（模拟 built-ins、标记指针）。 |
 | `dart_inspect_object_pool` | 转储指定地址的 ObjectPool，显示所有条目的类型和值。 |
 | `dart_trace_execution` | 逐步跟踪 Dart 函数执行，输出每条指令及寄存器状态（PC、x0-x30、PP、THR）。 |
-| `dart_call_graph` | 待补充中文：Build a best-effort static call graph from a Dart AOT snapshot: nodes are Code objects, edges are ObjectPool entries whose value matches another Code entry point (caller to callee). Honest boundary: indirect/dynamic calls without a pool entry, and PcDescriptors-level mapping, require instruction decoding (deferred — cross-Dart-SDK version work). |
+| `dart_call_graph` | 从 Dart AOT 快照构建尽力而为的静态调用图：节点为 Code 对象，边为其值匹配另一个 Code 入口点（caller→callee）的 ObjectPool 表项。诚实边界：没有 pool 表项的间接/动态调用，以及 PcDescriptors 级别的映射，需要指令解码（暂缓——属跨 Dart SDK 版本工作）。 |

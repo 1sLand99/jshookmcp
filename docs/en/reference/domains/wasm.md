@@ -19,7 +19,7 @@ WebAssembly dump, disassembly, decompilation, optimization, and offline executio
 - browser + wasm
 - core + wasm
 
-## Full tool list (14)
+## Full tool list (15)
 
 | Tool | Description |
 | --- | --- |
@@ -37,3 +37,4 @@ WebAssembly dump, disassembly, decompilation, optimization, and offline executio
 | `wasm_instrument_trace` | Generate a JS instrumentation wrapper for a .wasm module. |
 | `wasm_string_extract` | Extract printable strings from a .wasm binary, grouped by section, with name-section function-name recovery and classification (url/base64/hex-hash/file-path). Wasm-aware alternative to generic binary strings tools. |
 | `wasm_diff` | Patch-diff two .wasm binaries (original vs. patched) for vulnerability research: disassembles both via wasm2wat and emits a structured function-level diff (added/removed/changed) plus a per-function WAT line-level unified diff. The full diff is written to an artifact; the response carries summaries and previews. |
+| `wasm_instrument_binary` | Real wasm-level binary instrumentation: disassembles via wasm2wat, inserts a call to an imported trace function at every function entry, and reassembles via wat2wasm. Unlike wasm_instrument_trace (which only proxies JS-visible exports), this rewrites the code section so every function entry is observable. Honest boundary: function-ENTRY-level tracing, not basic-block — the host must supply the trace_fn import at instantiation. |
