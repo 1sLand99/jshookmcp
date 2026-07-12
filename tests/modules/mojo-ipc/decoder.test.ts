@@ -151,4 +151,67 @@ describe('MojoDecoder', () => {
     expect(decoded.handles).toBe(1);
     expect(decoded.fields.field0).toEqual({ handle: 5 });
   });
+
+  it('emits a v2 header when response/sync flags are requested', () => {
+    const encoded = decoder.encodeMessage(
+      'network.mojom.URLLoaderClient',
+      'OnReceiveResponse',
+      [{ type: 'uint32', value: 200 }],
+      { isResponse: true, interfaceId: 0xdeadbeef, requestId: 0x0102030405060708n },
+    );
+    // 18-byte header + 5-byte uint32 field
+    expect(encoded.slice(0, 2)).toBe('02'); // version=2
+    expect(encoded.slice(2, 4)).toBe('02'); // flags=0x02 (is_response)
+    const decoded = decoder.decodePayload(encoded);
+    expect(decoded.header.version).toBe(2);
+    expect(decoded.header.headerSize).toBe(18);
+    expect(decoded.header.isResponse).toBe(true);
+    expect(decoded.header.expectsResponse).toBe(false);
+    expect(decoded.header.isSync).toBe(false);
+    expect(decoded.header.flagNames).toEqual(['is_response']);
+    expect(decoded.header.interfaceId).toBe(0xdeadbeef);
+    expect(decoded.header.requestId).toBe(0x0102030405060708n);
+    expect(decoded.fields.field0).toBe(200);
+  });
+
+  it('emits a v2 header for sync + expectsResponse with a numeric requestId', () => {
+    const encoded = decoder.encodeMessage(
+      'network.mojom.URLLoaderFactory',
+      'CreateLoaderAndStart',
+      [{ type: 'bool', value: true }],
+      { expectsResponse: true, isSync: true, requestId: 42 },
+    );
+    const decoded = decoder.decodePayload(encoded);
+    expect(decoded.header.headerSize).toBe(18);
+    expect(decoded.header.expectsResponse).toBe(true);
+    expect(decoded.header.isSync).toBe(true);
+    expect(decoded.header.isResponse).toBe(false);
+    expect(decoded.header.flagNames).toEqual(['expects_response', 'is_sync']);
+    expect(decoded.header.requestId).toBe(42n);
+    expect(decoded.fields.field0).toBe(true);
+  });
+
+  it('accepts a numeric-string requestId and round-trips it as uint64', () => {
+    const big = '9007199254740993'; // >2^53, lossy as Number, safe as BigInt
+    const encoded = decoder.encodeMessage(
+      'network.mojom.NetworkService',
+      '5',
+      [{ type: 'uint16', value: 1 }],
+      { requestId: big },
+    );
+    const decoded = decoder.decodePayload(encoded);
+    expect(decoded.header.headerSize).toBe(18);
+    expect(decoded.header.requestId).toBe(9007199254740993n);
+  });
+
+  it('stays on the 6-byte v1 header when no options are provided', () => {
+    const encoded = decoder.encodeMessage('network.mojom.NetworkService', '2', [
+      { type: 'uint32', value: 7 },
+    ]);
+    const decoded = decoder.decodePayload(encoded);
+    expect(decoded.header.version).toBe(1);
+    expect(decoded.header.headerSize).toBe(6);
+    expect(decoded.header.interfaceId).toBeUndefined();
+    expect(decoded.header.requestId).toBeUndefined();
+  });
 });

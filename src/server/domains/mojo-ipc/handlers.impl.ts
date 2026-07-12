@@ -1,12 +1,29 @@
-import { MojoDecoder, MojoMonitor } from '@modules/mojo-ipc';
+import {
+  type MojoEncodeOptions,
+  type MojoMessageDirection,
+  MojoDecoder,
+  MojoMonitor,
+} from '@modules/mojo-ipc';
 import {
   capabilityFailure,
   capabilityReport,
   createStub,
 } from '@server/domains/shared/capabilities';
 import { handleSafe, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
-import { argArray, argNumber, argString } from '@server/domains/shared/parse-args';
+import {
+  argArray,
+  argBool,
+  argEnum,
+  argNumber,
+  argString,
+} from '@server/domains/shared/parse-args';
 import type { EventBus, ServerEventMap } from '@server/EventBus';
+
+const DIRECTION_SET: ReadonlySet<MojoMessageDirection> = new Set<MojoMessageDirection>([
+  'request',
+  'response',
+  'sync',
+]);
 
 function getMojoFix(reason: string): string {
   return reason.includes('JSHOOK_ENABLE_MOJO_IPC')
@@ -96,6 +113,10 @@ export class MojoIPCHandlers {
     return handleSafe(async () => await this.handleMojoMessagesGet(args));
   }
 
+  async handleMojoMessagesSummarizeTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleMojoMessagesSummarize(args));
+  }
+
   async handleMojoMonitorDispatch(args: Record<string, unknown>): Promise<unknown> {
     return String(args['action'] ?? '') === 'stop'
       ? this.handleMojoMonitorStop()
@@ -122,7 +143,12 @@ export class MojoIPCHandlers {
         reason: availability.reason,
         fix: availability.available ? undefined : getMojoFix(availability.reason ?? ''),
         details: {
-          tools: ['mojo_monitor', 'mojo_list_interfaces', 'mojo_messages_get'],
+          tools: [
+            'mojo_monitor',
+            'mojo_list_interfaces',
+            'mojo_messages_get',
+            'mojo_messages_summarize',
+          ],
           fridaAvailable: availability.fridaAvailable,
           fridaCliAvailable: availability.fridaCliAvailable,
           fridaProbeSucceeded,
@@ -140,7 +166,12 @@ export class MojoIPCHandlers {
         reason: monitor.isLiveCapture() ? undefined : LIVE_CAPTURE_REASON,
         fix: monitor.isLiveCapture() ? undefined : LIVE_CAPTURE_FIX,
         details: {
-          tools: ['mojo_monitor', 'mojo_list_interfaces', 'mojo_messages_get'],
+          tools: [
+            'mojo_monitor',
+            'mojo_list_interfaces',
+            'mojo_messages_get',
+            'mojo_messages_summarize',
+          ],
           fridaAvailable: availability.fridaAvailable,
           fridaCliAvailable: availability.fridaCliAvailable,
           fridaProbeSucceeded,
@@ -276,11 +307,63 @@ export class MojoIPCHandlers {
       };
     }
 
-    const hexPayload = this.getDecoder().encodeMessage(interfaceName, messageType, fields);
+    const headerOptions = this.resolveEncodeHeader(args['header']);
+    const hexPayload = this.getDecoder().encodeMessage(
+      interfaceName,
+      messageType,
+      fields,
+      headerOptions,
+    );
     return {
       success: true,
       hexPayload,
     };
+  }
+
+  /**
+   * Translate the optional `header` tool arg into MojoEncodeOptions. Returns
+   * undefined when no v2 field/flag is set so the encoder emits the default
+   * 6-byte v1 header (backward compatible). requestId is accepted as number or
+   * numeric string; a non-numeric string surfaces a clear error via handleSafe.
+   */
+  private resolveEncodeHeader(raw: unknown): MojoEncodeOptions | undefined {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return undefined;
+    }
+    const header = raw as Record<string, unknown>;
+    const options: MojoEncodeOptions = {};
+    const expectsResponse = argBool(header, 'expectsResponse');
+    if (expectsResponse !== undefined) options.expectsResponse = expectsResponse;
+    const isResponse = argBool(header, 'isResponse');
+    if (isResponse !== undefined) options.isResponse = isResponse;
+    const isSync = argBool(header, 'isSync');
+    if (isSync !== undefined) options.isSync = isSync;
+    const interfaceId = argNumber(header, 'interfaceId');
+    if (interfaceId !== undefined) {
+      if (!Number.isFinite(interfaceId) || interfaceId < 0 || interfaceId > 0xffffffff) {
+        throw new Error(`header.interfaceId must be a uint32 (0..4294967295), got ${interfaceId}`);
+      }
+      options.interfaceId = Math.trunc(interfaceId);
+    }
+    const requestId = header['requestId'];
+    if (requestId !== undefined) {
+      if (typeof requestId !== 'number' && typeof requestId !== 'string') {
+        throw new Error('header.requestId must be a number or numeric string');
+      }
+      // Validate it parses as a uint64-range integer before reaching BigInt().
+      const asString = String(requestId);
+      if (!/^-?[0-9]+$/.test(asString)) {
+        throw new Error(`header.requestId must be numeric, got "${asString}"`);
+      }
+      const asBig = BigInt(asString);
+      if (asBig < 0n || asBig > 0xffffffffffffffffn) {
+        throw new Error(
+          `header.requestId must fit in uint64 (0..18446744073709551615), got ${asString}`,
+        );
+      }
+      options.requestId = asBig;
+    }
+    return options;
   }
 
   async handleMojoListInterfaces(): Promise<unknown> {
@@ -354,6 +437,7 @@ export class MojoIPCHandlers {
     const messageType = argStringOrNumber(args, 'messageType');
     const sinceTimestamp = argNumber(args, 'sinceTimestamp');
     const hexSearch = argString(args, 'hexSearch');
+    const direction = argEnum(args, 'direction', DIRECTION_SET);
 
     const result = (await monitor.getMessages({
       limit: limit !== undefined ? Math.min(limit, 10000) : 100,
@@ -361,6 +445,7 @@ export class MojoIPCHandlers {
       messageType,
       sinceTimestamp,
       hexSearch,
+      direction,
     })) as {
       messages: unknown[];
       totalAvailable: number;
@@ -410,6 +495,65 @@ export class MojoIPCHandlers {
       interfaceCatalogSource: monitor.getInterfaceCatalogSource(),
       observedInterfaceCount: monitor.getObservedInterfaceCount(),
     };
+  }
+
+  async handleMojoMessagesSummarize(args: Record<string, unknown>): Promise<unknown> {
+    const monitor = this.getMonitor();
+    if (!monitor.isAvailable()) {
+      return {
+        ...unavailablePayload(
+          monitor.getUnavailableReason() ?? 'Mojo IPC monitoring is not available',
+          'mojo_messages_summarize',
+        ),
+        total: 0,
+        byDirection: { request: 0, response: 0, sync: 0, unknown: 0 },
+        byInterface: [],
+        byMethod: [],
+        topInterfaces: [],
+        topMethods: [],
+      };
+    }
+
+    const interfaceName = argString(args, 'interface');
+    const messageType = argStringOrNumber(args, 'messageType');
+    const sinceTimestamp = argNumber(args, 'sinceTimestamp');
+    const hexSearch = argString(args, 'hexSearch');
+    const direction = argEnum(args, 'direction', DIRECTION_SET);
+    const topN = argNumber(args, 'topN');
+
+    const summary = await monitor.summarizeMessages({
+      interfaceName,
+      messageType,
+      sinceTimestamp,
+      hexSearch,
+      direction,
+      topN,
+    });
+
+    const isSimulation = summary.simulation || monitor.isSimulationMode();
+    const payload = {
+      success: true,
+      available: true,
+      active: monitor.isActive(),
+      summary: toJsonSafe(summary),
+      interfaceCatalogSource: monitor.getInterfaceCatalogSource(),
+      observedInterfaceCount: monitor.getObservedInterfaceCount(),
+    };
+
+    if (isSimulation) {
+      return createStub({
+        tool: 'mojo_messages_summarize',
+        stubType: 'simulated',
+        reason:
+          'Mojo IPC is operating in simulation mode. Summary reflects the seeded/simulated buffer, not real Frida-captured traffic.',
+        fix: 'Install Frida for live IPC monitoring',
+        data: payload,
+        warning:
+          'Mojo IPC is operating in simulation mode. Summary reflects the seeded/simulated buffer, not real Frida-captured traffic.',
+      });
+    }
+
+    return payload;
   }
 
   private getMonitor(): MojoMonitor {

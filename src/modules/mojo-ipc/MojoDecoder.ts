@@ -166,6 +166,25 @@ function typeName(typeCode: number): string {
   return `0x${typeCode.toString(16).padStart(2, '0')}`;
 }
 
+export interface MojoEncodeOptions {
+  /**
+   * Set the expects_response flag (header bit 0). Implies a v2 header so the
+   * receiver knows to send a reply.
+   */
+  expectsResponse?: boolean;
+  /** Mark this message as a response (header bit 1). Implies a v2 header. */
+  isResponse?: boolean;
+  /** Mark this message as synchronous (header bit 2). Implies a v2 header. */
+  isSync?: boolean;
+  /** v2 interface id (uint32 at offset 6). Implies a v2 header. */
+  interfaceId?: number;
+  /**
+   * v2 request id (uint64 at offset 10). Accepts bigint, number, or numeric
+   * string. Implies a v2 header.
+   */
+  requestId?: bigint | number | string;
+}
+
 export class MojoDecoder {
   decodePayload(hex: string, context?: string | DecodeContext): DecodedPayload {
     const raw = this.cleanHex(hex);
@@ -214,7 +233,12 @@ export class MojoDecoder {
     };
   }
 
-  encodeMessage(interfaceName: string, messageType: string | number, fields: unknown[]): string {
+  encodeMessage(
+    interfaceName: string,
+    messageType: string | number,
+    fields: unknown[],
+    options?: MojoEncodeOptions,
+  ): string {
     const encodedParts: Buffer[] = [];
     let handles = 0;
 
@@ -226,14 +250,66 @@ export class MojoDecoder {
 
     const messageTypeCode = this.resolveMessageType(interfaceName, messageType);
     const fieldCount = Math.min(fields.length, 255);
-    const header = Buffer.alloc(6);
-    header.writeUInt8(1, 0);
-    header.writeUInt8(0, 1);
+    const header = this.buildHeader(messageTypeCode, fieldCount, handles, options);
+    return Buffer.concat([header, ...encodedParts]).toString('hex');
+  }
+
+  /**
+   * Build the wire header. Writes the 18-byte v2 form whenever any flag or
+   * v2-only field (interfaceId/requestId) is requested; otherwise the 6-byte
+   * v1 form — keeping encodeMessage backward compatible when called with no
+   * options. Mirrors decodeHeader so encode→decode round-trips.
+   */
+  private buildHeader(
+    messageTypeCode: number,
+    fieldCount: number,
+    handles: number,
+    options: MojoEncodeOptions | undefined,
+  ): Buffer {
+    const wantsV2 =
+      !!options &&
+      (options.expectsResponse ||
+        options.isResponse ||
+        options.isSync ||
+        options.interfaceId !== undefined ||
+        options.requestId !== undefined);
+
+    if (!wantsV2) {
+      const header = Buffer.alloc(6);
+      header.writeUInt8(1, 0);
+      header.writeUInt8(0, 1);
+      header.writeUInt8(messageTypeCode, 2);
+      header.writeUInt8(fieldCount, 3);
+      header.writeUInt16LE(handles, 4);
+      return header;
+    }
+
+    let flags = 0;
+    if (options!.expectsResponse) flags |= 0x01;
+    if (options!.isResponse) flags |= 0x02;
+    if (options!.isSync) flags |= 0x04;
+
+    const interfaceId =
+      typeof options!.interfaceId === 'number' && Number.isFinite(options!.interfaceId)
+        ? Math.trunc(options!.interfaceId) >>> 0
+        : 0;
+
+    let requestIdBig = 0n;
+    if (options!.requestId !== undefined) {
+      // BigInt() throws for non-numeric strings; let it surface to the caller
+      // (handler wraps in handleSafe) rather than silently encoding 0.
+      requestIdBig = BigInt(String(options!.requestId));
+    }
+
+    const header = Buffer.alloc(18);
+    header.writeUInt8(2, 0); // version
+    header.writeUInt8(flags, 1);
     header.writeUInt8(messageTypeCode, 2);
     header.writeUInt8(fieldCount, 3);
     header.writeUInt16LE(handles, 4);
-
-    return Buffer.concat([header, ...encodedParts]).toString('hex');
+    header.writeUInt32LE(interfaceId, 6);
+    header.writeBigUInt64LE(requestIdBig, 10);
+    return header;
   }
 
   cleanHex(hex: string): string {

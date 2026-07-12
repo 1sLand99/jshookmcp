@@ -42,6 +42,23 @@ export const mojoIpcTools: Tool[] = [
         },
         'Fields to encode. Objects may specify { type, value }, arrays, structs, or handles.',
       )
+      .prop('header', {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          expectsResponse: { type: 'boolean' },
+          isResponse: { type: 'boolean' },
+          isSync: { type: 'boolean' },
+          interfaceId: { type: 'number' },
+          requestId: {
+            anyOf: [{ type: 'integer' }, { type: 'string' }],
+            description: 'Request id as a number or numeric string (encoded as uint64)',
+          },
+        },
+        description:
+          'Optional v2 header fields. Setting any flag or interfaceId/requestId emits an 18-byte v2 ' +
+          'message header; omit to emit the default 6-byte v1 header.',
+      })
       .required('interfaceName', 'messageType', 'fields')
       .query(),
   ),
@@ -59,6 +76,32 @@ export const mojoIpcTools: Tool[] = [
       })
       .number('sinceTimestamp', 'Only return messages captured at or after this Unix timestamp')
       .string('hexSearch', 'Case-insensitive hex substring to search in captured payloads')
+      .enum(
+        'direction',
+        ['request', 'response', 'sync'],
+        'Filter by message direction inferred from the header flags byte',
+      )
+      .query(),
+  ),
+  tool('mojo_messages_summarize', (t) =>
+    t
+      .desc(
+        'Aggregate the captured Mojo IPC buffer (non-destructive) into interface/method/' +
+          'direction breakdowns, top-N lists, and a capture time window. Does not drain the buffer.',
+      )
+      .string('interface', 'Restrict the summary to a single interface name')
+      .prop('messageType', {
+        anyOf: [{ type: 'string' }, { type: 'number' }],
+        description: 'Restrict the summary to a single message type or method name',
+      })
+      .number('sinceTimestamp', 'Only include messages captured at or after this Unix timestamp')
+      .string('hexSearch', 'Case-insensitive hex substring that must appear in included payloads')
+      .enum(
+        'direction',
+        ['request', 'response', 'sync'],
+        'Restrict the summary to a single message direction',
+      )
+      .number('topN', 'Number of top interfaces/methods to return (default 5)')
       .query(),
   ),
 ];

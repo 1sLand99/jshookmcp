@@ -1,6 +1,14 @@
 import { spawn } from 'node:child_process';
 import { MOJO_MONITOR_TIMEOUT_MS } from '@src/constants';
 
+/**
+ * Best-effort message direction inferred from the header flags byte
+ * (offset 1 of a Mojo message header). The wire layout is build-specific;
+ * this helper only fires when the payload looks like a header and otherwise
+ * stays undefined — no hollow classification (lesson #51).
+ */
+export type MojoMessageDirection = 'request' | 'response' | 'sync';
+
 export interface MojoMessage {
   timestamp: number;
   sourcePid: number;
@@ -9,6 +17,11 @@ export interface MojoMessage {
   messageType: string;
   payload: string;
   size: number;
+  /**
+   * Optional direction (request/response/sync). When omitted at record time
+   * the monitor best-effort derives it from `payload` header flags.
+   */
+  direction?: MojoMessageDirection;
 }
 
 export interface MojoMessageFilter {
@@ -17,6 +30,63 @@ export interface MojoMessageFilter {
   pid?: number;
   sinceTimestamp?: number;
   hexSearch?: string;
+  direction?: MojoMessageDirection;
+}
+
+export interface MojoMessageDirectionBreakdown {
+  request: number;
+  response: number;
+  sync: number;
+  unknown: number;
+}
+
+export interface MojoInterfaceSummary {
+  interface: string;
+  count: number;
+  bytes: number;
+  distinctMethods: number;
+  directionBreakdown: MojoMessageDirectionBreakdown;
+}
+
+export interface MojoMethodSummary {
+  interface: string;
+  method: string;
+  count: number;
+  bytes: number;
+}
+
+export interface MojoMessageSummary {
+  total: number;
+  totalBytes: number;
+  byDirection: MojoMessageDirectionBreakdown;
+  byInterface: MojoInterfaceSummary[];
+  byMethod: MojoMethodSummary[];
+  topInterfaces: MojoInterfaceSummary[];
+  topMethods: MojoMethodSummary[];
+  timeWindow: { earliest: number | null; latest: number | null; durationMs: number };
+  filtered: boolean;
+  simulation: boolean;
+}
+
+export function deriveDirectionFromPayload(
+  payload: string | undefined | null,
+): MojoMessageDirection | undefined {
+  if (typeof payload !== 'string') return undefined;
+  const hex = payload.replace(/\s+/g, '').toLowerCase();
+  // Need at least the version(1) + flags(1) bytes; verify a clean hex alphabet.
+  if (hex.length < 4 || !/^[0-9a-f]+$/.test(hex)) return undefined;
+  const flagsByte = Number.parseInt(hex.slice(2, 4), 16);
+  if (!Number.isFinite(flagsByte)) return undefined;
+  const isResponse = (flagsByte & 0x02) !== 0;
+  const isSync = (flagsByte & 0x04) !== 0;
+  if (isResponse) return 'response';
+  if (isSync) return 'sync';
+  return 'request';
+}
+
+/** Sort descending by `.count` (module scope — does not capture outer state). */
+function byCountDesc<T extends { count: number }>(left: T, right: T): number {
+  return right.count - left.count;
 }
 
 interface MojoInterfaceState {
@@ -129,6 +199,13 @@ function matchesFilter(message: MojoMessage, filter: MojoMessageFilter): boolean
     if (needle.length > 0 && !message.payload.toLowerCase().includes(needle)) {
       return false;
     }
+  }
+
+  if (filter.direction) {
+    // A direction filter matches when the recorded direction equals the
+    // requested one; messages whose direction could not be derived are
+    // excluded (honest: never silently match an unknown).
+    if (message.direction !== filter.direction) return false;
   }
 
   return true;
@@ -384,6 +461,7 @@ export class MojoMonitor {
     messageType?: string | number;
     sinceTimestamp?: number;
     hexSearch?: string;
+    direction?: MojoMessageDirection;
   }): Promise<{
     messages: MojoMessage[];
     totalAvailable: number;
@@ -399,6 +477,62 @@ export class MojoMonitor {
       };
     }
 
+    const filter = this.buildFilter(options);
+    const allMessages = await this.captureMessages(filter);
+    const limit = options?.limit ?? 100;
+
+    return {
+      messages: allMessages.slice(0, limit),
+      totalAvailable: allMessages.length,
+      filtered: this.filterIsApplied(options),
+      simulation: this.simulationMode,
+    };
+  }
+
+  /**
+   * Aggregate the current buffer (non-destructive) into interface/method/
+   * direction breakdowns plus top-N and time window. Unlike getMessages this
+   * does not drain the buffer — call it freely to inspect a live trace.
+   */
+  async summarizeMessages(options?: {
+    interfaceName?: string;
+    messageType?: string | number;
+    sinceTimestamp?: number;
+    hexSearch?: string;
+    direction?: MojoMessageDirection;
+    topN?: number;
+  }): Promise<MojoMessageSummary> {
+    const empty: MojoMessageSummary = {
+      total: 0,
+      totalBytes: 0,
+      byDirection: { request: 0, response: 0, sync: 0, unknown: 0 },
+      byInterface: [],
+      byMethod: [],
+      topInterfaces: [],
+      topMethods: [],
+      timeWindow: { earliest: null, latest: null, durationMs: 0 },
+      filtered: this.filterIsApplied(options),
+      simulation: this.simulationMode,
+    };
+
+    if (!this.active) {
+      return empty;
+    }
+
+    const filter = this.buildFilter(options);
+    // Snapshot only — never mutate the live buffer from a summary.
+    const matched = this.messages.filter((message) => matchesFilter(message, filter));
+
+    return this.aggregateMessages(matched, options?.topN, empty);
+  }
+
+  private buildFilter(options?: {
+    interfaceName?: string;
+    messageType?: string | number;
+    sinceTimestamp?: number;
+    hexSearch?: string;
+    direction?: MojoMessageDirection;
+  }): MojoMessageFilter {
     const filter: MojoMessageFilter = {};
     if (options?.interfaceName) {
       filter.interfaceName = options.interfaceName;
@@ -412,19 +546,120 @@ export class MojoMonitor {
     if (options?.hexSearch) {
       filter.hexSearch = options.hexSearch;
     }
+    if (options?.direction) {
+      filter.direction = options.direction;
+    }
+    return filter;
+  }
 
-    const allMessages = await this.captureMessages(filter);
-    const limit = options?.limit ?? 100;
+  private filterIsApplied(options?: {
+    interfaceName?: string;
+    messageType?: string | number;
+    sinceTimestamp?: number;
+    hexSearch?: string;
+    direction?: MojoMessageDirection;
+  }): boolean {
+    return !!(
+      options?.interfaceName ||
+      options?.messageType !== undefined ||
+      options?.sinceTimestamp !== undefined ||
+      options?.hexSearch ||
+      options?.direction
+    );
+  }
+
+  private aggregateMessages(
+    matched: MojoMessage[],
+    topN: number | undefined,
+    empty: MojoMessageSummary,
+  ): MojoMessageSummary {
+    if (matched.length === 0) return empty;
+
+    const limit = typeof topN === 'number' && topN > 0 ? Math.trunc(topN) : 5;
+
+    interface InterfaceAcc {
+      count: number;
+      bytes: number;
+      directionBreakdown: MojoMessageDirectionBreakdown;
+      methods: Set<string>;
+    }
+    interface MethodAcc {
+      count: number;
+      bytes: number;
+    }
+
+    const interfaceMap = new Map<string, InterfaceAcc>();
+    const methodMap = new Map<string, MethodAcc>();
+    const directionBreakdown: MojoMessageDirectionBreakdown = {
+      request: 0,
+      response: 0,
+      sync: 0,
+      unknown: 0,
+    };
+    let totalBytes = 0;
+    let earliest: number | null = null;
+    let latest: number | null = null;
+
+    for (const message of matched) {
+      const bytes = typeof message.size === 'number' && message.size >= 0 ? message.size : 0;
+      totalBytes += bytes;
+
+      if (earliest === null || message.timestamp < earliest) earliest = message.timestamp;
+      if (latest === null || message.timestamp > latest) latest = message.timestamp;
+
+      const dir: MojoMessageDirection | 'unknown' = message.direction ?? 'unknown';
+      directionBreakdown[dir] += 1;
+
+      const interfaceAcc = interfaceMap.get(message.interfaceName) ?? {
+        count: 0,
+        bytes: 0,
+        directionBreakdown: { request: 0, response: 0, sync: 0, unknown: 0 },
+        methods: new Set<string>(),
+      };
+      interfaceAcc.count += 1;
+      interfaceAcc.bytes += bytes;
+      interfaceAcc.directionBreakdown[dir] += 1;
+      interfaceAcc.methods.add(message.messageType);
+      interfaceMap.set(message.interfaceName, interfaceAcc);
+
+      const methodKey = `${message.interfaceName}\u{0}:${message.messageType}`;
+      const methodAcc = methodMap.get(methodKey) ?? { count: 0, bytes: 0 };
+      methodAcc.count += 1;
+      methodAcc.bytes += bytes;
+      methodMap.set(methodKey, methodAcc);
+    }
+
+    const byInterface: MojoInterfaceSummary[] = [...interfaceMap.entries()]
+      .map(([interfaceName, acc]) => ({
+        interface: interfaceName,
+        count: acc.count,
+        bytes: acc.bytes,
+        distinctMethods: acc.methods.size,
+        directionBreakdown: acc.directionBreakdown,
+      }))
+      .toSorted(byCountDesc);
+
+    const byMethod: MojoMethodSummary[] = [...methodMap.entries()]
+      .map(([key, acc]) => {
+        const separator = key.indexOf('\u{0}:');
+        const interfaceName = separator >= 0 ? key.slice(0, separator) : key;
+        const method = separator >= 0 ? key.slice(separator + 2) : '';
+        return { interface: interfaceName, method, count: acc.count, bytes: acc.bytes };
+      })
+      .toSorted(byCountDesc);
+
+    const durationMs = earliest !== null && latest !== null ? Math.max(0, latest - earliest) : 0;
 
     return {
-      messages: allMessages.slice(0, limit),
-      totalAvailable: allMessages.length,
-      filtered: !!(
-        options?.interfaceName ||
-        options?.messageType !== undefined ||
-        options?.sinceTimestamp !== undefined ||
-        options?.hexSearch
-      ),
+      total: matched.length,
+      totalBytes,
+      byDirection: directionBreakdown,
+      byInterface,
+      byMethod,
+      topInterfaces: byInterface.slice(0, limit),
+      topMethods: byMethod.slice(0, limit),
+      timeWindow: { earliest, latest, durationMs },
+      filtered: empty.filtered,
       simulation: this.simulationMode,
     };
   }
@@ -434,16 +669,20 @@ export class MojoMonitor {
       return;
     }
 
-    this.messages.push({ ...message });
-    this.observedInterfaceNames.add(message.interfaceName);
-    const existing = this.interfaces.get(message.interfaceName);
+    const normalized: MojoMessage =
+      message.direction === undefined
+        ? { ...message, direction: deriveDirectionFromPayload(message.payload) }
+        : { ...message };
+    this.messages.push(normalized);
+    this.observedInterfaceNames.add(normalized.interfaceName);
+    const existing = this.interfaces.get(normalized.interfaceName);
     if (existing) {
       existing.pendingMessages += 1;
       return;
     }
 
-    this.interfaces.set(message.interfaceName, {
-      name: message.interfaceName,
+    this.interfaces.set(normalized.interfaceName, {
+      name: normalized.interfaceName,
       version,
       pendingMessages: 1,
     });
@@ -508,6 +747,9 @@ export class MojoMonitor {
     if (message.type === 'mojo-message') {
       this.simulationMode = false;
       this.fridaProbeSucceeded = true;
+      // Direction is best-effort derived from the captured payload header;
+      // the wire layout is Chromium-version-specific so this stays fail-soft.
+      const direction = deriveDirectionFromPayload(message.hex);
       this.recordMessage({
         timestamp: Date.now(),
         sourcePid: 0,
@@ -516,6 +758,7 @@ export class MojoMonitor {
         messageType: String(message.method ?? ''),
         payload: message.hex ?? '',
         size: message.size ?? 0,
+        direction,
       });
     } else if (message.type === 'mojo-hook-attached') {
       this.fridaProbeSucceeded = true;

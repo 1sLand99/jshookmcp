@@ -328,6 +328,7 @@ describe('MojoIPCHandlers — coverage expansion', () => {
         'network.mojom.NetworkService',
         'CreateLoader',
         fields,
+        undefined,
       );
       expect(result).toEqual({ success: true, hexPayload: '0100010100000101' });
     });
@@ -340,7 +341,12 @@ describe('MojoIPCHandlers — coverage expansion', () => {
         fields,
       });
 
-      expect(decoder.encodeMessage).toHaveBeenCalledWith('network.mojom.NetworkService', 7, fields);
+      expect(decoder.encodeMessage).toHaveBeenCalledWith(
+        'network.mojom.NetworkService',
+        7,
+        fields,
+        undefined,
+      );
       expect(result).toMatchObject({ success: true });
     });
 
@@ -471,6 +477,7 @@ describe('MojoIPCHandlers — coverage expansion', () => {
         messageType: undefined,
         sinceTimestamp: undefined,
         hexSearch: undefined,
+        direction: undefined,
       });
       expect(result).toMatchObject({
         success: true,
@@ -489,6 +496,7 @@ describe('MojoIPCHandlers — coverage expansion', () => {
         messageType: undefined,
         sinceTimestamp: undefined,
         hexSearch: undefined,
+        direction: undefined,
       });
       expect(result).toMatchObject({ success: true });
     });
@@ -501,6 +509,7 @@ describe('MojoIPCHandlers — coverage expansion', () => {
         messageType: undefined,
         sinceTimestamp: undefined,
         hexSearch: undefined,
+        direction: undefined,
       });
       expect(result).toMatchObject({ success: true });
     });
@@ -515,6 +524,7 @@ describe('MojoIPCHandlers — coverage expansion', () => {
         messageType: undefined,
         sinceTimestamp: undefined,
         hexSearch: undefined,
+        direction: undefined,
       });
       expect(result).toMatchObject({ success: true });
     });
@@ -530,6 +540,7 @@ describe('MojoIPCHandlers — coverage expansion', () => {
         messageType: undefined,
         sinceTimestamp: undefined,
         hexSearch: undefined,
+        direction: undefined,
       });
       expect(result).toMatchObject({ success: true });
     });
@@ -548,6 +559,7 @@ describe('MojoIPCHandlers — coverage expansion', () => {
         messageType: 7,
         sinceTimestamp: 1234,
         hexSearch: 'aa bb',
+        direction: undefined,
       });
       expect(result).toMatchObject({ success: true });
     });
@@ -693,6 +705,7 @@ describe('MojoIPCHandlers — coverage expansion', () => {
         messageType: undefined,
         sinceTimestamp: undefined,
         hexSearch: undefined,
+        direction: undefined,
       });
       expect(result).toMatchObject({ success: true });
     });
@@ -705,6 +718,7 @@ describe('MojoIPCHandlers — coverage expansion', () => {
         messageType: undefined,
         sinceTimestamp: undefined,
         hexSearch: undefined,
+        direction: undefined,
       });
       expect(result).toMatchObject({ success: true });
     });

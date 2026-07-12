@@ -124,7 +124,12 @@ describe('MojoIPCHandlers', () => {
       messageType: 1,
       fields,
     });
-    expect(decoder.encodeMessage).toHaveBeenCalledWith('network.mojom.NetworkService', 1, fields);
+    expect(decoder.encodeMessage).toHaveBeenCalledWith(
+      'network.mojom.NetworkService',
+      1,
+      fields,
+      undefined,
+    );
     expect(result).toEqual({ success: true, hexPayload: '0100010100000101' });
   });
 
@@ -155,6 +160,7 @@ describe('MojoIPCHandlers', () => {
       messageType: undefined,
       sinceTimestamp: undefined,
       hexSearch: undefined,
+      direction: undefined,
     });
     expect(result).toMatchObject({
       success: true,
