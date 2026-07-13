@@ -63,9 +63,19 @@ async function waitForCapturedLogs(
   throw new Error(`Timed out waiting for captured logs: ${JSON.stringify(finalData.logs)}`);
 }
 
+type FakeBuilder = {
+  delay: ReturnType<typeof vi.fn>;
+  thenPassThrough: ReturnType<typeof vi.fn>;
+  thenForwardTo: ReturnType<typeof vi.fn>;
+  thenCloseConnection: ReturnType<typeof vi.fn>;
+  thenReply: ReturnType<typeof vi.fn>;
+};
+
 function installFakeRuleServer(handlers: ProxyHandlers) {
-  const builder = {
+  const builder: FakeBuilder = {
+    delay: vi.fn((): FakeBuilder => builder),
     thenPassThrough: vi.fn(async () => ({ id: 'fake-endpoint' })),
+    thenForwardTo: vi.fn(async () => ({ id: 'fake-endpoint' })),
     thenCloseConnection: vi.fn(async () => ({ id: 'fake-endpoint' })),
     thenReply: vi.fn(async () => ({ id: 'fake-endpoint' })),
   };
@@ -532,6 +542,321 @@ describe('ProxyHandlers (Integration)', () => {
 
     const listData = parseResponse(await handlers.handleProxyListRules({}));
     expect(listData.rules[0].forwardOptions).toBeUndefined();
+  });
+
+  it('applies forwardOptions.transformRequest.matchReplaceBody (string and regex literal)', async () => {
+    let receivedBody = '';
+    const upstream = http.createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+      req.on('end', () => {
+        receivedBody = Buffer.concat(chunks).toString('utf8');
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        res.end('ok');
+      });
+    });
+    const upstreamPort = await listen(upstream);
+
+    try {
+      await handlers.handleProxyStart({ port: testPort + 15, useHttps: false });
+      const ruleRes = await handlers.handleProxyAddRule({
+        action: 'forward',
+        method: 'POST',
+        urlPattern: '/match-replace-req',
+        forwardOptions: {
+          transformRequest: {
+            matchReplaceBody: [
+              ['secret', 'REDACTED'],
+              ['/token-v[0-9]+/g', 'token-x'],
+            ],
+          },
+        },
+      });
+      expect(parseResponse(ruleRes).success).toBe(true);
+
+      const originalBody = 'user=alice&secret=abc&token=token-v12345&sig=xyz';
+      const response = await sendRawHttpRequest(
+        testPort + 15,
+        [
+          `POST http://127.0.0.1:${upstreamPort}/match-replace-req HTTP/1.1`,
+          `Host: 127.0.0.1:${upstreamPort}`,
+          'Content-Type: text/plain',
+          `Content-Length: ${Buffer.byteLength(originalBody)}`,
+          'Connection: close',
+          '',
+          originalBody,
+        ].join('\r\n'),
+      );
+
+      expect(response).toContain('200 OK');
+      expect(receivedBody).toBe('user=alice&REDACTED=abc&token=token-x&sig=xyz');
+    } finally {
+      await new Promise((resolve, reject) => {
+        upstream.close((error) => (error ? reject(error) : resolve(undefined)));
+      });
+    }
+  });
+
+  it('applies forwardOptions.transformResponse.matchReplaceBody', async () => {
+    const upstream = http.createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end('status=ok token=token-v999 debug=on');
+    });
+    const upstreamPort = await listen(upstream);
+
+    try {
+      await handlers.handleProxyStart({ port: testPort + 16, useHttps: false });
+      const ruleRes = await handlers.handleProxyAddRule({
+        action: 'forward',
+        method: 'GET',
+        urlPattern: '/match-replace-res',
+        forwardOptions: {
+          transformResponse: {
+            matchReplaceBody: [['/token-v[0-9]+/g', 'REDACTED-TOKEN']],
+          },
+        },
+      });
+      expect(parseResponse(ruleRes).success).toBe(true);
+
+      const response = await sendRawHttpRequest(
+        testPort + 16,
+        [
+          `GET http://127.0.0.1:${upstreamPort}/match-replace-res HTTP/1.1`,
+          `Host: 127.0.0.1:${upstreamPort}`,
+          'Connection: close',
+          '',
+          '',
+        ].join('\r\n'),
+      );
+
+      expect(response).toContain('200 OK');
+      expect(response).toContain('REDACTED-TOKEN');
+      expect(response).not.toMatch(/token-v999/);
+    } finally {
+      await new Promise((resolve, reject) => {
+        upstream.close((error) => (error ? reject(error) : resolve(undefined)));
+      });
+    }
+  });
+
+  it('applies forwardOptions.transformRequest.updateJsonBody merge', async () => {
+    let receivedBody = '';
+    const upstream = http.createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+      req.on('end', () => {
+        receivedBody = Buffer.concat(chunks).toString('utf8');
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end('{}');
+      });
+    });
+    const upstreamPort = await listen(upstream);
+
+    try {
+      await handlers.handleProxyStart({ port: testPort + 17, useHttps: false });
+      const ruleRes = await handlers.handleProxyAddRule({
+        action: 'forward',
+        method: 'POST',
+        urlPattern: '/update-json-req',
+        forwardOptions: {
+          transformRequest: {
+            updateJsonBody: { injected: true, role: 'admin' },
+          },
+        },
+      });
+      expect(parseResponse(ruleRes).success).toBe(true);
+
+      const originalBody = JSON.stringify({ user: 'alice', role: 'guest' });
+      const response = await sendRawHttpRequest(
+        testPort + 17,
+        [
+          `POST http://127.0.0.1:${upstreamPort}/update-json-req HTTP/1.1`,
+          `Host: 127.0.0.1:${upstreamPort}`,
+          'Content-Type: application/json',
+          `Content-Length: ${Buffer.byteLength(originalBody)}`,
+          'Connection: close',
+          '',
+          originalBody,
+        ].join('\r\n'),
+      );
+
+      expect(response).toContain('200 OK');
+      expect(JSON.parse(receivedBody)).toEqual({
+        user: 'alice',
+        role: 'admin',
+        injected: true,
+      });
+    } finally {
+      await new Promise((resolve, reject) => {
+        upstream.close((error) => (error ? reject(error) : resolve(undefined)));
+      });
+    }
+  });
+
+  it('forwards requests to a different upstream via action=redirect', async () => {
+    const upstreamB = http.createServer((req, res) => {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end(`redirected-to-B:${req.url}`);
+    });
+    const portB = await listen(upstreamB);
+    const unusedPortA = testPort + 19; // nothing listens here; redirect bypasses A
+
+    try {
+      await handlers.handleProxyStart({ port: testPort + 18, useHttps: false });
+      const ruleRes = await handlers.handleProxyAddRule({
+        action: 'redirect',
+        method: 'GET',
+        urlPattern: '/redirect-test',
+        targetUrl: `http://127.0.0.1:${portB}`,
+      });
+      expect(parseResponse(ruleRes).success).toBe(true);
+
+      const response = await sendRawHttpRequest(
+        testPort + 18,
+        [
+          `GET http://127.0.0.1:${unusedPortA}/redirect-test HTTP/1.1`,
+          `Host: 127.0.0.1:${unusedPortA}`,
+          'Connection: close',
+          '',
+          '',
+        ].join('\r\n'),
+      );
+
+      expect(response).toContain('200 OK');
+      expect(response).toContain('redirected-to-B:/redirect-test');
+    } finally {
+      await new Promise((resolve, reject) => {
+        upstreamB.close((error) => (error ? reject(error) : resolve(undefined)));
+      });
+    }
+  });
+
+  it('registers redirect rules via thenForwardTo and records targetUrl', async () => {
+    const { builder } = installFakeRuleServer(handlers);
+    const data = parseResponse(
+      await handlers.handleProxyAddRule({
+        action: 'redirect',
+        method: 'GET',
+        urlPattern: '/redirect-mock/',
+        targetUrl: 'http://127.0.0.1:9090',
+        forwardOptions: { transformResponse: { replaceStatus: 201 } },
+      }),
+    );
+    expect(data.success).toBe(true);
+    expect(builder.thenForwardTo).toHaveBeenCalledOnce();
+    expect(builder.thenForwardTo.mock.calls[0]![0]).toBe('http://127.0.0.1:9090');
+    expect(builder.thenForwardTo.mock.calls[0]![1]).toMatchObject({
+      transformResponse: { replaceStatus: 201 },
+    });
+    expect(data.rule).toMatchObject({
+      action: 'redirect',
+      targetUrl: 'http://127.0.0.1:9090',
+    });
+    expect(data.rule.delayMs).toBeUndefined();
+  });
+
+  it('rejects redirect without a targetUrl', async () => {
+    const { builder } = installFakeRuleServer(handlers);
+    const result = await handlers.handleProxyAddRule({
+      action: 'redirect',
+      method: 'GET',
+      urlPattern: '/no-target/',
+    });
+    const data = parseAnyResponse(result);
+    expect(result.isError).toBe(true);
+    expect(data.error).toContain('targetUrl is required');
+    expect(builder.thenForwardTo).not.toHaveBeenCalled();
+  });
+
+  it('rejects redirect targetUrl that includes a path or query', async () => {
+    const { builder } = installFakeRuleServer(handlers);
+    const result = await handlers.handleProxyAddRule({
+      action: 'redirect',
+      method: 'GET',
+      urlPattern: '/target-path/',
+      targetUrl: 'http://127.0.0.1:9999/with-path',
+    });
+    const data = parseAnyResponse(result);
+    expect(result.isError).toBe(true);
+    expect(data.error).toContain('root URL with no path');
+    expect(builder.thenForwardTo).not.toHaveBeenCalled();
+  });
+
+  it('applies delayMs before the terminal rule step and records it', async () => {
+    const { builder } = installFakeRuleServer(handlers);
+    const data = parseResponse(
+      await handlers.handleProxyAddRule({
+        action: 'forward',
+        method: 'GET',
+        urlPattern: '/delayed/',
+        delayMs: 250,
+      }),
+    );
+    expect(data.success).toBe(true);
+    expect(builder.delay).toHaveBeenCalledWith(250);
+    expect(builder.thenPassThrough).toHaveBeenCalledOnce();
+    expect(data.rule.delayMs).toBe(250);
+  });
+
+  it('omits delay entirely when delayMs is zero', async () => {
+    const { builder } = installFakeRuleServer(handlers);
+    const data = parseResponse(
+      await handlers.handleProxyAddRule({
+        action: 'forward',
+        method: 'GET',
+        urlPattern: '/no-delay/',
+      }),
+    );
+    expect(data.success).toBe(true);
+    expect(builder.delay).not.toHaveBeenCalled();
+    expect(data.rule.delayMs).toBeUndefined();
+  });
+
+  it('compiles matchReplaceBody regex literal to RegExp and keeps plain strings', async () => {
+    const { builder } = installFakeRuleServer(handlers);
+    const data = parseResponse(
+      await handlers.handleProxyAddRule({
+        action: 'forward',
+        method: 'POST',
+        urlPattern: '/regex-compile/',
+        forwardOptions: {
+          transformRequest: {
+            matchReplaceBody: [
+              ['plain-string', 'lit'],
+              ['/pattern-[0-9]+/gi', 'num'],
+            ],
+          },
+        },
+      }),
+    );
+    expect(data.success).toBe(true);
+    expect(builder.thenPassThrough).toHaveBeenCalledOnce();
+    const opts = builder.thenPassThrough.mock.calls[0]![0] as {
+      transformRequest: { matchReplaceBody: Array<[string | RegExp, string]> };
+    };
+    const pairs = opts.transformRequest.matchReplaceBody;
+    expect(pairs[0]![0]).toBe('plain-string');
+    expect(pairs[1]![0]).toBeInstanceOf(RegExp);
+    expect((pairs[1]![0] as RegExp).source).toBe('pattern-[0-9]+');
+    expect((pairs[1]![0] as RegExp).flags).toBe('gi');
+  });
+
+  it('rejects an invalid matchReplaceBody regex literal before registering', async () => {
+    const { builder } = installFakeRuleServer(handlers);
+    const result = await handlers.handleProxyAddRule({
+      action: 'forward',
+      method: 'POST',
+      urlPattern: '/bad-regex/',
+      forwardOptions: {
+        transformRequest: {
+          matchReplaceBody: [['/(unterminated/g', 'x']],
+        },
+      },
+    });
+    const data = parseAnyResponse(result);
+    expect(result.isError).toBe(true);
+    expect(data.error).toContain('not a valid regex literal');
+    expect(builder.thenPassThrough).not.toHaveBeenCalled();
   });
 
   it('captures request and response body previews with timing metadata', async () => {

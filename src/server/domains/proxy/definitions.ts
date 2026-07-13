@@ -17,14 +17,25 @@ export const PROXY_TOOLS: Tool[] = [
   tool('proxy_export_ca', (t) => t.desc('Read the proxy CA certificate.').query()),
   tool('proxy_add_rule', (t) =>
     t
-      .desc('Add an interception rule: forward, mock response, or block.')
-      .string('action', 'Rule action: forward, mock_response, or block.')
+      .desc('Add an interception rule: forward, mock_response, redirect, or block.')
+      .string('action', 'Rule action: forward, mock_response, redirect, or block.')
       .string('method', 'HTTP method to match. Use ANY, ALL, or * to match every method.', {
         default: 'GET',
       })
       .string('urlPattern', 'URL matcher string or regex literal.')
+      .string(
+        'targetUrl',
+        'Target upstream root URL for redirect (no path; the original request path is preserved). Required when action=redirect.',
+      )
       .number('mockStatus', 'Response status for mock_response.', { default: 200 })
       .string('mockBody', 'Response body for mock_response.')
+      .number(
+        'delayMs',
+        'Inject a delay (milliseconds) before the rule action fires. 0 = no delay.',
+        {
+          default: 0,
+        },
+      )
       .object(
         'forwardOptions',
         {
@@ -47,6 +58,32 @@ export const PROXY_TOOLS: Tool[] = [
               replaceBody: {
                 type: 'string',
                 description: 'String that replaces the request body entirely.',
+              },
+              matchReplaceBody: {
+                type: 'array',
+                description:
+                  'Match/replace pairs applied to the request body in order. Each entry is [match, replacement]; match is a plain string or a /pattern/flags regex literal, replacement supports $1-style placeholders.',
+                items: {
+                  type: 'array',
+                  minItems: 2,
+                  maxItems: 2,
+                  items: [
+                    {
+                      type: 'string',
+                      description: 'Plain string or /pattern/flags regex literal.',
+                    },
+                    {
+                      type: 'string',
+                      description: 'Replacement string (supports $1, $2, ...).',
+                    },
+                  ],
+                },
+              },
+              updateJsonBody: {
+                type: 'object',
+                description:
+                  'Object recursively merged into a JSON request body; undefined values remove keys. Requests with invalid JSON fail.',
+                additionalProperties: true,
               },
             },
           },
@@ -73,6 +110,32 @@ export const PROXY_TOOLS: Tool[] = [
               replaceBody: {
                 type: 'string',
                 description: 'String that replaces the response body entirely.',
+              },
+              matchReplaceBody: {
+                type: 'array',
+                description:
+                  'Match/replace pairs applied to the response body in order. Each entry is [match, replacement]; match is a plain string or a /pattern/flags regex literal, replacement supports $1-style placeholders.',
+                items: {
+                  type: 'array',
+                  minItems: 2,
+                  maxItems: 2,
+                  items: [
+                    {
+                      type: 'string',
+                      description: 'Plain string or /pattern/flags regex literal.',
+                    },
+                    {
+                      type: 'string',
+                      description: 'Replacement string (supports $1, $2, ...).',
+                    },
+                  ],
+                },
+              },
+              updateJsonBody: {
+                type: 'object',
+                description:
+                  'Object recursively merged into a JSON response body; undefined values remove keys. Responses with invalid JSON fail.',
+                additionalProperties: true,
               },
             },
           },

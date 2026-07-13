@@ -18,10 +18,10 @@ const ResponseBuilder = {
   error: (msg: string) => R.fail(msg).mcpError().json(),
 };
 
-const PROXY_RULE_ACTIONS = new Set(['forward', 'mock_response', 'block'] as const);
+const PROXY_RULE_ACTIONS = new Set(['forward', 'mock_response', 'redirect', 'block'] as const);
 const HTTP_METHOD_RE = /^[A-Z][A-Z0-9_-]*$|^\*$/;
 
-type ProxyRuleAction = 'forward' | 'mock_response' | 'block';
+type ProxyRuleAction = 'forward' | 'mock_response' | 'redirect' | 'block';
 type ParsedValue<T> =
   | {
       ok: true;
@@ -54,11 +54,17 @@ interface CaptureEntry {
 /** Header map where `undefined` means "remove this header" (mockttp convention). */
 type HeaderMap = Record<string, string | undefined>;
 
+/** A single [match, replacement] pair; match may be a string or a compiled RegExp. */
+type MatchReplacePair = [string | RegExp, string];
+type MatchReplacePairs = MatchReplacePair[];
+
 interface ForwardTransformRequest {
   replaceMethod?: string;
   updateHeaders?: HeaderMap;
   replaceHeaders?: HeaderMap;
   replaceBody?: string;
+  matchReplaceBody?: MatchReplacePairs;
+  updateJsonBody?: Record<string, unknown>;
 }
 
 interface ForwardTransformResponse {
@@ -66,13 +72,15 @@ interface ForwardTransformResponse {
   updateHeaders?: HeaderMap;
   replaceHeaders?: HeaderMap;
   replaceBody?: string;
+  matchReplaceBody?: MatchReplacePairs;
+  updateJsonBody?: Record<string, unknown>;
 }
 
 /**
  * Declarative passthrough rewrite. A structural subset of mockttp's
  * `PassThroughStepOptions.transformRequest`/`transformResponse` — callback
- * modes (`beforeRequest`/`beforeResponse`) and regex body replacements are
- * intentionally not exposed (lesson #51 honest boundary).
+ * modes (`beforeRequest`/`beforeResponse`) are intentionally not exposed
+ * (MCP cannot transport functions; lesson #51 honest boundary).
  */
 interface ForwardOptions {
   transformRequest?: ForwardTransformRequest;
@@ -86,6 +94,8 @@ interface ProxyRuleRecord {
   urlPattern: string;
   mockStatus?: number;
   forwardOptions?: ForwardOptions;
+  targetUrl?: string;
+  delayMs?: number;
   createdAt: string;
 }
 
@@ -147,7 +157,7 @@ function parseRuleAction(value: unknown): ParsedValue<ProxyRuleAction> {
   if (typeof value !== 'string' || !PROXY_RULE_ACTIONS.has(value as ProxyRuleAction)) {
     return {
       ok: false,
-      error: 'action must be one of: forward, mock_response, block',
+      error: 'action must be one of: forward, mock_response, redirect, block',
     };
   }
   return { ok: true, value: value as ProxyRuleAction };
@@ -225,6 +235,61 @@ function normalizeForwardHeaderMap(raw: unknown, field: string): HeaderMap | und
   return result;
 }
 
+/**
+ * Compile one caller-supplied match expression into mockttp's expected form:
+ * a `/pattern/flags` regex literal becomes a `RegExp`, any other string is kept
+ * as a literal string match. Throws on a malformed regex literal.
+ */
+function compileMatchExpression(expr: string, field: string): string | RegExp {
+  const regexLiteral = /^\/(.+)\/([a-z]*)$/.exec(expr);
+  if (regexLiteral && regexLiteral[1] !== undefined) {
+    const source = regexLiteral[1];
+    const flags = regexLiteral[2] ?? '';
+    try {
+      return new RegExp(source, flags);
+    } catch (e) {
+      throw new Error(
+        `forwardOptions.${field} is not a valid regex literal: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+        { cause: e },
+      );
+    }
+  }
+  return expr;
+}
+
+/**
+ * Validate and compile caller-supplied `matchReplaceBody` pairs into mockttp's
+ * `MatchReplacePairs`. Each pair is `[match, replacement]`; `match` is a plain
+ * string or a `/pattern/flags` regex literal, `replacement` supports `$1`-style
+ * placeholders (mockttp applies them via `String.prototype.replace`).
+ */
+function parseMatchReplacePairs(raw: unknown, field: string): MatchReplacePairs | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (!Array.isArray(raw)) {
+    throw new Error(`forwardOptions.${field} must be an array of [match, replacement] pairs`);
+  }
+  const result: MatchReplacePairs = [];
+  for (let i = 0; i < raw.length; i += 1) {
+    const pair = raw[i];
+    if (!Array.isArray(pair) || pair.length !== 2) {
+      throw new Error(`forwardOptions.${field}[${i}] must be a [match, replacement] pair`);
+    }
+    const [match, replacement] = pair as [unknown, unknown];
+    if (typeof match !== 'string') {
+      throw new Error(
+        `forwardOptions.${field}[${i}][0] must be a string (plain or /pattern/flags)`,
+      );
+    }
+    if (typeof replacement !== 'string') {
+      throw new Error(`forwardOptions.${field}[${i}][1] must be a string`);
+    }
+    result.push([compileMatchExpression(match, `${field}[${i}][0]`), replacement]);
+  }
+  return result;
+}
+
 function buildForwardTransformRequest(raw: Record<string, unknown>): ForwardTransformRequest {
   const result: ForwardTransformRequest = {};
   const replaceMethod = raw['replaceMethod'];
@@ -250,6 +315,18 @@ function buildForwardTransformRequest(raw: Record<string, unknown>): ForwardTran
       throw new Error('forwardOptions.transformRequest.replaceBody must be a string');
     }
     result.replaceBody = replaceBody;
+  }
+  const matchReplaceBody = parseMatchReplacePairs(
+    raw['matchReplaceBody'],
+    'transformRequest.matchReplaceBody',
+  );
+  if (matchReplaceBody) result.matchReplaceBody = matchReplaceBody;
+  const updateJsonBody = raw['updateJsonBody'];
+  if (updateJsonBody !== undefined && updateJsonBody !== null) {
+    if (typeof updateJsonBody !== 'object' || Array.isArray(updateJsonBody)) {
+      throw new Error('forwardOptions.transformRequest.updateJsonBody must be an object');
+    }
+    result.updateJsonBody = updateJsonBody as Record<string, unknown>;
   }
   return result;
 }
@@ -286,6 +363,18 @@ function buildForwardTransformResponse(raw: Record<string, unknown>): ForwardTra
       throw new Error('forwardOptions.transformResponse.replaceBody must be a string');
     }
     result.replaceBody = replaceBody;
+  }
+  const matchReplaceBody = parseMatchReplacePairs(
+    raw['matchReplaceBody'],
+    'transformResponse.matchReplaceBody',
+  );
+  if (matchReplaceBody) result.matchReplaceBody = matchReplaceBody;
+  const updateJsonBody = raw['updateJsonBody'];
+  if (updateJsonBody !== undefined && updateJsonBody !== null) {
+    if (typeof updateJsonBody !== 'object' || Array.isArray(updateJsonBody)) {
+      throw new Error('forwardOptions.transformResponse.updateJsonBody must be an object');
+    }
+    result.updateJsonBody = updateJsonBody as Record<string, unknown>;
   }
   return result;
 }
@@ -669,6 +758,33 @@ export class ProxyHandlers {
       mockBody = parsedMockBody.value;
     }
 
+    let targetUrl: string | undefined;
+    if (action === 'redirect') {
+      const parsedTargetUrl = parseOptionalString(args, 'targetUrl', '');
+      if (!parsedTargetUrl.ok) {
+        return ResponseBuilder.error(parsedTargetUrl.error);
+      }
+      const trimmed = parsedTargetUrl.value.trim();
+      if (trimmed === '') {
+        return ResponseBuilder.error('targetUrl is required when action=redirect');
+      }
+      // mockttp's thenForwardTo throws if the target includes a path; reject
+      // path/query/fragment up front for a clearer message. Scheme is optional.
+      const withoutScheme = trimmed.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '');
+      if (/[/?#]/.test(withoutScheme)) {
+        return ResponseBuilder.error(
+          'targetUrl must be a root URL with no path, query, or fragment (e.g. http://host:port); the original request path is preserved',
+        );
+      }
+      targetUrl = trimmed;
+    }
+
+    const rawDelayMs = argNumber(args, 'delayMs') ?? 0;
+    if (!Number.isFinite(rawDelayMs) || !Number.isInteger(rawDelayMs) || rawDelayMs < 0) {
+      return ResponseBuilder.error('delayMs must be a non-negative integer when provided');
+    }
+    const delayMs = rawDelayMs;
+
     try {
       const matcher = compileUrlPattern(urlPattern);
       const server = this.server as {
@@ -679,23 +795,32 @@ export class ProxyHandlers {
         forMethod?: (method: string, m: RegExp) => unknown;
         forAnyRequest: () => unknown;
       };
-      let builder: {
+      type RuleBuilder = {
+        delay: (ms: number) => RuleBuilder;
         thenPassThrough: (options?: ForwardOptions) => Promise<{ id: string }>;
+        thenForwardTo: (target: string, options?: ForwardOptions) => Promise<{ id: string }>;
         thenCloseConnection: () => Promise<{ id: string }>;
         thenReply: (status: number, body: string) => Promise<{ id: string }>;
       };
-      if (method === 'GET') builder = server.forGet(matcher) as typeof builder;
-      else if (method === 'POST') builder = server.forPost(matcher) as typeof builder;
-      else if (method === 'PUT') builder = server.forPut(matcher) as typeof builder;
-      else if (method === 'DELETE') builder = server.forDelete(matcher) as typeof builder;
+      let builder: RuleBuilder;
+      if (method === 'GET') builder = server.forGet(matcher) as RuleBuilder;
+      else if (method === 'POST') builder = server.forPost(matcher) as RuleBuilder;
+      else if (method === 'PUT') builder = server.forPut(matcher) as RuleBuilder;
+      else if (method === 'DELETE') builder = server.forDelete(matcher) as RuleBuilder;
       else if (method === 'ANY' || method === '*' || method === 'ALL') {
-        builder = server.forAnyRequest() as typeof builder;
+        builder = server.forAnyRequest() as RuleBuilder;
       } else if (typeof server.forMethod === 'function') {
-        builder = server.forMethod(method, matcher) as typeof builder;
+        builder = server.forMethod(method, matcher) as RuleBuilder;
       } else {
         return ResponseBuilder.error(
           `Proxy server does not support method-specific rules for ${method}`,
         );
+      }
+
+      // Apply optional latency injection before the terminal step. `builder.delay`
+      // is a non-terminal mockttp step that returns the builder chain.
+      if (delayMs > 0) {
+        builder = builder.delay(delayMs);
       }
 
       let endpoint: { id: string };
@@ -704,6 +829,10 @@ export class ProxyHandlers {
         case 'forward':
           forwardOptions = buildForwardOptions(args);
           endpoint = await builder.thenPassThrough(forwardOptions);
+          break;
+        case 'redirect':
+          forwardOptions = buildForwardOptions(args);
+          endpoint = await builder.thenForwardTo(targetUrl ?? '', forwardOptions);
           break;
         case 'block':
           endpoint = await builder.thenCloseConnection();
@@ -722,6 +851,8 @@ export class ProxyHandlers {
           method,
           urlPattern,
           ...(action === 'mock_response' ? { mockStatus: mockStatus ?? 200 } : {}),
+          ...(targetUrl ? { targetUrl } : {}),
+          ...(delayMs > 0 ? { delayMs } : {}),
           ...(forwardOptions ? { forwardOptions } : {}),
         }),
       });
