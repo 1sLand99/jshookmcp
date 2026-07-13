@@ -49,11 +49,15 @@ export const tlsAnalysisTools: Tool[] = [
   ),
   objectTool(
     'tls_keylog_summarize',
-    'Summarize the contents of an SSLKEYLOGFILE by label distribution.',
+    'Summarize an SSLKEYLOGFILE: per-label distribution, secret-type classification (TLS 1.2 master-secret vs TLS 1.3 traffic-secret kinds), TLS version inference, and unique session (client_random) count.',
     {
       content: {
         type: 'string',
         description: 'Inline keylog content to summarize',
+      },
+      path: {
+        type: 'string',
+        description: 'Path to a keylog file to summarize (used when content is not provided)',
       },
     },
   ),
@@ -95,15 +99,25 @@ export const tlsAnalysisTools: Tool[] = [
     },
     ['rawHex'],
   ),
-  objectTool('tls_cipher_suites', 'List TLS cipher suites.', {
-    filter: {
-      type: 'string',
-      description: 'Keyword filter for cipher suite names',
+  objectTool(
+    'tls_cipher_suites',
+    'List TLS cipher suites with IANA id, protocol, key-exchange / authentication / encryption / MAC split, and AEAD flag (each dimension derived from the suite name).',
+    {
+      filter: {
+        type: 'string',
+        description: 'Keyword filter for cipher suite names (substring match)',
+      },
+      protocol: {
+        type: 'string',
+        enum: ['all', '1.3', '1.2'],
+        default: 'all',
+        description: 'Filter by TLS protocol version',
+      },
     },
-  }),
+  ),
   objectTool(
     'tls_parse_certificate',
-    'Parse a TLS Certificate message from raw hex and extract fingerprints.',
+    'Parse a TLS Certificate message from raw hex and extract X.509 details (subject/issuer/SAN/validity/keyUsage), SHA-256 fingerprint, and SPKI pin hash (Android Network Security Config / HPKP format).',
     {
       rawHex: {
         type: 'string',

@@ -9,6 +9,7 @@ import {
   listCipherSuites,
   lookupCipherSuite,
   parseTLSRecord,
+  describeCipherSuite,
 } from '@modules/boringssl-inspector/TLSPacketParser';
 import { TEST_HOSTS } from '@tests/shared/test-urls';
 
@@ -151,6 +152,75 @@ describe('TLSPacketParser', () => {
     it('returns null for unknown ID', () => {
       const cs = lookupCipherSuite(0xffff);
       expect(cs).toBeNull();
+    });
+  });
+
+  describe('describeCipherSuite', () => {
+    it('derives TLS 1.3 AEAD dimensions (no key exchange in name)', () => {
+      const d = describeCipherSuite({ id: 0x1301, name: 'TLS_AES_128_GCM_SHA256' });
+      expect(d.id).toBe(0x1301);
+      expect(d.idHex).toBe('0x1301');
+      expect(d.protocol).toBe('TLS1.3');
+      expect(d.keyExchange).toBeNull();
+      expect(d.authentication).toBeNull();
+      expect(d.encryption).toBe('AES_128_GCM');
+      expect(d.mac).toBe('SHA256');
+      expect(d.aead).toBe(true);
+    });
+
+    it('parses CHACHA20_POLY1305 as the encryption token', () => {
+      const d = describeCipherSuite('TLS_CHACHA20_POLY1305_SHA256');
+      expect(d.protocol).toBe('TLS1.3');
+      expect(d.encryption).toBe('CHACHA20_POLY1305');
+      expect(d.mac).toBe('SHA256');
+      expect(d.aead).toBe(true);
+    });
+
+    it('splits TLS 1.2 ECDHE_RSA GCM suite into kx / auth / enc / mac', () => {
+      const d = describeCipherSuite('TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256');
+      expect(d.protocol).toBe('TLS1.2');
+      expect(d.keyExchange).toBe('ECDHE');
+      expect(d.authentication).toBe('RSA');
+      expect(d.encryption).toBe('AES_128_GCM');
+      expect(d.mac).toBe('SHA256');
+      expect(d.aead).toBe(true);
+    });
+
+    it('recognises CBC suites as non-AEAD with SHA1 truncated MAC', () => {
+      const d = describeCipherSuite('TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA');
+      expect(d.protocol).toBe('TLS1.2');
+      expect(d.keyExchange).toBe('ECDHE');
+      expect(d.authentication).toBe('ECDSA');
+      expect(d.encryption).toBe('AES_128_CBC');
+      expect(d.mac).toBe('SHA');
+      expect(d.aead).toBe(false);
+    });
+
+    it('treats a lone RSA token as both key exchange and authentication', () => {
+      const d = describeCipherSuite('TLS_RSA_WITH_AES_256_GCM_SHA384');
+      expect(d.protocol).toBe('TLS1.2');
+      expect(d.keyExchange).toBe('RSA');
+      expect(d.authentication).toBe('RSA');
+      expect(d.encryption).toBe('AES_256_GCM');
+      expect(d.mac).toBe('SHA384');
+      expect(d.aead).toBe(true);
+    });
+
+    it('parses the AES_128_CCM_8 short-variant TLS 1.3 suite', () => {
+      const d = describeCipherSuite({ name: 'TLS_AES_128_CCM_8_SHA256' });
+      expect(d.protocol).toBe('TLS1.3');
+      expect(d.encryption).toBe('AES_128_CCM_8');
+      expect(d.mac).toBe('SHA256');
+      expect(d.aead).toBe(true);
+    });
+
+    it('reports unknown for names that match no known shape', () => {
+      const d = describeCipherSuite('WEIRD_CUSTOM_SUITE');
+      expect(d.protocol).toBe('unknown');
+      expect(d.keyExchange).toBeNull();
+      expect(d.aead).toBe(false);
+      expect(d.id).toBeNull();
+      expect(d.idHex).toBeNull();
     });
   });
 

@@ -79,47 +79,84 @@ export function buildPeerCertificateChain(
   return chain;
 }
 
-export function parseDerCertificate(der: Buffer): {
+export interface ParsedCertificate {
   subject?: string;
   issuer?: string;
   serialNumber?: string;
   validFrom?: string;
   validTo?: string;
   sha256: string;
+  fingerprint256?: string;
+  subjectAltName?: string;
+  publicKeyAlgorithm?: string;
+  publicKeySpkiSha256?: string;
+  publicKeyPinBase64?: string;
+  keyUsage?: string[];
+  basicConstraintsCA?: boolean | null;
+  rawCertLength?: number;
   length: number;
-} {
+}
+
+export function parseDerCertificate(der: Buffer): ParsedCertificate {
   const sha256 = createHash('sha256').update(der).digest('hex').toUpperCase();
 
   try {
     const cert = new X509Certificate(der);
-    return {
+    const info: ParsedCertificate = {
       subject: cert.subject || undefined,
       issuer: cert.issuer || undefined,
       serialNumber: cert.serialNumber || undefined,
       validFrom: cert.validFrom || undefined,
       validTo: cert.validTo || undefined,
       sha256,
+      fingerprint256: cert.fingerprint256 || undefined,
+      subjectAltName: cert.subjectAltName ?? undefined,
+      keyUsage: cert.keyUsage ?? undefined,
+      rawCertLength: cert.raw.length,
       length: der.length,
     };
+
+    // basicConstraints: cert.ca is `boolean | ""` (empty string when the
+    // extension is absent). Normalise to null so callers can distinguish.
+    const caValue: boolean | string = cert.ca;
+    info.basicConstraintsCA = typeof caValue === 'string' && caValue === '' ? null : caValue;
+
+    // SPKI pin hash (Android Network Security Config + HPKP format): sha256 of
+    // the DER-encoded SubjectPublicKeyInfo. cert.publicKey is a KeyObject that
+    // re-exports as SPKI DER. Pin fields are skipped for key types that cannot
+    // export as SPKI rather than failing the whole parse.
+    if (cert.publicKey) {
+      try {
+        const spki = cert.publicKey.export({ format: 'der', type: 'spki' });
+        const spkiHash = createHash('sha256').update(spki).digest();
+        info.publicKeyAlgorithm = cert.publicKey.asymmetricKeyType ?? undefined;
+        info.publicKeySpkiSha256 = spkiHash.toString('hex').toUpperCase();
+        info.publicKeyPinBase64 = spkiHash.toString('base64');
+      } catch {
+        // fall through — pin fields stay undefined
+      }
+    }
+
+    return info;
   } catch {
     return { sha256, length: der.length };
   }
 }
 
-export function parseCertificateChain(hexPayload: string): Array<{
-  sha256: string;
-  length: number;
-}> {
+export function parseCertificateChain(hexPayload: string): ParsedCertificate[] {
   const buffer = Buffer.from(normalizeHex(hexPayload), 'hex');
-  const certs: Array<{ sha256: string; length: number }> = [];
+  const certs: ParsedCertificate[] = [];
 
   let cursor = 0;
   while (cursor < buffer.length - 4) {
     if (buffer[cursor] === 0x30) {
       const certData = buffer.subarray(cursor);
       const info = parseDerCertificate(certData);
-      certs.push({ sha256: info.sha256, length: info.length });
-      cursor += info.length;
+      certs.push(info);
+      // Advance by the real parsed certificate length so multi-cert chains
+      // decode each entry; fall back to +1 when no length was recovered.
+      const advance = info.rawCertLength ?? 0;
+      cursor += advance > 0 ? advance : 1;
     } else {
       cursor += 1;
     }

@@ -345,6 +345,33 @@ describe('BoringsslInspectorHandlers', () => {
       expect(parsed.filter).toBe('CHACHA20');
       expect(parsed.total).toBeGreaterThan(0);
     });
+
+    it('enriches every suite with id, protocol, kx/auth/enc/mac and aead flag', async () => {
+      const parsed = parseJson<any>(await handlers.handleCipherSuites({}));
+      const first = parsed.suites[0];
+      expect(first).toBeDefined();
+      expect(first.idHex).toMatch(/^0x[0-9a-f]{4}$/);
+      expect(['TLS1.3', 'TLS1.2']).toContain(first.protocol);
+      expect(typeof first.aead).toBe('boolean');
+      expect(first.name).toMatch(/^TLS_/);
+    });
+
+    it('filters by TLS 1.3 protocol only', async () => {
+      const parsed = parseJson<any>(await handlers.handleCipherSuites({ protocol: '1.3' }));
+      expect(parsed.protocol).toBe('1.3');
+      expect(parsed.total).toBeGreaterThan(0);
+      expect(parsed.suites.every((s: any) => s.protocol === 'TLS1.3')).toBe(true);
+    });
+
+    it('combines protocol and keyword filters', async () => {
+      const parsed = parseJson<any>(
+        await handlers.handleCipherSuites({ protocol: '1.3', filter: 'GCM' }),
+      );
+      expect(parsed.suites.length).toBeGreaterThan(0);
+      expect(
+        parsed.suites.every((s: any) => s.protocol === 'TLS1.3' && s.name.includes('GCM')),
+      ).toBe(true);
+    });
   });
 
   describe('handleParseCertificate', () => {
@@ -363,6 +390,30 @@ describe('BoringsslInspectorHandlers', () => {
     it('returns empty result for invalid input', async () => {
       const result = await handlers.handleParseCertificate({ rawHex: 'zzz' });
       expect(result).toBeDefined();
+    });
+
+    it('extracts X.509 subject/issuer/validity and SPKI pin from a real certificate', async () => {
+      const der = pemToDer(TEST_CERT_PEM);
+      const msg = buildCertificateMessage([der]);
+      const parsed = parseJson<any>(
+        await handlers.handleParseCertificate({ rawHex: msg.toString('hex') }),
+      );
+
+      expect(parsed.success).toBe(true);
+      expect(parsed.certificateCount).toBe(1);
+      const cert = parsed.certificates[0];
+      expect(cert).toBeDefined();
+      expect(cert.subject).toContain('localhost');
+      expect(cert.issuer).toContain('localhost');
+      expect(cert.validFrom).toBeTruthy();
+      expect(cert.validTo).toBeTruthy();
+      expect(cert.subjectAltName).toContain('localhost');
+      expect(cert.publicKeyAlgorithm).toBe('rsa');
+      expect(cert.publicKeySpkiSha256).toMatch(/^[0-9A-F]{64}$/);
+      expect(cert.publicKeyPinBase64).toBeTruthy();
+      // fingerprints keep sha256/length for backwards compat and gain the pin hash
+      expect(parsed.fingerprints[0].sha256).toBe(cert.sha256);
+      expect(parsed.fingerprints[0].publicKeySpkiSha256).toBe(cert.publicKeySpkiSha256);
     });
   });
 
@@ -1125,6 +1176,14 @@ function buildClientHelloWithExtensions(extBuffers: Buffer[]): Buffer {
   header.writeUInt16BE(body.length, 3); // 2-byte record length
 
   return Buffer.concat([header, body]);
+}
+
+function pemToDer(pem: string): Buffer {
+  const b64 = pem
+    .replace(/-----BEGIN CERTIFICATE-----/g, '')
+    .replace(/-----END CERTIFICATE-----/g, '')
+    .replace(/\s+/g, '');
+  return Buffer.from(b64, 'base64');
 }
 
 function buildCertificateMessage(certs: Buffer[]): Buffer {

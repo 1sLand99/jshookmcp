@@ -11,6 +11,8 @@ import {
   decryptPayload,
   summarizeKeyLog,
   lookupSecret,
+  classifyKeyLogSecrets,
+  classifySecretLabel,
 } from '@modules/boringssl-inspector/TLSKeyLogExtractor';
 
 describe('TLSKeyLogExtractor', () => {
@@ -129,6 +131,76 @@ SERVER_TRAFFIC_SECRET_0 ccdd3344 33334444`);
       expect(summary.uniqueClients).toBe(0);
       expect(summary.hasClientRandom).toBe(false);
       expect(summary.hasTrafficSecrets).toBe(false);
+    });
+  });
+
+  describe('classifySecretLabel', () => {
+    it('maps CLIENT_RANDOM to the TLS 1.2 master-secret kind', () => {
+      expect(classifySecretLabel('CLIENT_RANDOM')).toBe('tls12-master-secret');
+    });
+
+    it('maps TLS 1.3 handshake/app traffic secrets', () => {
+      expect(classifySecretLabel('CLIENT_HANDSHAKE_TRAFFIC_SECRET')).toBe(
+        'tls13-handshake-traffic',
+      );
+      expect(classifySecretLabel('SERVER_TRAFFIC_SECRET_0')).toBe('tls13-app-traffic');
+      expect(classifySecretLabel('EARLY_TRAFFIC_SECRET')).toBe('tls13-early-data');
+      expect(classifySecretLabel('EXPORTER_SECRET')).toBe('tls13-exporter');
+    });
+
+    it('returns other for unrecognised labels', () => {
+      expect(classifySecretLabel('CUSTOM_LABEL')).toBe('other');
+    });
+  });
+
+  describe('classifyKeyLogSecrets', () => {
+    it('infers TLS 1.2 from a CLIENT_RANDOM-only log', () => {
+      const entries = parseKeyLog(`CLIENT_RANDOM aabb0011 11112222
+CLIENT_RANDOM ccdd3344 33334444`);
+      const c = classifyKeyLogSecrets(entries);
+
+      expect(c.totalEntries).toBe(2);
+      expect(c.uniqueClientRandom).toBe(2);
+      expect(c.tlsVersionInference).toBe('TLS1.2');
+      expect(c.hasClientRandom).toBe(true);
+      expect(c.hasTrafficSecrets).toBe(false);
+      const cr = c.secretTypes.find((s) => s.label === 'CLIENT_RANDOM');
+      expect(cr?.kind).toBe('tls12-master-secret');
+      expect(cr?.count).toBe(2);
+    });
+
+    it('infers TLS 1.3 from traffic-secret labels', () => {
+      const entries = parseKeyLog(`CLIENT_HANDSHAKE_TRAFFIC_SECRET aabb0011 11112222
+SERVER_HANDSHAKE_TRAFFIC_SECRET aabb0011 22223333
+CLIENT_TRAFFIC_SECRET_0 aabb0011 33334444
+SERVER_TRAFFIC_SECRET_0 aabb0011 44445555`);
+      const c = classifyKeyLogSecrets(entries);
+
+      expect(c.tlsVersionInference).toBe('TLS1.3');
+      expect(c.hasClientRandom).toBe(false);
+      expect(c.hasTrafficSecrets).toBe(true);
+      expect(c.uniqueClientRandom).toBe(1);
+      expect(c.entriesByLabel['SERVER_TRAFFIC_SECRET_0']).toBe(1);
+      const kinds = c.secretTypes.map((s) => s.kind);
+      expect(kinds).toContain('tls13-handshake-traffic');
+      expect(kinds).toContain('tls13-app-traffic');
+    });
+
+    it('reports mixed when both CLIENT_RANDOM and TLS 1.3 labels are present', () => {
+      const entries = parseKeyLog(`CLIENT_RANDOM aabb0011 11112222
+CLIENT_TRAFFIC_SECRET_0 aabb0011 22223333`);
+      const c = classifyKeyLogSecrets(entries);
+      expect(c.tlsVersionInference).toBe('mixed');
+      expect(c.hasClientRandom).toBe(true);
+      expect(c.hasTrafficSecrets).toBe(true);
+    });
+
+    it('returns unknown for empty input', () => {
+      const c = classifyKeyLogSecrets([]);
+      expect(c.totalEntries).toBe(0);
+      expect(c.uniqueClientRandom).toBe(0);
+      expect(c.tlsVersionInference).toBe('unknown');
+      expect(c.secretTypes).toEqual([]);
     });
   });
 

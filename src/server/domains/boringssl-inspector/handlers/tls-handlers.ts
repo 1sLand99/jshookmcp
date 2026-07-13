@@ -3,15 +3,19 @@
  */
 
 import {
+  classifyKeyLogSecrets,
   decryptPayload as decryptPayloadFunc,
+  describeCipherSuite,
   disableKeyLog,
   enableKeyLog,
   getKeyLogFilePath,
+  listCipherSuites,
   lookupSecret as lookupSecretEntry,
   parseKeyLog as parseKeyLogEntries,
   summarizeKeyLog as summarizeKeyLogEntries,
 } from '@modules/boringssl-inspector';
-import { argString } from '@server/domains/shared/parse-args';
+import type { KeyLogEntry } from '@modules/boringssl-inspector';
+import { argEnum, argString } from '@server/domains/shared/parse-args';
 import { asJsonResponse } from '@server/domains/shared/response';
 import type { ToolResponse } from '@server/types';
 import {
@@ -22,6 +26,8 @@ import {
   tlsVersionName,
 } from './shared';
 import { BoringsslInspectorBaseHandlers } from './base';
+
+const CIPHER_PROTOCOL_FILTERS = new Set(['all', '1.3', '1.2'] as const);
 
 export class BoringsslInspectorTlsHandlers extends BoringsslInspectorBaseHandlers {
   async handleTlsKeylogEnable(_args: Record<string, unknown>): Promise<unknown> {
@@ -94,13 +100,34 @@ export class BoringsslInspectorTlsHandlers extends BoringsslInspectorBaseHandler
 
   async handleTlsKeylogSummarize(args: Record<string, unknown>): Promise<unknown> {
     const content = argString(args, 'content') ?? null;
+    const path = argString(args, 'path') ?? null;
+
+    let entries: KeyLogEntry[];
+    let firstSeen: string | undefined;
+    let lastSeen: string | undefined;
+
     if (content) {
-      const entries = parseKeyLogEntries(content);
-      return summarizeKeyLogEntries(entries);
+      entries = parseKeyLogEntries(content);
+    } else {
+      // File path: parse fresh, then borrow the class summarize for firstSeen/
+      // lastSeen (the temporal window is the only datum the standalone helper
+      // does not compute). cachedEntries is now populated for later lookup.
+      entries = this.keyLogExtractor.parseKeyLog(path ?? undefined);
+      const temporal = this.keyLogExtractor.summarizeKeyLog(path ?? undefined);
+      firstSeen = temporal.firstSeen;
+      lastSeen = temporal.lastSeen;
     }
 
-    this.keyLogExtractor.parseKeyLog();
-    return this.keyLogExtractor.summarizeKeyLog();
+    const summary = summarizeKeyLogEntries(entries);
+    const classification = classifyKeyLogSecrets(entries);
+
+    return {
+      totalEntries: summary.totalEntries,
+      labels: summary.labels,
+      uniqueClientRandom: summary.uniqueClients,
+      ...(firstSeen || lastSeen ? { firstSeen, lastSeen } : {}),
+      classification,
+    };
   }
 
   async handleTlsKeylogLookupSecret(args: Record<string, unknown>): Promise<unknown> {
@@ -244,25 +271,32 @@ export class BoringsslInspectorTlsHandlers extends BoringsslInspectorBaseHandler
 
   async handleCipherSuites(args: Record<string, unknown>): Promise<ToolResponse> {
     const filter = argString(args, 'filter') ?? null;
-    const allSuites = [
-      'TLS_AES_128_GCM_SHA256',
-      'TLS_AES_256_GCM_SHA384',
-      'TLS_CHACHA20_POLY1305_SHA256',
-      'TLS_AES_128_CCM_SHA256',
-      'TLS_AES_128_CCM_8_SHA256',
-      'TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256',
-      'TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384',
-      'TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256',
-      'TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384',
-      'TLS_RSA_WITH_AES_128_GCM_SHA256',
-      'TLS_RSA_WITH_AES_256_GCM_SHA384',
-    ];
-    const filteredSuites = filter ? allSuites.filter((suite) => suite.includes(filter)) : allSuites;
+    const protocol = argEnum(args, 'protocol', CIPHER_PROTOCOL_FILTERS, 'all');
+
+    // Source the registry from the module-layer TLSPacketParser (single source of
+    // truth for {id, name}) and enrich each entry with structural metadata
+    // (protocol / key-exchange / authentication / encryption / MAC / AEAD)
+    // derived purely from the IANA name. No hand-picked shortlist.
+    let described = listCipherSuites().map((suite) => describeCipherSuite(suite));
+
+    if (protocol === '1.3' || protocol === '1.2') {
+      const want = protocol === '1.3' ? 'TLS1.3' : 'TLS1.2';
+      described = described.filter((descriptor) => descriptor.protocol === want);
+    }
+
+    if (filter) {
+      const lowerFilter = filter.toLowerCase();
+      described = described.filter((descriptor) =>
+        descriptor.name.toLowerCase().includes(lowerFilter),
+      );
+    }
+
     return asJsonResponse({
       success: true,
       filter,
-      total: filteredSuites.length,
-      suites: filteredSuites,
+      protocol,
+      total: described.length,
+      suites: described,
     });
   }
 
@@ -275,13 +309,20 @@ export class BoringsslInspectorTlsHandlers extends BoringsslInspectorBaseHandler
       });
     }
 
-    const certs = parseCertificateChain(rawHex);
+    const certificates = parseCertificateChain(rawHex);
     return asJsonResponse({
       success: true,
-      certificateCount: certs.length,
-      fingerprints: certs.map((cert) => ({
+      certificateCount: certificates.length,
+      // Each entry carries the full X.509 fields parseDerCertificate recovered
+      // (subject/issuer/SAN/validity/keyUsage/basicConstraints) plus the SPKI
+      // pin hash (publicKeySpkiSha256 / publicKeyPinBase64) used by Android
+      // Network Security Config. Fields are undefined when the input bytes are
+      // not a parseable DER certificate (only sha256/length are then returned).
+      certificates,
+      fingerprints: certificates.map((cert) => ({
         sha256: cert.sha256,
         length: cert.length,
+        publicKeySpkiSha256: cert.publicKeySpkiSha256,
       })),
     });
   }

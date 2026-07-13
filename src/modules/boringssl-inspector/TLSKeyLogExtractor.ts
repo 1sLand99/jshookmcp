@@ -257,6 +257,112 @@ export function summarizeKeyLog(entries: KeyLogEntry[]): {
   };
 }
 
+export type KeyLogSecretKind =
+  | 'tls12-master-secret'
+  | 'tls13-handshake-traffic'
+  | 'tls13-app-traffic'
+  | 'tls13-early-data'
+  | 'tls13-exporter'
+  | 'other';
+
+export interface KeyLogSecretType {
+  label: string;
+  count: number;
+  kind: KeyLogSecretKind;
+}
+
+export interface KeyLogClassification {
+  totalEntries: number;
+  uniqueClientRandom: number;
+  entriesByLabel: Record<string, number>;
+  secretTypes: KeyLogSecretType[];
+  tlsVersionInference: 'TLS1.2' | 'TLS1.3' | 'mixed' | 'unknown';
+  hasClientRandom: boolean;
+  hasTrafficSecrets: boolean;
+}
+
+/**
+ * Map an NSS keylog label to a structural secret kind. The label taxonomy is a
+ * fixed part of the SSLKEYLOGFILE format (not a feature library): TLS 1.2 writes
+ * a single CLIENT_RANDOM line per session, while TLS 1.3 writes one of six
+ * typed traffic-secret labels derived from the HKDF key schedule.
+ */
+export function classifySecretLabel(label: string): KeyLogSecretKind {
+  if (label === 'CLIENT_RANDOM') return 'tls12-master-secret';
+  if (label === 'CLIENT_HANDSHAKE_TRAFFIC_SECRET' || label === 'SERVER_HANDSHAKE_TRAFFIC_SECRET') {
+    return 'tls13-handshake-traffic';
+  }
+  if (label === 'CLIENT_TRAFFIC_SECRET_0' || label === 'SERVER_TRAFFIC_SECRET_0') {
+    return 'tls13-app-traffic';
+  }
+  if (label === 'EARLY_TRAFFIC_SECRET') return 'tls13-early-data';
+  if (label === 'EXPORTER_SECRET') return 'tls13-exporter';
+  return 'other';
+}
+
+/**
+ * Classify a parsed keylog's secrets: per-label counts grouped by secret kind,
+ * unique client_random count (= number of independent sessions), and a
+ * best-effort TLS version inference derived from which labels are present.
+ *
+ * Inference rules (from label taxonomy, not traffic inspection):
+ * - CLIENT_RANDOM present only → TLS 1.2 (or below) master-secret export.
+ * - Any TLS 1.3 *_TRAFFIC_SECRET present only → TLS 1.3.
+ * - Both present → mixed (a single TLS 1.3 session may also emit a CLIENT_RANDOM
+ *   compatibility line; or the log spans multiple sessions of both versions).
+ * - Neither → unknown (empty or unrecognised labels).
+ */
+export function classifyKeyLogSecrets(entries: KeyLogEntry[]): KeyLogClassification {
+  const entriesByLabel: Record<string, number> = {};
+  const clients = new Set<string>();
+  const labelToKind = new Map<string, KeyLogSecretKind>();
+  const labelCounts = new Map<string, number>();
+  let hasClientRandom = false;
+  let hasTls13 = false;
+
+  for (const entry of entries) {
+    entriesByLabel[entry.label] = (entriesByLabel[entry.label] ?? 0) + 1;
+    clients.add(entry.clientRandom);
+    labelCounts.set(entry.label, (labelCounts.get(entry.label) ?? 0) + 1);
+
+    const kind = classifySecretLabel(entry.label);
+    if (!labelToKind.has(entry.label)) {
+      labelToKind.set(entry.label, kind);
+    }
+    if (kind === 'tls12-master-secret') hasClientRandom = true;
+    if (kind.startsWith('tls13-')) hasTls13 = true;
+  }
+
+  const secretTypes: KeyLogSecretType[] = [];
+  for (const [label, count] of labelCounts) {
+    secretTypes.push({ label, count, kind: labelToKind.get(label) ?? 'other' });
+  }
+  secretTypes.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+
+  let tlsVersionInference: KeyLogClassification['tlsVersionInference'];
+  if (entries.length === 0) {
+    tlsVersionInference = 'unknown';
+  } else if (hasClientRandom && hasTls13) {
+    tlsVersionInference = 'mixed';
+  } else if (hasTls13) {
+    tlsVersionInference = 'TLS1.3';
+  } else if (hasClientRandom) {
+    tlsVersionInference = 'TLS1.2';
+  } else {
+    tlsVersionInference = 'unknown';
+  }
+
+  return {
+    totalEntries: entries.length,
+    uniqueClientRandom: clients.size,
+    entriesByLabel,
+    secretTypes,
+    tlsVersionInference,
+    hasClientRandom,
+    hasTrafficSecrets: hasTls13,
+  };
+}
+
 export function lookupSecret(
   entries: KeyLogEntry[],
   clientRandom: string,

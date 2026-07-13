@@ -342,6 +342,106 @@ export function listCipherSuites(filter?: string): Array<{ id: number; name: str
   return sorted.filter((cs) => cs.name.toLowerCase().includes(lowerFilter));
 }
 
+export interface CipherSuiteDescriptor {
+  id: number | null;
+  idHex: string | null;
+  name: string;
+  protocol: 'TLS1.3' | 'TLS1.2' | 'unknown';
+  keyExchange: string | null;
+  authentication: string | null;
+  encryption: string | null;
+  mac: string | null;
+  aead: boolean;
+}
+
+const AEAD_MARKERS = ['GCM', 'CCM', 'POLY1305'];
+const KNOWN_HASH_TOKENS = new Set(['SHA256', 'SHA384', 'SHA', 'MD5', 'NULL']);
+
+function isAeadEncryption(encryption: string): boolean {
+  return AEAD_MARKERS.some((marker) => encryption.includes(marker));
+}
+
+function splitEncryptionAndMac(encMac: string): { encryption: string; mac: string | null } {
+  if (encMac.length === 0) {
+    return { encryption: encMac, mac: null };
+  }
+  const parts = encMac.split('_');
+  const last = parts[parts.length - 1];
+  if (last && KNOWN_HASH_TOKENS.has(last)) {
+    const encryption = parts.slice(0, -1).join('_');
+    return { encryption: encryption.length > 0 ? encryption : encMac, mac: last };
+  }
+  return { encryption: encMac, mac: null };
+}
+
+/**
+ * Derive structural metadata (protocol / key-exchange / authentication /
+ * encryption / MAC / AEAD) for a cipher suite purely from its IANA name.
+ *
+ * No built-in registry of "good" or "bad" suites — this is a deterministic
+ * name parser that surfaces the dimensions a user needs to match a captured
+ * ClientHello/ServerHello against the selected suite.
+ */
+export function describeCipherSuite(
+  suite: { id?: number; name: string } | string,
+): CipherSuiteDescriptor {
+  const name = typeof suite === 'string' ? suite : suite.name;
+  const id = typeof suite === 'string' ? null : (suite.id ?? null);
+  const idHex = id !== null ? `0x${id.toString(16).padStart(4, '0')}` : null;
+  const hasWith = name.includes('_WITH_');
+
+  if (!hasWith && name.startsWith('TLS_')) {
+    // TLS 1.3: TLS_<ENC>_<HASH>, key exchange is negotiated via key_share, not in name.
+    const { encryption, mac } = splitEncryptionAndMac(name.slice('TLS_'.length));
+    return {
+      id,
+      idHex,
+      name,
+      protocol: 'TLS1.3',
+      keyExchange: null,
+      authentication: null,
+      encryption,
+      mac,
+      aead: isAeadEncryption(encryption),
+    };
+  }
+
+  if (hasWith) {
+    const [kxAuth, encMac] = name.slice('TLS_'.length).split('_WITH_');
+    const kxParts = (kxAuth ?? '').split('_').filter((part) => part.length > 0);
+    const keyExchange = kxParts[0] ?? null;
+    // When only one token is present (e.g. "RSA") the suite uses it for both key
+    // exchange and authentication. With two tokens (e.g. "ECDHE_RSA") the last is
+    // the authentication method.
+    const authentication =
+      kxParts.length > 1 ? (kxParts[kxParts.length - 1] ?? null) : (kxParts[0] ?? null);
+    const { encryption, mac } = splitEncryptionAndMac(encMac ?? '');
+    return {
+      id,
+      idHex,
+      name,
+      protocol: 'TLS1.2',
+      keyExchange,
+      authentication,
+      encryption,
+      mac,
+      aead: isAeadEncryption(encryption),
+    };
+  }
+
+  return {
+    id,
+    idHex,
+    name,
+    protocol: 'unknown',
+    keyExchange: null,
+    authentication: null,
+    encryption: null,
+    mac: null,
+    aead: false,
+  };
+}
+
 /**
  * Look up a single cipher suite by ID or name.
  */
