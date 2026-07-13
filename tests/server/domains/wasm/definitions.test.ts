@@ -35,8 +35,8 @@ describe('wasm/definitions', () => {
     expect(wasmTools.length).toBeGreaterThan(0);
   });
 
-  it('exports exactly 15 tools', async () => {
-    expect(wasmTools).toHaveLength(15);
+  it('exports exactly 16 tools', async () => {
+    expect(wasmTools).toHaveLength(16);
   });
 
   it('contains all expected tool names', async () => {
@@ -54,6 +54,7 @@ describe('wasm/definitions', () => {
     expect(names).toContain('wasm_detect_obfuscation');
     expect(names).toContain('wasm_string_extract');
     expect(names).toContain('wasm_instrument_binary');
+    expect(names).toContain('wasm_inspect');
   });
 
   it('has unique tool names', async () => {
@@ -175,6 +176,28 @@ describe('wasm/definitions', () => {
       const sections = getProperty(tool, 'sections');
       expect(sections.enum).toEqual(['headers', 'details', 'disassemble', 'all']);
       expect(sections.default).toBe('details');
+    });
+  });
+
+  /* ---------- wasm_inspect ---------- */
+
+  describe('wasm_inspect', () => {
+    const tool = getTool('wasm_inspect');
+
+    it('requires inputPath', async () => {
+      expect(tool.inputSchema.required).toContain('inputPath');
+    });
+
+    it('has inputPath property', async () => {
+      const inputPath = getProperty(tool, 'inputPath');
+      expect(inputPath.type).toBe('string');
+    });
+
+    it('description mentions pure-TS / no wabt dependency', async () => {
+      const desc = getDescription(tool);
+      expect(desc.toLowerCase().includes('pure-ts') || desc.toLowerCase().includes('no wabt')).toBe(
+        true,
+      );
     });
   });
 

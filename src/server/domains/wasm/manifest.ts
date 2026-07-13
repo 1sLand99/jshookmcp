@@ -27,6 +27,7 @@ const registrations = defineMethodRegistrations<H, (typeof wasmTools)[number]['n
     { tool: 'wasm_string_extract', method: 'handleWasmStringExtractTool' },
     { tool: 'wasm_diff', method: 'handleWasmDiffTool' },
     { tool: 'wasm_instrument_binary', method: 'handleWasmInstrumentBinaryTool' },
+    { tool: 'wasm_inspect', method: 'handleWasmInspectTool' },
   ],
 });
 

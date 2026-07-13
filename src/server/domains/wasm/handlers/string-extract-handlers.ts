@@ -11,41 +11,13 @@
 import { readFile } from 'node:fs/promises';
 import { argNumber, argStringRequired } from '@server/domains/shared/parse-args';
 import { ExternalToolHandlersBase } from './external-base';
-
-/** wasm section id → human name (index 0 is custom, resolved per-section). */
-const SECTION_NAMES = [
-  'custom',
-  'type',
-  'import',
-  'function',
-  'table',
-  'memory',
-  'global',
-  'export',
-  'start',
-  'element',
-  'code',
-  'data',
-  'datacount',
-] as const;
-
-export interface WasmSection {
-  id: number;
-  name: string;
-  bodyStart: number;
-  bodyEnd: number;
-}
+import { parseFunctionNames, parseWasmSections, type WasmFunctionName } from './binary-reader';
 
 export interface WasmStringEntry {
   value: string;
   section: string;
   offset: number;
   categories: string[];
-}
-
-export interface WasmFunctionName {
-  index: number;
-  name: string;
 }
 
 export interface WasmStringResult {
@@ -57,101 +29,6 @@ export interface WasmStringResult {
   bySection: Record<string, number>;
   classified: Record<string, WasmStringEntry[]>;
   strings: WasmStringEntry[];
-}
-
-/** Read an unsigned LEB128 (wasm varuint32). Returns [value, nextOffset]. */
-function readU32Leb128(bytes: Buffer, offset: number): [number, number] {
-  let result = 0;
-  let shift = 0;
-  let pos = offset;
-  for (;;) {
-    if (pos >= bytes.length) throw new Error('truncated LEB128');
-    const byte = bytes[pos++]!;
-    result |= (byte & 0x7f) << shift;
-    if ((byte & 0x80) === 0) break;
-    shift += 7;
-    if (shift > 35) throw new Error('LEB128 exceeds u32 range');
-  }
-  return [result >>> 0, pos];
-}
-
-const WASM_MAGIC = [0x00, 0x61, 0x73, 0x6d]; // \0asm
-
-/** Parse the wasm section directory. Throws on bad magic / truncated size. */
-export function parseWasmSections(bytes: Buffer): WasmSection[] {
-  if (
-    bytes.length < 8 ||
-    bytes[0] !== WASM_MAGIC[0] ||
-    bytes[1] !== WASM_MAGIC[1] ||
-    bytes[2] !== WASM_MAGIC[2] ||
-    bytes[3] !== WASM_MAGIC[3]
-  ) {
-    throw new Error('Not a valid wasm binary (missing \\0asm magic header)');
-  }
-  const sections: WasmSection[] = [];
-  let offset = 8; // skip magic + version
-  while (offset < bytes.length) {
-    const id = bytes[offset++]!;
-    const [size, bodyStart] = readU32Leb128(bytes, offset);
-    const bodyEnd = bodyStart + size;
-    if (bodyEnd > bytes.length) {
-      throw new Error(
-        `Section ${id} declares ${size} bytes but only ${bytes.length - bodyStart} remain`,
-      );
-    }
-    let name: string = SECTION_NAMES[id] ?? `section-${id}`;
-    if (id === 0) {
-      // custom section body starts with a name string (length-prefixed)
-      try {
-        const [nameLen, nameStart] = readU32Leb128(bytes, bodyStart);
-        const customName = bytes.subarray(nameStart, nameStart + nameLen).toString('utf8');
-        name = `custom:${customName || 'unnamed'}`;
-      } catch {
-        name = 'custom:unnamed';
-      }
-    }
-    sections.push({ id, name, bodyStart, bodyEnd });
-    offset = bodyEnd;
-  }
-  return sections;
-}
-
-/** Recover function names (name-section subsection 2) from a custom:name section. */
-export function parseFunctionNames(
-  bytes: Buffer,
-  bodyStart: number,
-  bodyEnd: number,
-): WasmFunctionName[] {
-  try {
-    let pos = bodyStart;
-    // skip the section name string ("name")
-    const [nameLen, afterNameLen] = readU32Leb128(bytes, pos);
-    pos = afterNameLen + nameLen;
-    const names: WasmFunctionName[] = [];
-    while (pos < bodyEnd) {
-      const subId = bytes[pos++]!;
-      const [subSize, subPayloadStart] = readU32Leb128(bytes, pos);
-      const subEnd = subPayloadStart + subSize;
-      pos = subEnd; // advance past this subsection regardless of parse success
-      if (subId === 2) {
-        let p = subPayloadStart;
-        const [count, afterCount] = readU32Leb128(bytes, p);
-        p = afterCount;
-        for (let i = 0; i < count && p < subEnd; i++) {
-          const [idx, afterIdx] = readU32Leb128(bytes, p);
-          p = afterIdx;
-          const [nl, afterNl] = readU32Leb128(bytes, p);
-          p = afterNl;
-          const name = bytes.subarray(p, p + nl).toString('utf8');
-          p += nl;
-          names.push({ index: idx, name });
-        }
-      }
-    }
-    return names;
-  } catch {
-    return [];
-  }
 }
 
 /** Classify a string into high-value RE categories. */

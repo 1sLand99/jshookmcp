@@ -173,4 +173,12 @@ export const wasmTools: Tool[] = [
       )
       .required('inputPath'),
   ),
+  tool('wasm_inspect', (t) =>
+    t
+      .desc(
+        'Pure-TS wasm binary structural inspector (no wabt dependency). Parses the module surface — types, imports, functions (with name-section recovery), tables, memories, globals, exports, start, element/data/code segment counts, and custom sections (name/producers/target_features) — directly from the binary, returning structured JSON. The wabt-independent counterpart to wasm_inspect_sections (wasm-objdump): the only structural path when wabt is unavailable (see wasm_capabilities). Honest boundary: structure only, no code-body disassembly; element/data/global-init payloads reported as counts.',
+      )
+      .string('inputPath', 'Path to the .wasm file to inspect')
+      .required('inputPath'),
+  ),
 ];

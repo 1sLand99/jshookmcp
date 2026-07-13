@@ -127,4 +127,10 @@ export class WasmToolHandlers {
   handleWasmInstrumentBinary(args: Record<string, unknown>) {
     return this.externalTools.handleWasmInstrumentBinary(args);
   }
+  handleWasmInspectTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleWasmInspect(args));
+  }
+  handleWasmInspect(args: Record<string, unknown>) {
+    return this.externalTools.handleWasmInspect(args);
+  }
 }
