@@ -540,6 +540,7 @@ describe('TraceRecorder', () => {
     const summary = JSON.parse(snapshots[0]!.summary);
     expect(summary.totalSize).toBe(30); // 10 + 20
     expect(summary.nodeCount).toBe(2);
+    expect(summary.objectSizes).toEqual({ testRoot1: 10, testArray1: 20 });
   });
 
   it('captures an active heap snapshot via the recorder-owned CDP session', async () => {

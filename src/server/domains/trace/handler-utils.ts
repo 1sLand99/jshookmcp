@@ -125,6 +125,29 @@ export const readTraceSummaryObjectCounts = (
   return normalized;
 };
 
+/**
+ * Reads the per-class retained-self-size map from a heap snapshot summary.
+ * `objectSizes` is populated by `TraceRecorder.extractHeapSummary` (sum of each
+ * node's `self_size` grouped by constructor name). Empty for snapshots recorded
+ * before the field was added — callers should treat absence as "unknown".
+ */
+export const readTraceSummaryObjectSizes = (
+  summary: Record<string, unknown>,
+): Record<string, number> => {
+  const sizes = readObjectValue(summary['objectSizes']);
+  if (!sizes) {
+    return {};
+  }
+
+  const normalized: Record<string, number> = {};
+  for (const [key, value] of Object.entries(sizes)) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      normalized[key] = value;
+    }
+  }
+  return normalized;
+};
+
 export const readTraceSummaryNumber = (summary: Record<string, unknown>, key: string): number =>
   readNumberValue(summary[key]) ?? 0;
 

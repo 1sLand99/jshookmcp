@@ -91,6 +91,12 @@ export const TRACE_TOOLS: Tool[] = [
           default: 'wall',
         },
       )
+      .enum(
+        'direction',
+        ['forward', 'backward', 'both'],
+        'Event-stream window direction: forward (timestamp..timestamp+windowMs), backward (timestamp-windowMs..timestamp), or both (symmetric, default). State snapshots stay most-recent-at-or-before timestamp regardless.',
+        { default: 'both' },
+      )
       .required('timestamp')
       .query(),
   ),
@@ -164,10 +170,16 @@ export const TRACE_TOOLS: Tool[] = [
   tool('export_trace', (t) =>
     t
       .desc(
-        'Export a trace database to Chrome Trace Event JSON with per-category thread tracks and thread_name metadata.',
+        'Export a trace database. format="chrome-trace" (default) emits Chrome Trace Event JSON with per-category thread tracks, thread_name metadata, and CPU-profile flame-graph X events. format="har" emits HTTP Archive 1.4 joining network_resources + response bodies — interchange format for Burp/ZAP/Postman.',
+      )
+      .enum(
+        'format',
+        ['chrome-trace', 'har'],
+        'Export format: chrome-trace (default) or har (HTTP Archive 1.4)',
+        { default: 'chrome-trace' },
       )
       .string('dbPath', 'Path to trace DB file. Uses the active recording if omitted.')
-      .string('outputPath', 'Output JSON file path. Auto-generated if omitted.')
+      .string('outputPath', 'Output file path (auto-generated if omitted).')
       .idempotent(),
   ),
   tool('summarize_trace', (t) =>

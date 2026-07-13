@@ -36,6 +36,7 @@ import {
   readTraceBody,
   readTraceSummaryNumber,
   readTraceSummaryObjectCounts,
+  readTraceSummaryObjectSizes,
   rowToObject,
   safeParseJSON,
   smartHandleDetailed,
@@ -286,10 +287,21 @@ export class TraceToolHandlers {
     });
     const timeDomain =
       argEnum(args, 'timeDomain', new Set(['wall', 'monotonic'] as const), 'wall') ?? 'wall';
+    const direction =
+      argEnum(args, 'direction', new Set(['forward', 'backward', 'both'] as const), 'both') ??
+      'both';
 
     if (!Number.isFinite(timestamp)) {
       throw new ToolError('VALIDATION', 'timestamp parameter is required');
     }
+
+    // direction controls the event-stream window (events/console/exceptions):
+    // forward → [ts, ts+windowMs], backward → [ts-windowMs, ts], both → symmetric.
+    // State snapshots (debuggerRecent/memoryState/networkState/nearestHeapSnapshot)
+    // stay "most-recent-at-or-before ts" — they answer "state at ts", which is
+    // inherently backward-looking, so direction does not apply to them.
+    const windowStart = direction === 'forward' ? timestamp : timestamp - windowMs;
+    const windowEnd = direction === 'backward' ? timestamp : timestamp + windowMs;
 
     let tempDb: TraceDB | null = null;
 
@@ -306,8 +318,8 @@ export class TraceToolHandlers {
 
       const events =
         timeDomain === 'wall'
-          ? db.getEventsByTimeRange(timestamp - windowMs, timestamp + windowMs)
-          : readEventsByExpression(db, eventTimeExpr, timestamp - windowMs, timestamp + windowMs);
+          ? db.getEventsByTimeRange(windowStart, windowEnd)
+          : readEventsByExpression(db, eventTimeExpr, windowStart, windowEnd);
 
       const debuggerEventsResult = db.queryWithParams(
         `SELECT * FROM events WHERE category = 'debugger' AND ${eventTimeExpr} <= ? ORDER BY ` +
@@ -354,16 +366,8 @@ export class TraceToolHandlers {
             )
           : null;
       const samplesInWindow = db.getSamplesInWindow(timestamp, windowMs);
-      const consoleLogs = db.getConsoleLogsByTimeRange(
-        timestamp - windowMs,
-        timestamp + windowMs,
-        timeDomain,
-      );
-      const exceptions = db.getExceptionsByTimeRange(
-        timestamp - windowMs,
-        timestamp + windowMs,
-        timeDomain,
-      );
+      const consoleLogs = db.getConsoleLogsByTimeRange(windowStart, windowEnd, timeDomain);
+      const exceptions = db.getExceptionsByTimeRange(windowStart, windowEnd, timeDomain);
 
       return R.ok()
         .merge({
@@ -628,6 +632,29 @@ export class TraceToolHandlers {
       const totalSize1 = readTraceSummaryNumber(summary1, 'totalSize');
       const totalSize2 = readTraceSummaryNumber(summary2, 'totalSize');
 
+      // Per-class retained-self-size delta. `objectSizes` is populated by
+      // TraceRecorder.extractHeapSummary; snapshots recorded before the field
+      // existed yield empty maps and an empty topRetainers list (no data, no
+      // fabrication). Ordering is pure |sizeDelta| projection — the caller
+      // decides what counts as a leak.
+      const sizes1 = readTraceSummaryObjectSizes(summary1);
+      const sizes2 = readTraceSummaryObjectSizes(summary2);
+      const retainerKeys = new Set([...Object.keys(sizes1), ...Object.keys(sizes2)]);
+      const topRetainers: Array<{
+        name: string;
+        sizeBefore: number;
+        sizeAfter: number;
+        sizeDelta: number;
+      }> = [];
+      for (const key of retainerKeys) {
+        const s1 = sizes1[key] ?? 0;
+        const s2 = sizes2[key] ?? 0;
+        if (s1 !== s2) {
+          topRetainers.push({ name: key, sizeBefore: s1, sizeAfter: s2, sizeDelta: s2 - s1 });
+        }
+      }
+      topRetainers.sort((a, b) => Math.abs(b.sizeDelta) - Math.abs(a.sizeDelta));
+
       return R.ok()
         .merge({
           snapshot1: {
@@ -650,6 +677,7 @@ export class TraceToolHandlers {
             addedCount: added.length,
             removedCount: removed.length,
             changedCount: changed.length,
+            topRetainers: topRetainers.slice(0, 50),
           },
         })
         .json();

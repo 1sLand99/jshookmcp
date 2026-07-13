@@ -812,7 +812,7 @@ export class TraceRecorder {
       const snapshotInfo = snapshot['snapshot'] as Record<string, unknown> | undefined;
 
       if (!snapshotInfo) {
-        return { totalSize: 0, nodeCount: 0, objectCounts: {} };
+        return { totalSize: 0, nodeCount: 0, objectCounts: {}, objectSizes: {} };
       }
 
       const meta = snapshotInfo['meta'] as Record<string, unknown> | undefined;
@@ -822,6 +822,7 @@ export class TraceRecorder {
       const nodes = snapshot['nodes'] as number[] | undefined;
 
       const objectCounts: Record<string, number> = {};
+      const objectSizes: Record<string, number> = {};
       let totalSize = 0;
 
       if (nodeFields && nodes && nodeTypes) {
@@ -840,14 +841,15 @@ export class TraceRecorder {
             const name = strings[nameIdx] ?? `type_${nodes[i + (typeIndex >= 0 ? typeIndex : 0)]}`;
             if (name) {
               objectCounts[name] = (objectCounts[name] ?? 0) + 1;
+              objectSizes[name] = (objectSizes[name] ?? 0) + selfSize;
             }
           }
         }
       }
 
-      return { totalSize, nodeCount, objectCounts };
+      return { totalSize, nodeCount, objectCounts, objectSizes };
     } catch {
-      return { totalSize: 0, nodeCount: 0, objectCounts: {} };
+      return { totalSize: 0, nodeCount: 0, objectCounts: {}, objectSizes: {} };
     }
   }
 

@@ -162,7 +162,7 @@ export interface HeapSnapshotRecord {
   timestamp: number;
   /** Compressed snapshot data BLOB */
   snapshotData: Buffer;
-  /** JSON summary: { totalSize, nodeCount, objectCounts: { Constructor: count } } */
+  /** JSON summary: { totalSize, nodeCount, objectCounts: { Constructor: count }, objectSizes: { Constructor: totalSelfSize } } */
   summary: string;
 }
 

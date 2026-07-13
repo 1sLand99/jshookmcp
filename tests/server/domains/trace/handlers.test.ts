@@ -516,6 +516,100 @@ describe('TraceToolHandlers', () => {
         description: 'Error: boom',
       });
     });
+
+    it('direction=forward returns only events at or after the seek timestamp', async () => {
+      for (const ts of [900, 1000, 1100]) {
+        // @ts-expect-error
+        db.insertEvent({
+          timestamp: ts,
+          category: 'debugger',
+          eventType: 'Debugger.paused',
+          data: '{}',
+          scriptId: '1',
+          lineNumber: ts,
+        });
+      }
+      // @ts-expect-error
+      db.close();
+
+      const recorder = new TraceRecorder();
+      const ctx = createMockContext() as MCPServerContext;
+      const handler = new TraceToolHandlers(recorder, ctx);
+
+      const result = parseToolResponse<{ events: Array<{ timestamp: number }> }>(
+        await handler.handleSeekToTimestamp({
+          timestamp: 1000,
+          dbPath,
+          windowMs: 100,
+          direction: 'forward',
+        }),
+      );
+
+      const timestamps = result.events.map((e) => e.timestamp).toSorted((a, b) => a - b);
+      // window is [1000, 1100]; ts 900 (strictly before) is excluded
+      expect(timestamps).toEqual([1000, 1100]);
+    });
+
+    it('direction=backward returns only events at or before the seek timestamp', async () => {
+      for (const ts of [900, 1000, 1100]) {
+        // @ts-expect-error
+        db.insertEvent({
+          timestamp: ts,
+          category: 'debugger',
+          eventType: 'Debugger.paused',
+          data: '{}',
+          scriptId: '1',
+          lineNumber: ts,
+        });
+      }
+      // @ts-expect-error
+      db.close();
+
+      const recorder = new TraceRecorder();
+      const ctx = createMockContext() as MCPServerContext;
+      const handler = new TraceToolHandlers(recorder, ctx);
+
+      const result = parseToolResponse<{ events: Array<{ timestamp: number }> }>(
+        await handler.handleSeekToTimestamp({
+          timestamp: 1000,
+          dbPath,
+          windowMs: 100,
+          direction: 'backward',
+        }),
+      );
+
+      const timestamps = result.events.map((e) => e.timestamp).toSorted((a, b) => a - b);
+      // window is [900, 1000]; ts 1100 (strictly after) is excluded
+      expect(timestamps).toEqual([900, 1000]);
+    });
+
+    it('defaults to the symmetric both window when direction is omitted', async () => {
+      for (const ts of [900, 1000, 1100]) {
+        // @ts-expect-error
+        db.insertEvent({
+          timestamp: ts,
+          category: 'debugger',
+          eventType: 'Debugger.paused',
+          data: '{}',
+          scriptId: '1',
+          lineNumber: ts,
+        });
+      }
+      // @ts-expect-error
+      db.close();
+
+      const recorder = new TraceRecorder();
+      const ctx = createMockContext() as MCPServerContext;
+      const handler = new TraceToolHandlers(recorder, ctx);
+
+      const result = parseToolResponse<{ events: Array<{ timestamp: number }> }>(
+        await handler.handleSeekToTimestamp({ timestamp: 1000, dbPath, windowMs: 100 }),
+      );
+
+      const timestamps = result.events.map((e) => e.timestamp).toSorted((a, b) => a - b);
+      // symmetric [900, 1100] — all three events
+      expect(timestamps).toEqual([900, 1000, 1100]);
+    });
   });
 
   describe('handleGetTraceSamples', () => {
@@ -1040,6 +1134,95 @@ describe('TraceToolHandlers', () => {
           dbPath,
         }),
       ).rejects.toThrow(/not found/);
+    });
+
+    it('reports per-class retained-size delta as topRetainers', async () => {
+      // @ts-expect-error
+      db.insertHeapSnapshot({
+        timestamp: 1000,
+        snapshotData: Buffer.from('{}'),
+        summary: JSON.stringify({
+          totalSize: 100,
+          nodeCount: 2,
+          objectCounts: { Array: 1, Object: 1 },
+          objectSizes: { Array: 40, Object: 60 },
+        }),
+      });
+      // @ts-expect-error
+      db.insertHeapSnapshot({
+        timestamp: 2000,
+        snapshotData: Buffer.from('{}'),
+        summary: JSON.stringify({
+          totalSize: 400,
+          nodeCount: 3,
+          objectCounts: { Array: 2, Object: 1 },
+          objectSizes: { Array: 340, Object: 60 },
+        }),
+      });
+      // @ts-expect-error
+      db.close();
+
+      const recorder = new TraceRecorder();
+      const ctx = createMockContext() as MCPServerContext;
+      const handler = new TraceToolHandlers(recorder, ctx);
+
+      const result = parseToolResponse<{
+        diff: {
+          topRetainers: Array<{
+            name: string;
+            sizeBefore: number;
+            sizeAfter: number;
+            sizeDelta: number;
+          }>;
+        };
+      }>(
+        await handler.handleDiffHeapSnapshots({
+          snapshotId1: 1,
+          snapshotId2: 2,
+          dbPath,
+        }),
+      );
+
+      // Array grew 40 → 340 (+300, the actual leak signal); Object unchanged → excluded.
+      expect(result.diff.topRetainers).toHaveLength(1);
+      expect(result.diff.topRetainers[0]).toMatchObject({
+        name: 'Array',
+        sizeBefore: 40,
+        sizeAfter: 340,
+        sizeDelta: 300,
+      });
+    });
+
+    it('returns empty topRetainers when snapshots predate objectSizes', async () => {
+      // @ts-expect-error
+      db.insertHeapSnapshot({
+        timestamp: 1000,
+        snapshotData: Buffer.from('{}'),
+        summary: JSON.stringify({ objectCounts: { X: 1 } }),
+      });
+      // @ts-expect-error
+      db.insertHeapSnapshot({
+        timestamp: 2000,
+        snapshotData: Buffer.from('{}'),
+        summary: JSON.stringify({ objectCounts: { X: 2 } }),
+      });
+      // @ts-expect-error
+      db.close();
+
+      const recorder = new TraceRecorder();
+      const ctx = createMockContext() as MCPServerContext;
+      const handler = new TraceToolHandlers(recorder, ctx);
+
+      const result = parseToolResponse<{ diff: { topRetainers: unknown[] } }>(
+        await handler.handleDiffHeapSnapshots({
+          snapshotId1: 1,
+          snapshotId2: 2,
+          dbPath,
+        }),
+      );
+
+      // No objectSizes → no fabrication; empty list, but counts still diff.
+      expect(result.diff.topRetainers).toEqual([]);
     });
   });
 
