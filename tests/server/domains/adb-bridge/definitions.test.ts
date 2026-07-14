@@ -23,8 +23,8 @@ describe('adb-bridge tool definitions', () => {
       expect(adbBridgeTools.length).toBeGreaterThan(0);
     });
 
-    it('tool count matches expected (24 tools)', async () => {
-      expect(adbBridgeTools.length).toBe(24);
+    it('tool count matches expected (26 tools)', async () => {
+      expect(adbBridgeTools.length).toBe(26);
     });
 
     it('has unique tool names', async () => {

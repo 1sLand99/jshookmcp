@@ -1685,4 +1685,101 @@ export class ADBBridgeHandlers {
       };
     });
   }
+
+  // ── Dumpsys ──
+
+  async handleDumpsysTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => {
+      const serial = argStringRequired(args, 'serial');
+      const service = argStringRequired(args, 'service');
+      const includeRaw = argBool(args, 'includeRaw', false);
+      const timeoutMs = argNumber(args, 'timeoutMs') ?? ADB_SHELL_TIMEOUT_MS;
+
+      const adb = await this.resolveAdb();
+      const { stdout, stderr } = await execAdb(
+        adb,
+        [...serialArgs(serial), 'shell', 'dumpsys', service],
+        { allowNonZero: true, timeoutMs },
+      );
+
+      const { parseDumpsys } = await import('./dumpsys-parser');
+      const parsed = parseDumpsys(stdout, service);
+
+      return {
+        service,
+        sectionCount: parsed.sectionCount,
+        sections: parsed.sections.slice(0, 50), // cap for response size
+        truncated: parsed.sectionCount > 50,
+        stderr: stderr || undefined,
+        ...(includeRaw ? { raw: stdout } : {}),
+      };
+    });
+  }
+
+  async handleUiDumpTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => {
+      const serial = argStringRequired(args, 'serial');
+      const includeRawXml = argBool(args, 'includeRawXml', false);
+      const localPath = argString(args, 'localPath');
+      const timeoutMs = argNumber(args, 'timeoutMs') ?? ADB_SHELL_TIMEOUT_MS;
+
+      const adb = await this.resolveAdb();
+      const remoteXmlPath = '/sdcard/window_dump.xml';
+      const pulledPath = localPath ?? join(tmpdir(), `ui_dump_${serial}_${Date.now()}.xml`);
+
+      // Run uiautomator dump
+      const dumpResult = await execAdb(
+        adb,
+        [...serialArgs(serial), 'shell', 'uiautomator', 'dump', remoteXmlPath],
+        { allowNonZero: true, timeoutMs },
+      );
+
+      if (dumpResult.exitCode !== 0 && !dumpResult.stdout.includes('UI hierarchy')) {
+        return {
+          success: false,
+          error: `uiautomator dump failed: ${dumpResult.stderr || dumpResult.stdout}`,
+          exitCode: dumpResult.exitCode,
+        };
+      }
+
+      // Pull the XML file
+      const pullResult = await execAdb(
+        adb,
+        [...serialArgs(serial), 'pull', remoteXmlPath, pulledPath],
+        { allowNonZero: true, timeoutMs },
+      );
+
+      // Clean up remote file
+      await execAdb(adb, [...serialArgs(serial), 'shell', 'rm', remoteXmlPath], {
+        allowNonZero: true,
+        timeoutMs: 5000,
+      });
+
+      // Read XML content
+      let xmlContent = '';
+      let elementCount = 0;
+      if (pullResult.exitCode === 0) {
+        if (pulledPath) {
+          try {
+            xmlContent = await import('node:fs').then((fs) =>
+              fs.promises.readFile(pulledPath, 'utf-8'),
+            );
+            // Count nodes
+            const nodeMatches = xmlContent.match(/<node\b/g);
+            elementCount = nodeMatches ? nodeMatches.length : 0;
+          } catch {
+            // xmlContent stays empty
+          }
+        }
+      }
+
+      return {
+        success: true,
+        elementCount,
+        uiDumpStatus: dumpResult.stdout.trim().split('\n').pop() ?? 'completed',
+        localPath: pullResult.exitCode === 0 ? pulledPath : undefined,
+        ...(includeRawXml ? { rawXml: xmlContent } : {}),
+      };
+    });
+  }
 }

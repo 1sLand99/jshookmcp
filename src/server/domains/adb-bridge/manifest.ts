@@ -40,6 +40,8 @@ const registrations: ToolRegistration[] = defineMethodRegistrations<
     { tool: 'adb_pull_native_libs', method: 'handlePullNativeLibsTool' },
     { tool: 'adb_webview_list', method: 'handleWebViewListTool' },
     { tool: 'adb_webview_attach', method: 'handleWebViewAttachTool' },
+    { tool: 'adb_dumpsys', method: 'handleDumpsysTool' },
+    { tool: 'adb_ui_dump', method: 'handleUiDumpTool' },
   ],
 });
 

@@ -35,6 +35,9 @@ function mockExecFile(
         } else if (typeof dest === 'string' && dest.endsWith('.mp4')) {
           mkdirSync(dirname(dest), { recursive: true });
           writeFileSync(dest, Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]));
+        } else if (typeof dest === 'string' && dest.endsWith('.xml')) {
+          mkdirSync(dirname(dest), { recursive: true });
+          writeFileSync(dest, '<hierarchy><node/><node/></hierarchy>');
         }
       }
       if (resp.error) cb(resp.error);
@@ -282,6 +285,32 @@ describe('ADBBridgeHandlers', () => {
       ]);
     } finally {
       rmSync(outputPath, { force: true });
+    }
+  });
+
+  it('reuses the generated UI dump path for pull, read, and response', async () => {
+    mockExecFile([
+      { stdout: 'UI hierarchy dumped to: /sdcard/window_dump.xml\n' },
+      { stdout: '', stderr: '1 file pulled\n' },
+      { stdout: '' },
+    ]);
+
+    const result = await handlers.handleUiDumpTool({
+      serial: 'emulator-5554',
+      includeRawXml: true,
+    });
+    const parsed = parseResult(result);
+    const pullArgs = (execFile as any).mock.calls[1][1] as string[];
+    const generatedPath = pullArgs.at(-1)!;
+
+    try {
+      expect(parsed.success).toBe(true);
+      expect(parsed.localPath).toBe(generatedPath);
+      expect(parsed.elementCount).toBe(2);
+      expect(parsed.rawXml).toBe('<hierarchy><node/><node/></hierarchy>');
+      expect(generatedPath).toMatch(/ui_dump_emulator-5554_\d+\.xml$/);
+    } finally {
+      rmSync(generatedPath, { force: true });
     }
   });
 

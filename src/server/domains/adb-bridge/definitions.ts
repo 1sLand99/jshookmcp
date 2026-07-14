@@ -294,4 +294,34 @@ export const adbBridgeTools = [
       })
       .requiredOpenWorld('serial', 'targetId'),
   ),
+
+  tool('adb_dumpsys', (t) =>
+    t
+      .desc(
+        'Run adb shell dumpsys for a service and return parsed structured output. ' +
+          'Supports key-value extraction, array parsing, and section detection. ' +
+          'Common services: package, activity, window, battery, meminfo, alarm, ' +
+          'cpuinfo, diskstats, netstats, usagestats.',
+      )
+      .string('serial', 'Required. Android device serial or emulator id.')
+      .string('service', 'Required. Android service name (e.g. package, meminfo, activity).')
+      .boolean('includeRaw', 'Include raw dumpsys output in the response.', { default: false })
+      .number('timeoutMs', 'Optional command timeout in milliseconds.')
+      .requiredOpenWorld('serial', 'service')
+      .query(),
+  ),
+
+  tool('adb_ui_dump', (t) =>
+    t
+      .desc(
+        'Capture Android UI hierarchy via uiautomator dump. ' +
+          'Runs uiautomator dump on-device, pulls the XML, and returns parsed UI tree. ' +
+          'Useful for UI automation verification, layout inspection, and accessibility tree analysis.',
+      )
+      .string('serial', 'Required. Android device serial or emulator id.')
+      .boolean('includeRawXml', 'Include raw XML content in the response.', { default: false })
+      .string('localPath', 'Optional local path to save the pulled XML file.')
+      .number('timeoutMs', 'Optional timeout in milliseconds.')
+      .requiredOpenWorld('serial'),
+  ),
 ];
