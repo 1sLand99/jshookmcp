@@ -32,7 +32,7 @@
 | `save_page_snapshot` | 保存当前页面状态快照（URL、Cookie、localStorage、sessionStorage），便于后续恢复。 |
 | `restore_page_snapshot` | 恢复之前保存的页面快照，还原 URL、Cookie 和存储数据。 |
 | `list_page_snapshots` | 列出当前会话中所有已保存的页面快照。 |
-| `coordination_restore_snapshot` | 待补充中文：Restore a saved page snapshot including IndexedDB data. Navigates to the captured URL, re-injects cookies, localStorage, sessionStorage, and IndexedDB records from the snapshot. |
+| `coordination_restore_snapshot` | 恢复已保存的页面快照（含 IndexedDB 数据）。导航到捕获时的 URL，从快照重新注入 cookies、localStorage、sessionStorage 与 IndexedDB 记录。 |
 | `state_board` | 统一的共享状态板，用于跨 Agent 的键值协调。 |
 | `state_board_watch` | 监听某个 key 或模式的变化，返回可用于轮询更新的 watch ID。 |
 | `state_board_io` | 导出或导入共享状态板条目。 |

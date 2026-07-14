@@ -30,4 +30,4 @@
 | `cross_domain_evidence_export` | 将共享跨域证据图导出为 JSON。 |
 | `cross_domain_evidence_query` | 按 URL、堆地址、函数、脚本、节点类型、元数据或证据链查询共享跨域证据图。 |
 | `cross_domain_evidence_stats` | 获取共享跨域证据图的节点和边统计。 |
-| `cross_domain_synonym` | 待补充中文：Map natural-language queries to tool recommendations using a lightweight synonym graph. Pure TS — no LLM. Useful for discovering which tools implement a concept described in plain English (e.g. "find where the app signs requests" → deobfuscation, crypto, network). |
+| `cross_domain_synonym` | 基于轻量同义词图将自然语言查询映射到工具推荐。纯 TS 实现，无 LLM。适用于用平实英文描述某个概念时发现对应的工具（如「find where the app signs requests」→ deobfuscation、crypto、network）。 |

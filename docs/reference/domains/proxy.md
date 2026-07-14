@@ -28,7 +28,7 @@
 | `proxy_status` | 获取代理服务器的当前运行状态以及 CA 证书的路径。 |
 | `proxy_export_ca` | 导出本地根证书(CA)的路径和内容，以便将其安装到目标测试设备上并信任。 |
 | `proxy_add_rule` | 向代理中添加一个新的拦截、转发或 Mock 规则。 |
-| `proxy_remove_rule` | 待补充中文：Remove a single proxy interception rule by endpointId. Returns the removed rule record. |
+| `proxy_remove_rule` | 按 endpointId 移除单条代理拦截规则。返回被移除的规则记录。 |
 | `proxy_list_rules` | 列出当前 handler 跟踪的活动代理拦截规则。 |
 | `proxy_clear_rules` | 在保持代理运行的情况下清空当前活动拦截规则。 |
 | `proxy_get_requests` | 检索代理缓冲池中已捕获的 HTTP/HTTPS 请求。支持按照 URL 过滤。 |

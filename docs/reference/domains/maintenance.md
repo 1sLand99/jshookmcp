@@ -33,7 +33,7 @@
 | `clear_all_caches` | 彻底清空所有内部缓存。 |
 | `cleanup_artifacts` | 按保留策略清理生成产物、截图和调试会话。 |
 | `doctor_environment` | 检查可选依赖、桥接端点和平台限制等环境状态。 |
-| `maintenance_detect_gpu` | 待补充中文：Detect GPU family from WebGL/WebGPU renderer strings. Classifies into NVIDIA, AMD, Intel, Apple, Mali, Adreno, PowerVR, Vivante, Broadcom, Qualcomm, Microsoft. Pure-TS classifier — no browser needed. Provide at least one of webglRenderer, webgpuDescription, or deviceName. |
+| `maintenance_detect_gpu` | 从 WebGL/WebGPU renderer 字符串检测 GPU 家族，分类为 NVIDIA、AMD、Intel、Apple、Mali、Adreno、PowerVR、Vivante、Broadcom、Qualcomm、Microsoft。纯 TS 分类器，无需浏览器。至少提供 webglRenderer、webgpuDescription 或 deviceName 之一。 |
 | `list_extensions` | 列出本地已加载的插件、工作流和扩展工具。 |
 | `reload_extensions` | 从已配置目录重新加载全部插件和工作流。 |
 | `browse_extension_registry` | 浏览远程 jshookmcp 扩展注册表以发现可用插件和工作流。 |

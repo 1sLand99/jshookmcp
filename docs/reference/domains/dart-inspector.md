@@ -37,6 +37,6 @@
 | `dart_inspect_object_pool` | 转储指定地址的 ObjectPool，显示所有条目的类型和值。 |
 | `dart_trace_execution` | 逐步跟踪 Dart 函数执行，输出每条指令及寄存器状态（PC、x0-x30、PP、THR）。 |
 | `dart_call_graph` | 从 Dart AOT 快照构建尽力而为的静态调用图：节点为 Code 对象，边为其值匹配另一个 Code 入口点（caller→callee）的 ObjectPool 表项。诚实边界：没有 pool 表项的间接/动态调用，以及 PcDescriptors 级别的映射，需要指令解码（暂缓——属跨 Dart SDK 版本工作）。 |
-| `dart_pc_descriptors` | 待补充中文：Parse PcDescriptors for one or all Dart functions in a loaded snapshot and resolve call targets by decoding ARM64 BL instructions at each call-site PC offset. Returns structured call-site entries with pcOffset, kind (1=icCall, 2=unoptStaticCall, 3=runtimeCall), and optionally resolved target addresses when code section bytes are available. Pass a sessionId or file path to load the snapshot. |
+| `dart_pc_descriptors` | 解析已加载快照中一个或全部 Dart 函数的 PcDescriptors，并在每个调用点 PC 偏移处解码 ARM64 BL 指令以解析调用目标。返回结构化调用点条目，含 pcOffset、kind（1=icCall，2=unoptStaticCall，3=runtimeCall），并在 code section 字节可用时附带解析出的目标地址。传入 sessionId 或文件路径以加载快照。 |
 | `dart_create_session` | 一次性解析 Dart AOT 快照并缓存至会话 ID，后续 dart_load_snapshot / dart_list_functions / dart_call_graph / dart_inspect_object_pool / dart_call_function / dart_trace_execution 等工具可通过 sessionId 复用已解析快照，跳过重复解析 libapp.so（对 10-40 MB Flutter 快照而言是主要耗时）。使用完毕请通过 dart_destroy_session 销毁；空闲会话自动过期（TTL + 定时清扫，参见 DART_SESSION_* 常量）。 |
 | `dart_destroy_session` | 销毁由 dart_create_session 创建的 Dart 快照会话，释放缓存的已解析快照。若会话存在返回 destroyed=true，若未知或已被空闲 TTL 自动清扫返回 false。 |
