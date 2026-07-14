@@ -31,6 +31,7 @@ describe('outputPaths', () => {
   afterEach(async () => {
     delete process.env.MCP_SCREENSHOT_DIR;
     delete process.env.MCP_PROJECT_ROOT;
+    delete process.env.NPX_CACHE;
     await rm(testRoot, { recursive: true, force: true });
     vi.restoreAllMocks();
   });
@@ -118,6 +119,36 @@ describe('outputPaths', () => {
     expect(out.pathRewritten).toBe(true);
     expect(out.absolutePath.endsWith('hack.png')).toBe(true);
     expect(out.absolutePath).toContain(join('screenshots', 'test-vitest', 'hack.png'));
+  });
+
+  it('issue #77: relative MCP_SCREENSHOT_DIR + relative path lands in cwd under npx context', async () => {
+    // Reproduce issue #77: npx / global-install context with a relative
+    // screenshot dir. Before the fix, diverging import.meta.url-based
+    // projectRoot depths (config ../.. vs outputPaths ..) flattened into one
+    // chunk made the file land in the npx cache with pathRewritten:false.
+    process.env.NPX_CACHE = '/tmp/.npm/_npx/regression';
+    process.env.MCP_SCREENSHOT_DIR = './images';
+
+    const cwd = process.cwd();
+    const out = await resolveScreenshotOutputPath({
+      requestedPath: 'screenshots/test-fix.png',
+      type: 'png',
+    });
+
+    // File must land in the user's cwd, never in the npx cache / package root.
+    expect(out.absolutePath).toBe(join(cwd, 'screenshots', 'test-fix.png'));
+    expect(out.displayPath).toBe('screenshots/test-fix.png');
+    expect(out.pathRewritten).toBe(false);
+    // Guard against the silent-rewrite symptom from the original bug.
+    expect(out.absolutePath).not.toContain('external');
+  });
+
+  it('issue #77: project root + relative dir resolve to cwd under npx/global-install context', () => {
+    process.env.NPX_CACHE = '/tmp/.npm/_npx/regression';
+    expect(getProjectRoot()).toBe(process.cwd());
+
+    const dir = resolveOutputDirectory('./images');
+    expect(dir).toBe(join(process.cwd(), 'images'));
   });
 
   it('gets temp roots', () => {
