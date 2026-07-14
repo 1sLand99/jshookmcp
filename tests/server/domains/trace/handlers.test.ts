@@ -14,7 +14,7 @@ const parseToolResponse = <T>(response: unknown): T => {
 };
 
 vi.mock('@utils/artifacts', () => ({
-  resolveArtifactPath: async () => ({ absolutePath: '/tmp/auto.json' }),
+  resolveArtifactPath: async () => ({ absolutePath: join(tmpdir(), 'auto.json') }),
 }));
 
 function createTmpDbPath(): string {
@@ -1510,7 +1510,7 @@ describe('TraceToolHandlers', () => {
         }),
       );
 
-      expect(result.exportedPath).toBe('/tmp/auto.json');
+      expect(result.exportedPath).toBe(join(tmpdir(), 'auto.json'));
     });
 
     it('throws if no dbPath and no active recording in getDbForReading', async () => {
@@ -1536,6 +1536,168 @@ describe('TraceToolHandlers', () => {
           outputPath: outsidePath,
         }),
       ).rejects.toThrow(/outputPath must be within/);
+    });
+
+    it('exports to HAR 1.4 format with structured entries and captured bodies', async () => {
+      // Insert a network resource via the internal upsert statement
+      // (queryWithParams rejects writes). Column order:
+      // request_id, url, method, resource_type, request_headers, request_post_data,
+      // status, status_text, response_headers, mime_type, protocol, remote_address,
+      // from_disk_cache, from_service_worker, started_wall_time, response_wall_time,
+      // finished_wall_time, started_monotonic_time, response_monotonic_time,
+      // finished_monotonic_time, encoded_data_length, received_data_length,
+      // received_encoded_data_length, chunk_count, streaming_enabled,
+      // streaming_supported, streaming_error, body_capture_state, body_inline,
+      // body_artifact_path, body_base64_encoded, body_size, body_truncated,
+      // body_error, failed, error_text  (36 params)
+      const startedTs = Date.now();
+      // @ts-expect-error — accessing internal upsert statement
+      const stmt = db['upsertNetworkResourceStmt'];
+      stmt.run(
+        'req-test-1',
+        withPath(TEST_URLS.api, 'v1/test'),
+        'GET',
+        'XHR',
+        JSON.stringify({ 'Content-Type': 'application/json' }),
+        '{"query":"value"}',
+        200,
+        'OK',
+        JSON.stringify({ 'Content-Type': 'application/json' }),
+        'application/json',
+        'HTTP/1.1',
+        '127.0.0.1',
+        0,
+        0,
+        startedTs,
+        startedTs + 50,
+        startedTs + 100,
+        null,
+        null,
+        null,
+        1024,
+        1024,
+        1024,
+        0,
+        1,
+        0,
+        null,
+        'inline',
+        '{"ok":true}',
+        null,
+        0,
+        0,
+        0,
+        null,
+        0,
+        null,
+      );
+
+      // @ts-expect-error
+      db.close();
+
+      const recorder = new TraceRecorder();
+      const ctx = createMockContext() as MCPServerContext;
+      const handler = new TraceToolHandlers(recorder, ctx);
+
+      const outputPath = join(tmpdir(), `test-export-har-${Date.now()}.har`);
+      cleanupPaths.push(outputPath);
+
+      const result = parseToolResponse<{
+        format: string;
+        entryCount: number;
+        exportedPath: string;
+      }>(
+        await handler.handleExportTrace({
+          dbPath,
+          format: 'har',
+          outputPath,
+        }),
+      );
+
+      expect(result.format).toBe('HAR 1.4');
+      expect(result.entryCount).toBe(1);
+      expect(existsSync(outputPath)).toBe(true);
+
+      const { readFileSync } = await import('node:fs');
+      const har = JSON.parse(readFileSync(outputPath, 'utf-8')) as {
+        log: {
+          version: string;
+          entries: Array<{
+            request: { method: string; url: string; postData?: { text: string } };
+            response: { status: number; content: { text?: string } };
+          }>;
+        };
+      };
+      expect(har.log.version).toBe('1.4');
+      expect(har.log.entries).toHaveLength(1);
+      expect(har.log.entries[0]!.request.method).toBe('GET');
+      expect(har.log.entries[0]!.response.status).toBe(200);
+      expect(har.log.entries[0]!.request.postData?.text).toBe('{"query":"value"}');
+      expect(har.log.entries[0]!.response.content.text).toBe('{"ok":true}');
+    });
+
+    it('exports to Perfetto binary protobuf format', async () => {
+      // @ts-expect-error
+      db.insertEvent({
+        timestamp: 1000,
+        category: 'debugger',
+        eventType: 'Debugger.paused',
+        data: JSON.stringify({ reason: 'breakpoint' }),
+      });
+      // @ts-expect-error
+      db.insertEvent({
+        timestamp: 1100,
+        category: 'debugger',
+        eventType: 'Debugger.resumed',
+        data: JSON.stringify({}),
+      });
+
+      // @ts-expect-error
+      db.close();
+
+      const recorder = new TraceRecorder();
+      const ctx = createMockContext() as MCPServerContext;
+      const handler = new TraceToolHandlers(recorder, ctx);
+
+      const outputPath = join(tmpdir(), `test-export-perfetto-${Date.now()}.bin`);
+      cleanupPaths.push(outputPath);
+
+      const result = parseToolResponse<{
+        format: string;
+        eventCount: number;
+        trackCount: number;
+        fileSizeBytes: number;
+        exportedPath: string;
+      }>(
+        await handler.handleExportTrace({
+          dbPath,
+          format: 'perfetto',
+          outputPath,
+        }),
+      );
+
+      expect(result.format).toBe('Perfetto binary protobuf');
+      expect(result.eventCount).toBeGreaterThanOrEqual(2);
+      expect(result.trackCount).toBeGreaterThanOrEqual(1);
+      expect(result.fileSizeBytes).toBeGreaterThan(0);
+      expect(existsSync(outputPath)).toBe(true);
+
+      // Verify the first packet uses Trace.packet (field 1, wire type 2).
+      const { readFileSync } = await import('node:fs');
+      const buf = readFileSync(outputPath);
+      expect(buf.length).toBeGreaterThan(0);
+      expect(buf[0]).toBe(0x0a);
+      let firstLen = 0;
+      let factor = 1;
+      let offset = 1;
+      while (offset < buf.length) {
+        const byte = buf[offset++]!;
+        firstLen += (byte & 0x7f) * factor;
+        if ((byte & 0x80) === 0) break;
+        factor *= 0x80;
+      }
+      expect(firstLen).toBeGreaterThan(0);
+      expect(offset + firstLen).toBeLessThanOrEqual(buf.length);
     });
   });
 

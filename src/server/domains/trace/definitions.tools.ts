@@ -174,8 +174,8 @@ export const TRACE_TOOLS: Tool[] = [
       )
       .enum(
         'format',
-        ['chrome-trace', 'har'],
-        'Export format: chrome-trace (default) or har (HTTP Archive 1.4)',
+        ['chrome-trace', 'har', 'perfetto'],
+        'Export format: chrome-trace (default), har (HTTP Archive 1.2), or perfetto (binary protobuf)',
         { default: 'chrome-trace' },
       )
       .string('dbPath', 'Path to trace DB file. Uses the active recording if omitted.')

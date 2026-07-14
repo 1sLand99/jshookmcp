@@ -16,7 +16,12 @@ import { handleSafe, R, type ToolResponse } from '@server/domains/shared/Respons
 import { ToolError } from '@errors/ToolError';
 import { PrerequisiteError } from '@errors/PrerequisiteError';
 import { getProjectRoot, getSystemTempRoots } from '@utils/outputPaths';
-import { resolveSafeOutputPath, writeTextFileAtomically } from '@utils/safeOutput';
+import {
+  resolveSafeOutputPath,
+  writeBinaryFileAtomically,
+  writeTextFileAtomically,
+} from '@utils/safeOutput';
+import { buildHarLog } from './har-export';
 import {
   asBoolean,
   asNumber,
@@ -47,6 +52,11 @@ import {
   type TraceEvent as SummaryTraceEvent,
   type MemoryDelta,
 } from '@server/domains/trace/TraceSummarizer';
+import {
+  encodePerfettoTrace,
+  type PerfettoSlice,
+  type PerfettoTrackDef,
+} from '@modules/trace/PerfettoEncoder';
 
 /**
  * Maps a trace event category to a Chrome Trace Event thread id (tid) so that
@@ -690,6 +700,29 @@ export class TraceToolHandlers {
     const dbPath = typeof args['dbPath'] === 'string' ? args['dbPath'] : undefined;
     const outputPath =
       typeof args['outputPath'] === 'string' ? args['outputPath'].trim() || undefined : undefined;
+    const format =
+      argEnum(
+        args,
+        'format',
+        new Set(['chrome-trace', 'har', 'perfetto'] as const),
+        'chrome-trace',
+      ) ?? 'chrome-trace';
+
+    const allowedRoots = [getProjectRoot(), ...getSystemTempRoots()];
+    const ext = format === 'perfetto' ? 'bin' : format === 'har' ? 'har' : 'json';
+    const defaultExt = ext;
+    const finalOutputPath = outputPath
+      ? await resolveSafeOutputPath(outputPath, {
+          allowedRoots,
+          allowedRootsDescription: 'project root or system temp directory',
+        })
+      : (
+          await resolveArtifactPath({
+            category: 'traces',
+            toolName: 'trace_export',
+            ext: defaultExt,
+          })
+        ).absolutePath;
 
     let tempDb: TraceDB | null = null;
 
@@ -697,130 +730,245 @@ export class TraceToolHandlers {
       const db = getDbForReading(this.recorder, dbPath);
       if (dbPath) tempDb = db;
 
-      const allEvents = db.query(
-        'SELECT timestamp, category, event_type, data, script_id, line_number FROM events ORDER BY timestamp ASC,' +
-          ' sequence ASC',
-      );
-
-      const pairedBegin = new Set(['Debugger.paused']);
-      const pairedEnd = new Set(['Debugger.resumed']);
-      const traceEvents = allEvents.rows.map((row) => {
-        const traceRow = readExportTraceRow(row);
-        const ts = traceRow.timestampMs * 1000;
-        const cat = traceRow.category;
-        const name = traceRow.eventType;
-        const dataStr = traceRow.data;
-
-        let ph = 'i';
-        if (pairedBegin.has(name)) ph = 'B';
-        else if (pairedEnd.has(name)) ph = 'E';
-
-        return {
-          name,
-          cat,
-          ph,
-          ts,
-          pid: 1,
-          tid: deriveTraceTid(cat),
-          args: safeParseJSON(dataStr),
-          ...(ph === 'i' ? { s: 'g' } : {}),
-        };
-      });
-
-      // Aggregate CPU profile samples into per-function Chrome Trace "X" complete
-      // events on a dedicated track (tid 8) so flame-graph viewers surface hot
-      // functions alongside the event timeline. Pure data projection — ordering
-      // follows self-time, no heuristic library.
-      const CPU_PROFILE_TID = 8;
-      const samplesResult = db.queryWithParams(
-        `SELECT function_name,
-                SUM(self_time) AS self_time,
-                SUM(aggregate_time) AS aggregate_time,
-                COUNT(*) AS sample_count,
-                MIN(timestamp) AS first_ts,
-                script_id, url, line_number, column_number
-         FROM samples
-         WHERE function_name IS NOT NULL
-         GROUP BY function_name
-         ORDER BY self_time DESC
-         LIMIT 50`,
-        [],
-      );
-      const sampleCols = samplesResult.columns;
-      const sampleCol = (name: string): number => sampleCols.indexOf(name);
-      const cpuProfileEvents = samplesResult.rows.map((row) => {
-        const selfTime = (row[sampleCol('self_time')] as number) ?? 0;
-        const firstTs = (row[sampleCol('first_ts')] as number) ?? 0;
-        return {
-          name: (row[sampleCol('function_name')] as string) ?? '(anonymous)',
-          cat: 'cpu-profile',
-          ph: 'X',
-          ts: firstTs * 1000,
-          dur: Math.max(selfTime * 1000, 1),
-          pid: 1,
-          tid: CPU_PROFILE_TID,
-          args: {
-            selfTimeMs: selfTime,
-            aggregateTimeMs: (row[sampleCol('aggregate_time')] as number) ?? 0,
-            sampleCount: (row[sampleCol('sample_count')] as number) ?? 0,
-            url: row[sampleCol('url')] ?? null,
-            scriptId: row[sampleCol('script_id')] ?? null,
-            lineNumber: row[sampleCol('line_number')] ?? null,
-          },
-        };
-      });
-
-      // Prepend thread_name metadata events so chrome://tracing renders friendly
-      // track labels (e.g. "Debugger", "Network") instead of bare "Thread N".
-      const usedTids = new Set<number>([...traceEvents, ...cpuProfileEvents].map((e) => e.tid));
-      const threadNameEvents = [...usedTids]
-        .toSorted((a, b) => a - b)
-        .map((tid) => ({
-          name: 'thread_name',
-          cat: '__metadata',
-          ph: 'M',
-          pid: 1,
-          tid,
-          args: { name: TRACE_THREAD_NAMES[tid] ?? 'Other' },
-        }));
-      const outputEvents = [...threadNameEvents, ...traceEvents, ...cpuProfileEvents];
-
-      const allowedRoots = [getProjectRoot(), ...getSystemTempRoots()];
-      const finalOutputPath = outputPath
-        ? await resolveSafeOutputPath(outputPath, {
-            allowedRoots,
-            allowedRootsDescription: 'project root or system temp directory',
-          })
-        : (
-            await resolveArtifactPath({
-              category: 'traces',
-              toolName: 'trace_export',
-              ext: 'json',
-            })
-          ).absolutePath;
-
-      await writeTextFileAtomically(finalOutputPath, JSON.stringify(outputEvents, null, 2), {
-        allowedRoots: outputPath ? allowedRoots : undefined,
-      });
-
-      const cpuProfileCount = cpuProfileEvents.length;
-      return R.ok()
-        .merge({
-          exportedPath: finalOutputPath,
-          eventCount: traceEvents.length,
-          threadCount: usedTids.size,
-          ...(cpuProfileCount > 0 ? { cpuProfileFunctions: cpuProfileCount } : {}),
-          format: 'Chrome Trace Event JSON',
-          message:
-            `Exported ${traceEvents.length} events` +
-            `${cpuProfileCount > 0 ? ` and ${cpuProfileCount} CPU profile function(s)` : ''}` +
-            ` across ${usedTids.size} thread(s) to ${finalOutputPath}. ` +
-            `Open in chrome://tracing or ui.perfetto.dev`,
-        })
-        .json();
+      if (format === 'perfetto') {
+        return await this.exportPerfetto(db, finalOutputPath, allowedRoots);
+      }
+      if (format === 'har') {
+        return await this.exportHAR(db, finalOutputPath, allowedRoots);
+      }
+      return await this.exportChromeTrace(db, finalOutputPath, allowedRoots);
     } finally {
       if (tempDb) tempDb.close();
     }
+  }
+
+  private async exportChromeTrace(
+    db: TraceDB,
+    finalOutputPath: string,
+    allowedRoots: string[],
+  ): Promise<unknown> {
+    const allEvents = db.query(
+      'SELECT timestamp, category, event_type, data, script_id, line_number FROM events ORDER BY timestamp ASC,' +
+        ' sequence ASC',
+    );
+
+    const pairedBegin = new Set(['Debugger.paused']);
+    const pairedEnd = new Set(['Debugger.resumed']);
+    const traceEvents = allEvents.rows.map((row) => {
+      const traceRow = readExportTraceRow(row);
+      const ts = traceRow.timestampMs * 1000;
+      const cat = traceRow.category;
+      const name = traceRow.eventType;
+      const dataStr = traceRow.data;
+
+      let ph = 'i';
+      if (pairedBegin.has(name)) ph = 'B';
+      else if (pairedEnd.has(name)) ph = 'E';
+
+      return {
+        name,
+        cat,
+        ph,
+        ts,
+        pid: 1,
+        tid: deriveTraceTid(cat),
+        args: safeParseJSON(dataStr),
+        ...(ph === 'i' ? { s: 'g' } : {}),
+      };
+    });
+
+    const CPU_PROFILE_TID = 8;
+    const samplesResult = db.queryWithParams(
+      `SELECT function_name,
+              SUM(self_time) AS self_time,
+              SUM(aggregate_time) AS aggregate_time,
+              COUNT(*) AS sample_count,
+              MIN(timestamp) AS first_ts,
+              script_id, url, line_number, column_number
+       FROM samples
+       WHERE function_name IS NOT NULL
+       GROUP BY function_name
+       ORDER BY self_time DESC
+       LIMIT 50`,
+      [],
+    );
+    const sampleCols = samplesResult.columns;
+    const sampleCol = (name: string): number => sampleCols.indexOf(name);
+    const cpuProfileEvents = samplesResult.rows.map((row) => {
+      const selfTime = (row[sampleCol('self_time')] as number) ?? 0;
+      const firstTs = (row[sampleCol('first_ts')] as number) ?? 0;
+      return {
+        name: (row[sampleCol('function_name')] as string) ?? '(anonymous)',
+        cat: 'cpu-profile',
+        ph: 'X',
+        ts: firstTs * 1000,
+        dur: Math.max(selfTime * 1000, 1),
+        pid: 1,
+        tid: CPU_PROFILE_TID,
+        args: {
+          selfTimeMs: selfTime,
+          aggregateTimeMs: (row[sampleCol('aggregate_time')] as number) ?? 0,
+          sampleCount: (row[sampleCol('sample_count')] as number) ?? 0,
+          url: row[sampleCol('url')] ?? null,
+          scriptId: row[sampleCol('script_id')] ?? null,
+          lineNumber: row[sampleCol('line_number')] ?? null,
+        },
+      };
+    });
+
+    const usedTids = new Set<number>([...traceEvents, ...cpuProfileEvents].map((e) => e.tid));
+    const threadNameEvents = [...usedTids]
+      .toSorted((a, b) => a - b)
+      .map((tid) => ({
+        name: 'thread_name',
+        cat: '__metadata',
+        ph: 'M',
+        pid: 1,
+        tid,
+        args: { name: TRACE_THREAD_NAMES[tid] ?? 'Other' },
+      }));
+    const outputEvents = [...threadNameEvents, ...traceEvents, ...cpuProfileEvents];
+
+    await writeTextFileAtomically(finalOutputPath, JSON.stringify(outputEvents, null, 2), {
+      allowedRoots,
+    });
+
+    const cpuProfileCount = cpuProfileEvents.length;
+    return R.ok()
+      .merge({
+        exportedPath: finalOutputPath,
+        eventCount: traceEvents.length,
+        threadCount: usedTids.size,
+        ...(cpuProfileCount > 0 ? { cpuProfileFunctions: cpuProfileCount } : {}),
+        format: 'Chrome Trace Event JSON',
+        message:
+          `Exported ${traceEvents.length} events` +
+          `${cpuProfileCount > 0 ? ` and ${cpuProfileCount} CPU profile function(s)` : ''}` +
+          ` across ${usedTids.size} thread(s) to ${finalOutputPath}. ` +
+          `Open in chrome://tracing or ui.perfetto.dev`,
+      })
+      .json();
+  }
+
+  private async exportHAR(
+    db: TraceDB,
+    finalOutputPath: string,
+    allowedRoots: string[],
+  ): Promise<unknown> {
+    const har = buildHarLog(db, {
+      creator: { name: 'jshookmcp trace domain', version: '1.0' },
+    });
+    const entries = har.log.entries;
+    await writeTextFileAtomically(finalOutputPath, JSON.stringify(har, null, 2), { allowedRoots });
+
+    return R.ok()
+      .merge({
+        exportedPath: finalOutputPath,
+        format: 'HAR 1.4',
+        entryCount: entries.length,
+        message: `Exported ${entries.length} HAR entries to ${finalOutputPath}`,
+      })
+      .json();
+  }
+
+  private async exportPerfetto(
+    db: TraceDB,
+    finalOutputPath: string,
+    allowedRoots: string[],
+  ): Promise<unknown> {
+    const allEvents = db.query(
+      'SELECT timestamp, category, event_type, data, script_id, line_number FROM events ORDER BY timestamp ASC,' +
+        ' sequence ASC',
+    );
+
+    const tracks: PerfettoTrackDef[] = [];
+    const slices: PerfettoSlice[] = [];
+    const trackSet = new Set<number>();
+
+    for (const rawRow of allEvents.rows) {
+      const traceRow = readExportTraceRow(rawRow);
+      const tid = deriveTraceTid(traceRow.category);
+      if (!trackSet.has(tid)) {
+        trackSet.add(tid);
+        tracks.push({
+          tid,
+          pid: 1,
+          name: TRACE_THREAD_NAMES[tid] ?? `Thread ${tid}`,
+          uuid: tid,
+        });
+      }
+
+      const tsUs = Math.floor(traceRow.timestampMs * 1000);
+      slices.push({
+        name: traceRow.eventType,
+        category: traceRow.category ?? 'other',
+        timestampUs: tsUs,
+        durationUs: 1, // instant events get 1us duration for visibility
+        tid,
+        pid: 1,
+      });
+    }
+
+    // Add CPU profile samples as slices on the CPU Profile track
+    const CPU_PROFILE_TID = 8;
+    const samplesResult = db.queryWithParams(
+      `SELECT function_name,
+              SUM(self_time) AS self_time,
+              MIN(timestamp) AS first_ts
+       FROM samples
+       WHERE function_name IS NOT NULL
+       GROUP BY function_name
+       ORDER BY self_time DESC
+       LIMIT 50`,
+      [],
+    );
+    const sampleCols = samplesResult.columns;
+    const fnCol = sampleCols.indexOf('function_name');
+    const selfCol = sampleCols.indexOf('self_time');
+    const tsCol = sampleCols.indexOf('first_ts');
+
+    if (samplesResult.rows.length > 0) {
+      if (!trackSet.has(CPU_PROFILE_TID)) {
+        trackSet.add(CPU_PROFILE_TID);
+        tracks.push({
+          tid: CPU_PROFILE_TID,
+          pid: 1,
+          name: 'CPU Profile',
+          uuid: CPU_PROFILE_TID,
+        });
+      }
+      for (const row of samplesResult.rows) {
+        const fnName = (row[fnCol] as string) ?? '(anonymous)';
+        const selfTime = (row[selfCol] as number) ?? 0;
+        const firstTs = (row[tsCol] as number) ?? 0;
+        slices.push({
+          name: fnName,
+          category: 'cpu-profile',
+          timestampUs: Math.floor(firstTs * 1000),
+          durationUs: Math.max(Math.floor(selfTime * 1000), 1),
+          tid: CPU_PROFILE_TID,
+          pid: 1,
+        });
+      }
+    }
+
+    const binary = encodePerfettoTrace(tracks, slices, []);
+    await writeBinaryFileAtomically(finalOutputPath, binary, { allowedRoots });
+
+    return R.ok()
+      .merge({
+        exportedPath: finalOutputPath,
+        format: 'Perfetto binary protobuf',
+        eventCount: slices.length,
+        trackCount: tracks.length,
+        cpuProfileFunctions: samplesResult.rows.length,
+        fileSizeBytes: binary.length,
+        message:
+          `Exported ${slices.length} events across ${tracks.length} track(s) ` +
+          `(${binary.length} bytes) to ${finalOutputPath}. ` +
+          `Open in ui.perfetto.dev`,
+      })
+      .json();
   }
 
   async handleSummarizeTrace(args: Record<string, unknown>): Promise<unknown> {
