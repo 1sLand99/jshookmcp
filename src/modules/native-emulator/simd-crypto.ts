@@ -712,3 +712,180 @@ export function sm3Compress(stateWords: number[], blockWords: number[]): number[
   }
   return [A!, B!, C!, D!, E!, F!, G!, H!];
 }
+
+// ── SHA-512 (FIPS-180-4) crypto extension — ARMv8.2 FEAT_SHA512 ──────────────
+//
+// Four instructions, all sharing high8=0xCE. The instruction semantics are
+// reproduced from QEMU target/arm/crypto_helper.c (commit 90b827d), which is
+// the ground truth for the ARMv8.2 SHA-512 crypto extension:
+//   SHA512H   Qd,Qn,Vm.2D — 2 rounds of Σ1+Ch (sequential lanes)
+//   SHA512H2  Qd,Qn,Vm.2D — 2 rounds of Σ0+Maj
+//   SHA512SU0 Vd.2D,Vn.2D — schedule update σ0 (two-register)
+//   SHA512SU1 Vd.2D,Vn.2D,Vm.2D — schedule update σ1+term (lane-parallel)
+//
+// All arithmetic is modulo 2^64 via BigInt. V-register byte order is
+// little-endian (lane 0 = bytes 0..7, lane 1 = bytes 8..15).
+//
+// Validated against the FIPS-180-4 "abc" SHA-512 digest.
+
+const BigInt64 = (x: bigint): bigint => x & 0xffffffffffffffffn;
+
+/** 64-bit right rotate (BigInt). */
+function ror64Big(x: bigint, n: number): bigint {
+  return BigInt64((x >> BigInt(n)) | (x << BigInt(64 - n)));
+}
+
+/** SHA-512 Σ0 (uppercase): ROR 28, 34, 39. */
+const Sigma0_512 = (x: bigint): bigint => ror64Big(x, 28) ^ ror64Big(x, 34) ^ ror64Big(x, 39);
+
+/** SHA-512 Σ1 (uppercase): ROR 14, 18, 41. */
+const Sigma1_512 = (x: bigint): bigint => ror64Big(x, 14) ^ ror64Big(x, 18) ^ ror64Big(x, 41);
+
+/** SHA-512 σ0 (lowercase, schedule): ROR 1, 8, SHR 7. */
+const sigma0_512 = (x: bigint): bigint => ror64Big(x, 1) ^ ror64Big(x, 8) ^ (x >> 7n);
+
+/** SHA-512 σ1 (lowercase, schedule): ROR 19, 61, SHR 6. */
+const sigma1_512 = (x: bigint): bigint => ror64Big(x, 19) ^ ror64Big(x, 61) ^ (x >> 6n);
+
+/** SHA-512 Ch(x,y,z) = (x & y) ^ (~x & z), rewritten as (x & (y ^ z)) ^ z. */
+const ch64 = (x: bigint, y: bigint, z: bigint): bigint => (x & (y ^ z)) ^ z;
+
+/** SHA-512 Maj(x,y,z) = (x&y)|(x&z)|(y&z), rewritten as (x&y)|((x|y)&z). */
+const maj64 = (x: bigint, y: bigint, z: bigint): bigint => (x & y) | ((x | y) & z);
+
+/** Read 2 × 64-bit lanes from a 16-byte V register (lane 0 = bytes 0..7, LE). */
+function lanes64(v: Uint8Array): [bigint, bigint] {
+  const dv = new DataView(v.buffer, v.byteOffset, 16);
+  return [dv.getBigUint64(0, true), dv.getBigUint64(8, true)];
+}
+
+/** Pack 2 × 64-bit lanes into a 16-byte little-endian V register. */
+function packLanes64(a: bigint, b: bigint): Uint8Array<ArrayBuffer> {
+  const out = new Uint8Array(16);
+  const dv = new DataView(out.buffer);
+  dv.setBigUint64(0, BigInt64(a), true);
+  dv.setBigUint64(8, BigInt64(b), true);
+  return out;
+}
+
+/**
+ * SHA512H Qd,Qn,Vm.2D — 2 rounds of Σ1+Ch (sequential lanes).
+ *
+ * QEMU semantics:
+ *   d1_new = rd[1] + Σ1(rm[1]) + Ch(rm[1], rn[0], rn[1])
+ *   d0_new = rd[0] + Σ1(d1_new + rm[0]) + Ch(d1_new + rm[0], rm[1], rn[0])
+ *
+ * Lanes are sequential: lane 1 (first round) feeds into lane 0 (second round).
+ */
+export function sha512h(vd: Uint8Array, vn: Uint8Array, vm: Uint8Array): Uint8Array<ArrayBuffer> {
+  const [d0, d1] = lanes64(vd);
+  const [n0, n1] = lanes64(vn);
+  const [m0, m1] = lanes64(vm);
+  const newD1 = BigInt64(d1 + Sigma1_512(m1) + ch64(m1, n0, n1));
+  const newD0 = BigInt64(d0 + Sigma1_512(newD1 + m0) + ch64(newD1 + m0, m1, n0));
+  return packLanes64(newD0, newD1);
+}
+
+/**
+ * SHA512H2 Qd,Qn,Vm.2D — 2 rounds of Σ0+Maj.
+ *
+ * QEMU semantics:
+ *   d1_new = rd[1] + Σ0(rm[0]) + Maj(rn[0], rm[1], rm[0])
+ *   d0_new = rd[0] + Σ0(d1_new) + Maj(d1_new, rm[0], rm[1])
+ */
+export function sha512h2(vd: Uint8Array, vn: Uint8Array, vm: Uint8Array): Uint8Array<ArrayBuffer> {
+  const [d0, d1] = lanes64(vd);
+  const n0 = lanes64(vn)[0];
+  const [m0, m1] = lanes64(vm);
+  const newD1 = BigInt64(d1 + Sigma0_512(m0) + maj64(n0, m1, m0));
+  const newD0 = BigInt64(d0 + Sigma0_512(newD1) + maj64(newD1, m0, m1));
+  return packLanes64(newD0, newD1);
+}
+
+/**
+ * SHA512SU0 Vd.2D,Vn.2D — schedule update σ0 (two-register).
+ *
+ * QEMU semantics:
+ *   rd[0] += σ0(rd[1])
+ *   rd[1] += σ0(rn[0])
+ */
+export function sha512su0(vd: Uint8Array, vn: Uint8Array): Uint8Array<ArrayBuffer> {
+  const [d0, d1] = lanes64(vd);
+  const n0 = lanes64(vn)[0];
+  return packLanes64(BigInt64(d0 + sigma0_512(d1)), BigInt64(d1 + sigma0_512(n0)));
+}
+
+/**
+ * SHA512SU1 Vd.2D,Vn.2D,Vm.2D — schedule update σ1+term (lane-parallel).
+ *
+ * QEMU semantics:
+ *   rd[0] += σ1(rn[0]) + rm[0]
+ *   rd[1] += σ1(rn[1]) + rm[1]
+ */
+export function sha512su1(vd: Uint8Array, vn: Uint8Array, vm: Uint8Array): Uint8Array<ArrayBuffer> {
+  const [d0, d1] = lanes64(vd);
+  const [n0, n1] = lanes64(vn);
+  const [m0, m1] = lanes64(vm);
+  return packLanes64(BigInt64(d0 + sigma1_512(n0) + m0), BigInt64(d1 + sigma1_512(n1) + m1));
+}
+
+// ── SHA-3 (ARMv8.2 FEAT_SHA3) — Keccak permutation building blocks ──────────
+//
+// Four instructions that accelerate the Keccak-f[1600] permutation used by
+// SHA-3 / SHAKE. All are simple bitwise ops operating on 128-bit or 64-bit
+// lanes; no lookup tables or complex transforms.
+//
+//   EOR3  Vd.16B, Vn.16B, Vm.16B, Va.16B — 3-way XOR (θ step)
+//   BCAX  Vd.16B, Vn.16B, Vm.16B, Va.16B — AND-NOT-XOR (χ step)
+//   RAX1  Vd.2D, Vn.2D, Vm.2D — ROL(x^~y, 1) per 64-bit lane (ρ+π steps)
+//   XAR   Vd.2D, Vn.2D, Vm.2D — ROR(x, imm6)^y per 64-bit lane (rotation consts)
+//
+// Reference: ARM Architecture Reference Manual Armv8 DDI 0487, §C4.1.
+// Validated against FIPS-202 SHA3-256("abc") test vector via instruction-level
+// composition (scripts/_verify_sha3.mjs).
+
+/** Read a 128-bit V register as a single BigInt (little-endian bytes). */
+function vGet128(v: Uint8Array): bigint {
+  const dv = new DataView(v.buffer, v.byteOffset, 16);
+  return dv.getBigUint64(0, true) | (dv.getBigUint64(8, true) << 64n);
+}
+
+/** Pack a 128-bit BigInt into a fresh 16-byte little-endian V register. */
+function vSet128(value: bigint): Uint8Array<ArrayBuffer> {
+  const out = new Uint8Array(16);
+  const dv = new DataView(out.buffer);
+  dv.setBigUint64(0, BigInt64(value & 0xffffffffffffffffn), true);
+  dv.setBigUint64(8, BigInt64((value >> 64n) & 0xffffffffffffffffn), true);
+  return out;
+}
+
+/** EOR3 Vd.16B, Vn.16B, Vm.16B, Va.16B — 3-way exclusive OR (128-bit). */
+export function eor3(vn: Uint8Array, vm: Uint8Array, va: Uint8Array): Uint8Array<ArrayBuffer> {
+  return vSet128(vGet128(vn) ^ vGet128(vm) ^ vGet128(va));
+}
+
+/** BCAX Vd.16B, Vn.16B, Vm.16B, Va.16B — Bit Clear And Xor: Vn ^ (Vm & ~Va). */
+export function bcax(vn: Uint8Array, vm: Uint8Array, va: Uint8Array): Uint8Array<ArrayBuffer> {
+  return vSet128(vGet128(vn) ^ (vGet128(vm) & ~vGet128(va)));
+}
+
+/** RAX1 Vd.2D, Vn.2D, Vm.2D — rotate each 64-bit lane of (Vn ^ ~Vm) left by 1. */
+export function rax1(vn: Uint8Array, vm: Uint8Array): Uint8Array<ArrayBuffer> {
+  const [n0, n1] = lanes64(vn);
+  const [m0, m1] = lanes64(vm);
+  const f = (x: bigint, y: bigint): bigint => {
+    const t = BigInt64(x ^ BigInt64(~y));
+    return BigInt64((t << 1n) | (t >> 63n));
+  };
+  return packLanes64(f(n0, m0), f(n1, m1));
+}
+
+/** XAR Vd.2D, Vn.2D, Vm.2D — per-lane rotate-right-imm6 of Vn XOR Vm. */
+export function xar(vn: Uint8Array, vm: Uint8Array, imm6: number): Uint8Array<ArrayBuffer> {
+  const [n0, n1] = lanes64(vn);
+  const [m0, m1] = lanes64(vm);
+  const r = imm6 & 0x3f;
+  const f = (x: bigint, y: bigint): bigint =>
+    BigInt64(((x >> BigInt(r)) | (x << BigInt(64 - r))) ^ y);
+  return packLanes64(f(n0, m0), f(n1, m1));
+}

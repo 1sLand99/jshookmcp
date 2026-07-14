@@ -17,8 +17,7 @@
  *     lane arithmetic, scalar floating-point, and the crypto extension).
  *
  * Both return `true` when they consume the instruction and `false` to let
- * CpuEngine fall through to its honest "unsupported opcode" throw — so the gap
- * stays visible and testable, exactly as the integer core does.
+ * CpuEngine fall through to its "unsupported opcode" throw.
  *
  * Correctness bar: the crypto instructions are validated against the official
  * FIPS-197 (AES) and NIST FIPS-180-4 (SHA) test vectors, so AESE/AESMC and
@@ -41,6 +40,14 @@ import {
   sha256h2,
   sha256su0,
   sha256su1,
+  sha512h,
+  sha512h2,
+  sha512su0,
+  sha512su1,
+  eor3,
+  bcax,
+  rax1,
+  xar,
   sm3ss1,
   sm3partw1,
   sm3partw2,
@@ -177,6 +184,8 @@ import {
   isCryptoSha3Reg,
   isCryptoSha2Reg,
   isCryptoSm3Sm4,
+  isCryptoSha512,
+  isCryptoSha3,
   isPmull,
   isScalarFp,
   isNeonThreeSame,
@@ -539,6 +548,8 @@ export function executeSimdFp(ctx: SimdContext, insn: number): boolean {
   if (isCryptoAes(f)) return execCryptoAes(ctx, f);
   if (isCryptoSha3Reg(f)) return execCryptoSha3Reg(ctx, f);
   if (isCryptoSha2Reg(f)) return execCryptoSha2Reg(ctx, f);
+  if (isCryptoSha512(f)) return execCryptoSha512(ctx, f);
+  if (isCryptoSha3(f)) return execCryptoSha3Keccak(ctx, f);
   if (isCryptoSm3Sm4(f)) return execCryptoSm3Sm4(ctx, f);
   if (isPmull(f)) return execPmull(ctx, f);
   if (isScalarFp(f)) return execScalarFp(ctx, f);
@@ -716,6 +727,96 @@ function execCryptoSm3Sm4(ctx: SimdContext, f: SimdFields): boolean {
   if (f.bit15 === 0 && op15_10 === 0b010001) {
     // SM3SS1 Vd.4S, Vn.4S, Vm.4S
     ctx.vSetBytes(f.rd, sm3ss1(ctx.vGetBytes(f.rd), ctx.vGetBytes(f.rn), ctx.vGetBytes(f.rm)));
+    return true;
+  }
+
+  return false;
+}
+
+// ── Cryptographic SHA-512 (ARMv8.2 FEAT_SHA512) ──────────────────────────────
+//
+// All four SHA-512 instructions share high8=0xCE. Three-register forms
+// (bit21=1) encode the sub-operation in low11_10; the two-register form
+// SHA512SU0 has size=11, bit21=0.
+
+/**
+ * Dispatch SHA-512 instructions. Three-register forms use low11_10:
+ *   00=SHA512H, 01=SHA512H2, 10=SHA512SU1.
+ * The two-register SHA512SU0 is identified by op16_12=0b10000 && bit21=0.
+ */
+function execCryptoSha512(ctx: SimdContext, f: SimdFields): boolean {
+  const vd = ctx.vGetBytes(f.rd);
+
+  // Three-register SHA-512 (bit21=1)
+  if (f.bit21 === 1) {
+    const vn = ctx.vGetBytes(f.rn);
+    const vm = ctx.vGetBytes(f.rm);
+    switch (f.low11_10) {
+      case 0b00: // SHA512H Qd,Qn,Vm.2D
+        ctx.vSetBytes(f.rd, sha512h(vd, vn, vm));
+        return true;
+      case 0b01: // SHA512H2 Qd,Qn,Vm.2D
+        ctx.vSetBytes(f.rd, sha512h2(vd, vn, vm));
+        return true;
+      case 0b10: // SHA512SU1 Vd.2D,Vn.2D,Vm.2D
+        ctx.vSetBytes(f.rd, sha512su1(vd, vn, vm));
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  // Two-register SHA512SU0 Vd.2D,Vn.2D (bit21=0, size=3)
+  if (f.bit21 === 0) {
+    const vn = ctx.vGetBytes(f.rn);
+    ctx.vSetBytes(f.rd, sha512su0(vd, vn));
+    return true;
+  }
+
+  return false;
+}
+
+// ── Cryptographic SHA-3 (ARMv8.2 FEAT_SHA3) ──────────────────────────────────
+//
+// Four instructions (EOR3, BCAX, RAX1, XAR) share high8=0xCE. Sub-dispatch on
+// bit21 + bits[15:10]:
+//
+//   EOR3:  bit21=0, bit23=0, op15_10=000000 → 4-register (Ra in bits[14:10])
+//   BCAX:  bit21=0, bit23=1, op15_10=000000 → 4-register
+//   RAX1:  bit21=1, size=2,    op15_10=000110 → 3-register
+//   XAR:   bit21=0, bit15=1,   size=2         → 3-register, imm6 in bits[15:10]
+
+function execCryptoSha3Keccak(ctx: SimdContext, f: SimdFields): boolean {
+  const vn = ctx.vGetBytes(f.rn);
+  const vm = ctx.vGetBytes(f.rm);
+
+  // EOR3: bit21=0, size=0, bit15=0 — 4-register, Ra in [14:10]
+  if (f.bit21 === 0 && f.size === 0 && f.bit15 === 0) {
+    ctx.vSetBytes(f.rd, eor3(vn, vm, ctx.vGetBytes(f.ra & 0b11111)));
+    return true;
+  }
+
+  // BCAX: bit21=1, size=0, bit15=0 — 4-register, Ra in [14:10]
+  if (f.bit21 === 1 && f.size === 0 && f.bit15 === 0) {
+    ctx.vSetBytes(f.rd, bcax(vn, vm, ctx.vGetBytes(f.ra & 0b11111)));
+    return true;
+  }
+
+  // RAX1: bit21=1, size=2, op15_10=000110 — 3-register
+  if (f.bit21 === 1 && f.size === 2) {
+    const op15_10 = (f.insn >>> 10) & 0b111111;
+    if (op15_10 === 0b000110) {
+      ctx.vSetBytes(f.rd, rax1(vn, vm));
+      return true;
+    }
+  }
+
+  // XAR: bit21=0, size=2 — 3-register, imm6 in bits[15:10]
+  // NOTE: bit15 is part of the 6-bit immediate, NOT a fixed discriminator.
+  // XAR with small imm6 values (bit15=0) must not be mis-dispatched as BCAX.
+  if (f.bit21 === 0 && f.size === 2) {
+    const imm6 = (f.insn >>> 10) & 0x3f;
+    ctx.vSetBytes(f.rd, xar(vn, vm, imm6));
     return true;
   }
 
@@ -1169,7 +1270,7 @@ function execFpIntConv(ctx: SimdContext, f: SimdFields, isDouble: boolean): bool
  * Dispatch a three-same op on (opcode[15:11], U). `size` selects lane width and,
  * for the logical opcode 00011, also selects AND/BIC/ORR/ORN (U=0) or
  * EOR/BSL/… (U=1). Returns false for opcodes not yet modelled so the engine
- * still reports the raw opcode honestly.
+ * still reports the raw opcode.
  */
 function execNeonThreeSame(ctx: SimdContext, f: SimdFields): boolean {
   const { rd, rn, rm, size, q, u } = f;
@@ -1283,16 +1384,102 @@ function execNeonThreeSame(ctx: SimdContext, f: SimdFields): boolean {
     case 0b10001: // CMTST (U=0) / CMEQ (U=1)
       ctx.vSetBytes(rd, u === 0 ? neonCmtst(a, b, size, q) : neonCmeq(a, b, size, q));
       return true;
-    case 0b01100: // SMAX (U=0) / UMAX (U=1)
+    case 0b01100: {
+      // SMAX (U=0, bit23=0) / UMAX (U=1, bit23=0) — integer
+      // FMAX (U=0, bit23=1) / FMAXNM (U=1, bit23=1) — FP
+      const isFp = ((f.insn >>> 23) & 1) === 1;
+      if (isFp) {
+        if (u === 0) return execSimdFpThreeSame(ctx, f, fmax);
+        return false; // FMAXNM deferred
+      }
       ctx.vSetBytes(rd, u === 0 ? neonSmax(a, b, size, q) : neonUmax(a, b, size, q));
       return true;
-    case 0b01101: // SMIN (U=0) / UMIN (U=1)
+    }
+    case 0b01101: {
+      // SMIN (U=0, bit23=0) / UMIN (U=1, bit23=0) — integer
+      // FMIN (U=0, bit23=1) / FMINNM (U=1, bit23=1) — FP
+      const isFp = ((f.insn >>> 23) & 1) === 1;
+      if (isFp) {
+        if (u === 0) return execSimdFpThreeSame(ctx, f, fmin);
+        return false; // FMINNM deferred
+      }
       ctx.vSetBytes(rd, u === 0 ? neonSmin(a, b, size, q) : neonUmin(a, b, size, q));
       return true;
+    }
+    // ── FP three-same (bit22 selects precision: 0=single, 1=double) ──
+    case 0b11010: // FADD (U=0) / FSUB (U=1)
+      return execSimdFpThreeSame(ctx, f, u === 0 ? fadd : fsub);
+    case 0b11011: // FMUL (U=0)
+      if (u === 0) return execSimdFpThreeSame(ctx, f, fmul);
+      return false;
+    case 0b11111: // FDIV (U=0)
+      if (u === 0) return execSimdFpThreeSame(ctx, f, fdiv);
+      return false;
+    case 0b11100: {
+      // FCMEQ (U=0) / FCMGE (U=1, bit23=1) / FCMGT (U=1, bit23=0)
+      if (u === 0) return execSimdFpCompare(ctx, f, (va, vb) => va === vb);
+      if (((f.insn >>> 23) & 1) === 1) return execSimdFpCompare(ctx, f, (va, vb) => va >= vb);
+      return execSimdFpCompare(ctx, f, (va, vb) => va > vb);
+    }
     default:
       return false;
   }
 }
+
+// ── Vector FP SIMD lane dispatchers ─────────────────────────────────────────
+
+type FpBinOp = (a: number, b: number, isDouble: boolean) => number;
+
+/** Apply a binary FP op lane-wise across Vn and Vm, writing result to Vd. */
+function execSimdFpThreeSame(ctx: SimdContext, f: SimdFields, op: FpBinOp): boolean {
+  const isDouble = (f.size & 1) === 1; // bit22 selects precision
+  const elemBytes = isDouble ? 8 : 4;
+  const lanes = f.q === 1 ? 16 / elemBytes : 8 / elemBytes;
+  const vn = ctx.vGetBytes(f.rn);
+  const vm = ctx.vGetBytes(f.rm);
+  const out = new Uint8Array(16);
+  const outDV = new DataView(out.buffer);
+  const vnDV = new DataView(vn.buffer, vn.byteOffset, 16);
+  const vmDV = new DataView(vm.buffer, vm.byteOffset, 16);
+  for (let lane = 0; lane < lanes; lane++) {
+    const off = lane * elemBytes;
+    const a = isDouble ? vnDV.getFloat64(off, true) : vnDV.getFloat32(off, true);
+    const b = isDouble ? vmDV.getFloat64(off, true) : vmDV.getFloat32(off, true);
+    const r = op(a, b, isDouble);
+    if (isDouble) outDV.setFloat64(off, r, true);
+    else outDV.setFloat32(off, r, true);
+  }
+  ctx.vSetBytes(f.rd, out);
+  return true;
+}
+
+/** Apply a comparison op lane-wise, writing all-1s (true) or all-0s (false) per lane. */
+function execSimdFpCompare(
+  ctx: SimdContext,
+  f: SimdFields,
+  cmp: (a: number, b: number) => boolean,
+): boolean {
+  const isDouble = (f.size & 1) === 1;
+  const elemBytes = isDouble ? 8 : 4;
+  const lanes = f.q === 1 ? 16 / elemBytes : 8 / elemBytes;
+  const vn = ctx.vGetBytes(f.rn);
+  const vm = ctx.vGetBytes(f.rm);
+  const out = new Uint8Array(16);
+  const vnDV = new DataView(vn.buffer, vn.byteOffset, 16);
+  const vmDV = new DataView(vm.buffer, vm.byteOffset, 16);
+  for (let lane = 0; lane < lanes; lane++) {
+    const off = lane * elemBytes;
+    const a = isDouble ? vnDV.getFloat64(off, true) : vnDV.getFloat32(off, true);
+    const b = isDouble ? vmDV.getFloat64(off, true) : vmDV.getFloat32(off, true);
+    const result = cmp(a, b);
+    // Write all-1s or all-0s into the lane
+    const fill = result ? 0xff : 0x00;
+    for (let i = 0; i < elemBytes; i++) out[off + i] = fill;
+  }
+  ctx.vSetBytes(f.rd, out);
+  return true;
+}
+// ── End Vector FP dispatchers ────────────────────────────────────────────────
 
 // ── NEON "three different" widening/narrowing/long (ARM ARM C4.1.7) ────────
 //

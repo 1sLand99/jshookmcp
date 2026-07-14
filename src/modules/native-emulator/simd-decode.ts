@@ -20,6 +20,7 @@ export interface SimdFields {
   op16_12: number; // bits[16:12] — opcode (two-register + AES forms)
   op15_12: number; // bits[15:12] — opcode (three-different / PMULL)
   op14_12: number; // bits[14:12] — opcode (three-register SHA)
+  ra: number; // bits[14:10] — 4th register for SHA-3 EOR3/BCAX
   low11_10: number; // bits[11:10] — fixed marker
   rm: number; // bits[20:16]
   rn: number; // bits[9:5]
@@ -68,6 +69,7 @@ export function decodeSimdFields(insn: number): SimdFields {
     op16_12: (insn >>> 12) & 0b11111,
     op15_12: (insn >>> 12) & 0b1111,
     op14_12: (insn >>> 12) & 0b111,
+    ra: (insn >>> 10) & 0b11111,
     low11_10: (insn >>> 10) & 0b11,
     rm: (insn >>> 16) & 0b11111,
     rn: (insn >>> 5) & 0b11111,
@@ -128,6 +130,44 @@ export const isCryptoSm3Sm4 = (f: SimdFields): boolean => f.high8 === 0xce && f.
 /** SM4E two-register form: high8=0xCE, size=01, bit21=0, bit15=1, low11_10=00. */
 export const isCryptoSm4e = (f: SimdFields): boolean =>
   f.high8 === 0xce && f.size === 1 && f.bit21 === 0 && f.bit15 === 1 && f.low11_10 === 0;
+
+/**
+ * Cryptographic SHA-512 (ARMv8.2 FEAT_SHA512). All four SHA-512 instructions
+ * share high8=0xCE and bit15=1 in the opcode. The three-register forms have
+ * size=01 and bit21=1; the two-register SHA512SU0 has size=11 and bit21=0.
+ *
+ * Bit15=1 distinguishes SHA512 from SM3/SM4 (which have bit15=0 for all
+ * three-register forms). SM4E (bit21=0, size=01) also has bit15=1, but is
+ * excluded here by the (bit21=1 OR size=3) guard and dispatched separately
+ * via isCryptoSm4e / isCryptoSm3Sm4.
+ */
+export const isCryptoSha512 = (f: SimdFields): boolean =>
+  f.high8 === 0xce && ((f.insn >>> 15) & 1) === 1 && (f.bit21 === 1 || f.size === 3);
+
+/**
+ * Cryptographic SHA-3 (ARMv8.2 FEAT_SHA3). Four instructions sharing high8=0xCE,
+ * distinguished from SHA-512 and SM3/SM4 by their unique bit patterns:
+ *
+ *   EOR3:  bit21=0, size=0, bit15=0  (4-register, Ra in [14:10] overlaps op15_10)
+ *   BCAX:  bit21=0, size=2, bit15=0  (4-register, Ra in [14:10])
+ *   RAX1:  bit21=1, size=2, op15_10=000110
+ *   XAR:   bit21=0, bit15=1, size=2  (imm6 in [15:10])
+ *
+ * EOR3/BCAX have Ra in bits[14:10] which sets non-zero op15_10 for non-zero Ra,
+ * so the predicate checks bit-level fields instead of the full op15_10 value.
+ */
+export const isCryptoSha3 = (f: SimdFields): boolean => {
+  if (f.high8 !== 0xce) return false;
+  // EOR3: bit21=0, size=0, bit15=0
+  if (f.bit21 === 0 && f.size === 0 && f.bit15 === 0) return true;
+  // BCAX: bit21=1, size=0, bit15=0
+  if (f.bit21 === 1 && f.size === 0 && f.bit15 === 0) return true;
+  // RAX1: bit21=1, size=2, op15_10=000110
+  if (f.bit21 === 1 && f.size === 2 && ((f.insn >>> 10) & 0b111111) === 0b000110) return true;
+  // XAR: bit21=0, size=2 (bit15 is part of imm6, not a fixed discriminator)
+  if (f.bit21 === 0 && f.size === 2) return true;
+  return false;
+};
 
 /**
  * PMULL/PMULL2 (polynomial multiply long). PMULL has U=1 always.
@@ -305,6 +345,8 @@ export type SimdFpClass =
   | 'crypto-sha2'
   | 'crypto-sm3-sm4'
   | 'crypto-sm4e'
+  | 'crypto-sha512'
+  | 'crypto-sha3-keccak'
   | 'pmull'
   | 'scalar-fp'
   | 'neon-three-same'
@@ -326,6 +368,8 @@ export function classifySimdFp(f: SimdFields): SimdFpClass | null {
   if (isCryptoAes(f)) return 'crypto-aes';
   if (isCryptoSha3Reg(f)) return 'crypto-sha3';
   if (isCryptoSha2Reg(f)) return 'crypto-sha2';
+  if (isCryptoSha512(f)) return 'crypto-sha512';
+  if (isCryptoSha3(f)) return 'crypto-sha3-keccak';
   if (isCryptoSm3Sm4(f)) return 'crypto-sm3-sm4';
   if (isCryptoSm4e(f)) return 'crypto-sm4e';
   if (isPmull(f)) return 'pmull';
