@@ -246,4 +246,83 @@ export const workflowToolDefinitions: Tool[] = [
       )
       .query(),
   ),
+  tool('workflow_conditional_step', (t) =>
+    t
+      .desc(
+        'Evaluate a condition against previous workflow step results and execute one of two tool branches. ' +
+          'Supports built-in predicates: always_true, always_false, any_step_failed, ' +
+          'success_rate_gte_N (N=0-100), variable_equals_KEY_VALUE, variable_contains_KEY_VALUE, ' +
+          'variable_matches_KEY_REGEX. When stepResults is omitted, reads from the last successful ' +
+          'workflow run for the given workflowId.',
+      )
+      .string(
+        'predicateId',
+        'Predicate identifier. Built-in: always_true, always_false, any_step_failed, ' +
+          'success_rate_gte_<0-100>, variable_equals_<KEY>_<VALUE>, variable_contains_<KEY>_<VALUE>, ' +
+          'variable_matches_<KEY>_<REGEX>.',
+      )
+      .object(
+        'whenTrue',
+        {
+          tool: { type: 'string', description: 'Tool name to invoke when predicate is true' },
+          args: {
+            type: 'object',
+            additionalProperties: true,
+            description: 'Optional args to pass to the whenTrue tool (default: {})',
+          },
+        },
+        'Tool to execute when the predicate evaluates to true.',
+        { required: ['tool'] },
+      )
+      .object(
+        'whenFalse',
+        {
+          tool: { type: 'string', description: 'Tool name to invoke when predicate is false' },
+          args: {
+            type: 'object',
+            additionalProperties: true,
+            description: 'Optional args to pass to the whenFalse tool (default: {})',
+          },
+        },
+        'Optional tool to execute when the predicate evaluates to false. When omitted and the ' +
+          'predicate is false, the step is skipped silently.',
+        { required: ['tool'] },
+      )
+      .prop('stepResults', {
+        type: 'object',
+        additionalProperties: true,
+        description:
+          'Optional map of stepId → result to evaluate the predicate against. When omitted, ' +
+          'fetched from the last successful workflow run for workflowId.',
+      })
+      .string(
+        'workflowId',
+        'Workflow or macro id used to look up the last successful run stepResults when ' +
+          'stepResults is not provided.',
+      )
+      .requiredOpenWorld('predicateId', 'whenTrue'),
+  ),
+  tool('workflow_retry_policy', (t) =>
+    t
+      .desc(
+        'Configure a global retry policy with exponential backoff for workflow steps. The stored ' +
+          'policy is applied by run_extension_workflow / run_macro when individual nodes lack an ' +
+          'explicit retry config. Returns the normalised policy.',
+      )
+      .number('maxAttempts', 'Maximum number of attempts including the initial try (1-10)', {
+        minimum: 1,
+        maximum: 10,
+      })
+      .number('backoffMs', 'Initial backoff delay in milliseconds (0-60000)', {
+        default: 0,
+        minimum: 0,
+        maximum: 60000,
+      })
+      .number(
+        'multiplier',
+        'Exponential backoff multiplier: each retry waits backoffMs * multiplier^(attempt-1) ms (1-10)',
+        { default: 2, minimum: 1, maximum: 10 },
+      )
+      .required('maxAttempts', 'backoffMs'),
+  ),
 ];

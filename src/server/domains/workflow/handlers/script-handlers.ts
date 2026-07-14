@@ -5,6 +5,7 @@
 import { logger } from '@utils/logger';
 import { argNumber, argObject } from '@server/domains/shared/parse-args';
 import type { WorkflowSharedState } from './shared';
+import type { RetryPolicy } from '@server/workflows/WorkflowContract';
 import {
   WORKFLOW_CONSTANTS,
   getOptionalString,
@@ -148,7 +149,7 @@ export class ScriptHandlers {
     });
   }
 
-  async handleRunExtensionWorkflow(args: Record<string, unknown>) {
+  async handleRunExtensionWorkflow(args: Record<string, unknown>, retryPolicy?: RetryPolicy) {
     const ctx = this.state.deps.serverContext;
     if (!ctx) {
       return jsonTextResult({
@@ -201,6 +202,7 @@ export class ScriptHandlers {
         config,
         nodeInputOverrides,
         timeoutMs,
+        retryPolicy,
       });
       return jsonTextResult({ success: true, ...result });
     } catch (error) {

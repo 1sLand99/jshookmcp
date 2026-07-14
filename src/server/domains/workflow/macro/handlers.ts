@@ -14,6 +14,7 @@ import { getProjectRoot } from '@utils/outputPaths';
 import type { MCPServerContext } from '@server/MCPServer.context';
 import type { MacroDefinition } from '@server/macros/types';
 import { handleSafe, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
+import { getGlobalRetryPolicy } from '../retry-policy';
 
 export class MacroToolHandlers {
   private readonly runner: MacroRunner;
@@ -126,7 +127,7 @@ export class MacroToolHandlers {
       };
     }
 
-    const result = await this.runner.execute(def, inputOverrides);
+    const result = await this.runner.execute(def, inputOverrides, getGlobalRetryPolicy());
     const report = this.runner.formatProgressReport(result);
     return {
       content: [{ type: 'text', text: report }],

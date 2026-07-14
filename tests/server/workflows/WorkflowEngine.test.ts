@@ -26,6 +26,7 @@ describe('workflows/WorkflowEngine', () => {
   beforeEach(() => {
     vi.useRealTimers();
     vi.resetModules();
+    vi.restoreAllMocks();
     vi.clearAllMocks();
   });
 
@@ -71,6 +72,7 @@ describe('workflows/WorkflowEngine', () => {
 
   it('retries failed tool nodes until they succeed', async () => {
     vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
     const { executeExtensionWorkflow } = await import('@server/workflows/WorkflowEngine');
     const executeToolWithTracking = vi
       .fn()
@@ -94,11 +96,48 @@ describe('workflows/WorkflowEngine', () => {
     );
 
     const promise = executeExtensionWorkflow(ctx as never, workflow);
-    await vi.advanceTimersByTimeAsync(60);
+    await vi.advanceTimersByTimeAsync(50);
     const result = await promise;
 
     expect(executeToolWithTracking).toHaveBeenCalledTimes(2);
     expect(result.stepResults['retry-step']).toEqual(successResponse({ ok: true }));
+  });
+
+  it('uses exponential backoff from the base delay with 0.5-1.5 jitter', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const { executeExtensionWorkflow } = await import('@server/workflows/WorkflowEngine');
+    const executeToolWithTracking = vi
+      .fn()
+      .mockResolvedValueOnce({
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'first' }) }],
+      })
+      .mockResolvedValueOnce({
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'second' }) }],
+      })
+      .mockResolvedValueOnce(successResponse({ ok: true }));
+    const workflow = defineWorkflow('wf-backoff', 'Backoff Workflow', (w) =>
+      w.buildGraph(() =>
+        toolStep('retry-step', 'page_click', {
+          retry: { maxAttempts: 3, backoffMs: 100, multiplier: 2 },
+        }),
+      ),
+    );
+
+    const promise = executeExtensionWorkflow(
+      { baseTier: 'workflow', config: {}, executeToolWithTracking } as never,
+      workflow,
+    );
+    await vi.advanceTimersByTimeAsync(99);
+    expect(executeToolWithTracking).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(executeToolWithTracking).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(199);
+    expect(executeToolWithTracking).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    await promise;
+
+    expect(executeToolWithTracking).toHaveBeenCalledTimes(3);
   });
 
   it('captures parallel step failures when failFast is disabled', async () => {

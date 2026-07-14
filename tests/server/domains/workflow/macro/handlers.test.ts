@@ -1,11 +1,19 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+const { mockMacroExecute } = vi.hoisted(() => ({
+  mockMacroExecute: vi.fn(async (_def?: unknown, _input?: unknown, _policy?: unknown) => ({
+    ok: true,
+    durationMs: 100,
+  })),
+}));
+
 import { MacroToolHandlers } from '@server/domains/workflow/macro/handlers';
+import { setGlobalRetryPolicy } from '@server/domains/workflow/retry-policy';
 
 vi.mock('@server/macros/MacroRunner', () => {
   return {
     MacroRunner: class {
-      async execute() {
-        return { ok: true, durationMs: 100 };
+      async execute(def: unknown, input: unknown, policy: unknown) {
+        return mockMacroExecute(def, input, policy);
       }
       formatProgressReport() {
         return 'Mocked Report';
@@ -43,6 +51,7 @@ describe('MacroToolHandlers', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockMacroExecute.mockResolvedValue({ ok: true, durationMs: 100 });
     const map = new Map<string, any>();
     const ctx: any = {
       getDomainInstance: (key: string) => map.get(key),
@@ -113,6 +122,19 @@ describe('MacroToolHandlers', () => {
       // First call list to ensure loaded (though handleRunMacro also loads)
       const result = (await handlers.handleRunMacro({ macroId: 'custom_macro' })) as any;
       expect(result.content[0].text).toBe('Mocked Report');
+    });
+
+    it('passes the global retry policy into macro execution', async () => {
+      const policy = { maxAttempts: 4, backoffMs: 250, multiplier: 3 };
+      setGlobalRetryPolicy(policy);
+
+      await handlers.handleRunMacro({ macroId: 'custom_macro' });
+
+      expect(mockMacroExecute).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'custom_macro' }),
+        undefined,
+        policy,
+      );
     });
   });
 });

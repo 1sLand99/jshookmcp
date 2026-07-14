@@ -86,6 +86,7 @@ async function runToolNode(
   node: ToolNode,
   overrides: ExecuteWorkflowOptions['nodeInputOverrides'],
   executionContext: WorkflowEngineExecutionContext,
+  globalRetry?: ExecuteWorkflowOptions['retryPolicy'],
 ): Promise<unknown> {
   const fromResolved = node.inputFrom
     ? resolveInputFrom(node.inputFrom, executionContext.dataBus)
@@ -114,13 +115,12 @@ async function runToolNode(
     return response;
   };
 
-  const retry = node.retry;
+  const retry = node.retry ?? globalRetry;
   if (!retry) {
     return runAttempt();
   }
 
   let attempt = 0;
-  let backoffMs = retry.backoffMs;
   while (attempt < retry.maxAttempts) {
     try {
       return await runAttempt();
@@ -129,8 +129,11 @@ async function runToolNode(
       if (attempt >= retry.maxAttempts) {
         throw error;
       }
-      await sleep(backoffMs);
-      backoffMs = Math.max(0, Math.floor(backoffMs * (retry.multiplier ?? 1)));
+      // attempt is the one-based retry number here.
+      const jittered = Math.floor(
+        retry.backoffMs * Math.pow(retry.multiplier ?? 1, attempt - 1) * (0.5 + Math.random()),
+      );
+      await sleep(jittered);
     }
   }
 
@@ -193,7 +196,13 @@ async function executeNode(
   let result: unknown;
   switch (node.kind) {
     case 'tool':
-      result = await runToolNode(ctx, node, options.nodeInputOverrides, executionContext);
+      result = await runToolNode(
+        ctx,
+        node,
+        options.nodeInputOverrides,
+        executionContext,
+        options.retryPolicy,
+      );
       break;
     case 'sequence': {
       const sequenceNode = node as SequenceNode;

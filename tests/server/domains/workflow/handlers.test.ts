@@ -340,6 +340,37 @@ describe('WorkflowHandlers', () => {
     expect(body.stepResults['demo-node']).toBeDefined();
   });
 
+  it('applies the stored retry policy to extension workflow execution', async () => {
+    const workflow: WorkflowContract = defineWorkflow('workflow.retry.v1', 'Retry Workflow', (w) =>
+      w.buildGraph(() => toolStep('retry-node', 'flaky_tool')),
+    );
+    deps.serverContext.extensionWorkflowsById.set('workflow.retry.v1', {
+      id: 'workflow.retry.v1',
+      displayName: 'Retry Workflow',
+      source: 'fixtures/retry.workflow.ts',
+    });
+    deps.serverContext.extensionWorkflowRuntimeById.set('workflow.retry.v1', {
+      workflow,
+      source: 'fixtures/retry.workflow.ts',
+    });
+    (deps.serverContext.executeToolWithTracking as any)
+      .mockResolvedValueOnce({
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'retry me' }) }],
+      })
+      .mockResolvedValueOnce({
+        content: [{ type: 'text', text: JSON.stringify({ success: true, value: 'recovered' }) }],
+      });
+
+    await handlers.handleWorkflowRetryPolicy({ maxAttempts: 2, backoffMs: 0, multiplier: 2 });
+    const body = parseJson<RunWorkflowResponse>(
+      await handlers.handleRunExtensionWorkflow({ workflowId: 'workflow.retry.v1' }),
+    );
+
+    expect(body.success).toBe(true);
+    expect(deps.serverContext.executeToolWithTracking).toHaveBeenCalledTimes(2);
+    expect(body.stepResults['retry-node']).toBeDefined();
+  });
+
   it('runs reverse_session through the workflow server context executor', async () => {
     (deps.serverContext.executeToolWithTracking as any).mockResolvedValue({
       content: [

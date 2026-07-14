@@ -31,6 +31,8 @@ const registrations = defineMethodRegistrations<
     { tool: 'run_extension_workflow', method: 'handleRunExtensionWorkflowTool' },
     { tool: 'reverse_session', method: 'handleReverseSessionTool', profiles: ['full'] },
     { tool: 'workflow_run_inspect', method: 'handleWorkflowRunInspectTool' },
+    { tool: 'workflow_conditional_step', method: 'handleWorkflowConditionalStepTool' },
+    { tool: 'workflow_retry_policy', method: 'handleWorkflowRetryPolicyTool' },
   ],
 });
 const macroRegistrations = defineMethodRegistrations<M, (typeof macroTools)[number]['name']>({

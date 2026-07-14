@@ -54,6 +54,12 @@ describe('Workflow Domain Manifest', () => {
     vi.spyOn(WorkflowHandlers.prototype, 'handleWorkflowRunInspect').mockResolvedValue(
       undefined as any,
     );
+    vi.spyOn(WorkflowHandlers.prototype, 'handleWorkflowConditionalStep').mockResolvedValue(
+      undefined as any,
+    );
+    vi.spyOn(WorkflowHandlers.prototype, 'handleWorkflowRetryPolicy').mockResolvedValue(
+      undefined as any,
+    );
     vi.spyOn(MacroToolHandlers.prototype, 'handleRunMacro').mockResolvedValue(undefined as any);
     vi.spyOn(MacroToolHandlers.prototype, 'handleListMacros').mockResolvedValue(undefined as any);
 
@@ -105,6 +111,8 @@ describe('Workflow Domain Manifest', () => {
           run_extension_workflow: 'handleRunExtensionWorkflow',
           reverse_session: 'handleReverseSession',
           workflow_run_inspect: 'handleWorkflowRunInspect',
+          workflow_conditional_step: 'handleWorkflowConditionalStep',
+          workflow_retry_policy: 'handleWorkflowRetryPolicy',
           run_macro: 'handleRunMacro',
           list_macros: 'handleListMacros',
         };

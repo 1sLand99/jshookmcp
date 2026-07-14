@@ -20,6 +20,7 @@ import {
   type WorkflowNode,
 } from '@server/workflows/WorkflowContract';
 import { executeExtensionWorkflow } from '@server/workflows/WorkflowEngine';
+import type { RetryPolicy } from '@server/workflows/WorkflowContract';
 import type { MCPServerContext } from '@server/MCPServer.context';
 import type {
   MacroDefinition,
@@ -219,6 +220,7 @@ export class MacroRunner {
   async execute(
     def: MacroDefinition,
     inputOverrides?: Record<string, Record<string, unknown>>,
+    retryPolicy?: RetryPolicy,
   ): Promise<MacroResult> {
     const workflow = this.buildWorkflowFromDefinition(def);
     const startMs = Date.now();
@@ -226,6 +228,7 @@ export class MacroRunner {
     try {
       const result = await executeExtensionWorkflow(this.ctx, workflow, {
         nodeInputOverrides: inputOverrides,
+        retryPolicy,
       });
 
       // Build progress from spans

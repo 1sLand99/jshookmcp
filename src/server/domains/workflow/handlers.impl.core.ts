@@ -7,22 +7,40 @@
 
 import type { WorkflowHandlersDeps } from './handlers/shared';
 import { handleSafe, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
-import { createWorkflowSharedState, getOptionalString, jsonTextResult } from './handlers/shared';
+import {
+  createWorkflowSharedState,
+  getOptionalString,
+  getOptionalRecord,
+  jsonTextResult,
+} from './handlers/shared';
 import { ScriptHandlers } from './handlers/script-handlers';
 import { ApiHandlers } from './handlers/api-handlers';
 import { AccountHandlers } from './handlers/account-handlers';
 import { ReverseSessionHandlers } from '@server/reverse-session/ReverseSessionHandlers';
 import { getWorkflowRunStore } from '@server/workflows/WorkflowEngine';
+import { evaluatePredicate } from '@server/workflows/WorkflowPredicates';
+import type { BranchNode } from '@server/workflows/WorkflowContract';
+import type { InternalExecutionContext } from '@server/workflows/WorkflowEngine.types';
+import type { RetryPolicy } from '@server/workflows/WorkflowContract';
+import { getGlobalRetryPolicy, setGlobalRetryPolicy } from './retry-policy';
 
 export type { WorkflowHandlersDeps } from './handlers/shared';
 
 export class WorkflowHandlers {
+  private readonly deps: WorkflowHandlersDeps;
   private scripts: ScriptHandlers;
   private api: ApiHandlers;
   private account: AccountHandlers;
   private reverseSession: ReverseSessionHandlers;
+  private retryPolicy: RetryPolicy | null = null;
+
+  /** Exposed for tests — returns the stored retry policy (or null). */
+  getStoredRetryPolicy(): RetryPolicy | null {
+    return this.retryPolicy ?? getGlobalRetryPolicy() ?? null;
+  }
 
   constructor(deps: WorkflowHandlersDeps) {
+    this.deps = deps;
     const state = createWorkflowSharedState(deps);
     this.scripts = new ScriptHandlers(state);
     this.api = new ApiHandlers(state);
@@ -66,6 +84,14 @@ export class WorkflowHandlers {
     return handleSafe(async () => await this.handleWorkflowRunInspect(args));
   }
 
+  async handleWorkflowConditionalStepTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleWorkflowConditionalStep(args));
+  }
+
+  async handleWorkflowRetryPolicyTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleWorkflowRetryPolicy(args));
+  }
+
   handlePageScriptRegister(args: Record<string, unknown>) {
     return this.scripts.handlePageScriptRegister(args);
   }
@@ -76,7 +102,7 @@ export class WorkflowHandlers {
     return this.scripts.handleListExtensionWorkflows();
   }
   handleRunExtensionWorkflow(args: Record<string, unknown>) {
-    return this.scripts.handleRunExtensionWorkflow(args);
+    return this.scripts.handleRunExtensionWorkflow(args, getGlobalRetryPolicy());
   }
   handleApiProbeBatch(args: Record<string, unknown>) {
     return this.api.handleApiProbeBatch(args);
@@ -135,5 +161,172 @@ export class WorkflowHandlers {
     const workflowId = getOptionalString(args.workflowId);
     const runs = store.listRuns(workflowId);
     return jsonTextResult({ success: true, count: runs.length, runs });
+  }
+
+  /**
+   * Evaluate a predicate against step results (from args, or from the last successful
+   * workflow run) and execute the appropriate tool branch.
+   */
+  async handleWorkflowConditionalStep(args: Record<string, unknown>): Promise<ToolResponse> {
+    const predicateId = getOptionalString(args.predicateId);
+    if (!predicateId) {
+      return jsonTextResult({ success: false, error: 'predicateId is required' });
+    }
+
+    const whenTrue = getOptionalRecord(args.whenTrue);
+    if (!whenTrue) {
+      return jsonTextResult({ success: false, error: 'whenTrue is required' });
+    }
+    const whenTrueTool = getOptionalString(whenTrue.tool);
+    if (!whenTrueTool) {
+      return jsonTextResult({ success: false, error: 'whenTrue.tool is required' });
+    }
+    const whenTrueArgs =
+      (typeof whenTrue.args === 'object' && whenTrue.args !== null && !Array.isArray(whenTrue.args)
+        ? (whenTrue.args as Record<string, unknown>)
+        : undefined) ?? {};
+
+    const whenFalse = getOptionalRecord(args.whenFalse);
+    const whenFalseTool = whenFalse ? getOptionalString(whenFalse.tool) : undefined;
+    const whenFalseArgs =
+      whenFalse &&
+      typeof whenFalse.args === 'object' &&
+      whenFalse.args !== null &&
+      !Array.isArray(whenFalse.args)
+        ? (whenFalse.args as Record<string, unknown>)
+        : {};
+
+    // Resolve stepResults: from args, or from last workflow success
+    let stepResults: Record<string, unknown> | undefined =
+      typeof args.stepResults === 'object' &&
+      args.stepResults !== null &&
+      !Array.isArray(args.stepResults)
+        ? (args.stepResults as Record<string, unknown>)
+        : undefined;
+
+    if (!stepResults) {
+      const workflowId = getOptionalString(args.workflowId);
+      if (workflowId) {
+        const store = getWorkflowRunStore();
+        const lastSuccess = store.getLastSuccess(workflowId);
+        if (lastSuccess?.stepResults) {
+          stepResults = lastSuccess.stepResults;
+        }
+      }
+      if (!stepResults) {
+        stepResults = {};
+      }
+    }
+
+    // Build a minimal execution context for evaluatePredicate
+    const stepResultsMap = new Map(Object.entries(stepResults));
+    const stubCtx: InternalExecutionContext = {
+      workflowRunId: 'conditional-step',
+      profile: 'workflow',
+      stepResults: stepResultsMap,
+      dataBus: null as unknown as InternalExecutionContext['dataBus'],
+      invokeTool: () => Promise.resolve(undefined),
+      emitSpan: () => {},
+      emitMetric: () => {},
+      getConfig: <T>(_path: string, fallback?: T) => fallback as T,
+    };
+
+    // Build a synthetic BranchNode for evaluatePredicate
+    const syntheticBranch: BranchNode = {
+      kind: 'branch',
+      id: 'conditional-step',
+      predicateId,
+      whenTrue: { kind: 'tool', id: 'dummy-true', toolName: 'dummy' },
+    };
+
+    let predicateResult: boolean;
+    try {
+      predicateResult = await evaluatePredicate(syntheticBranch, stubCtx);
+    } catch (error) {
+      return jsonTextResult({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    // Execute the appropriate branch
+    if (predicateResult) {
+      try {
+        const result = await this.deps.serverContext!.executeToolWithTracking(
+          whenTrueTool,
+          whenTrueArgs,
+        );
+        return jsonTextResult({
+          success: true,
+          predicateId,
+          branch: 'whenTrue',
+          result,
+        });
+      } catch (error) {
+        return jsonTextResult({
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    if (whenFalseTool) {
+      try {
+        const result = await this.deps.serverContext!.executeToolWithTracking(
+          whenFalseTool,
+          whenFalseArgs,
+        );
+        return jsonTextResult({
+          success: true,
+          predicateId,
+          branch: 'whenFalse',
+          result,
+        });
+      } catch (error) {
+        return jsonTextResult({
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return jsonTextResult({
+      success: true,
+      predicateId,
+      branch: 'skipped',
+      reason: 'Predicate evaluated to false and no whenFalse branch was provided',
+    });
+  }
+
+  /**
+   * Store a global retry policy with exponential backoff. The stored policy
+   * serves as a default that run_extension_workflow / run_macro can apply
+   * when individual nodes lack an explicit retry config.
+   */
+  async handleWorkflowRetryPolicy(args: Record<string, unknown>): Promise<ToolResponse> {
+    const maxAttemptsRaw = args.maxAttempts;
+    if (maxAttemptsRaw === undefined || maxAttemptsRaw === null) {
+      return jsonTextResult({ success: false, error: 'maxAttempts is required' });
+    }
+    const maxAttempts = Math.max(1, Math.min(10, Math.trunc(Number(maxAttemptsRaw)) || 1));
+
+    const backoffMsRaw = args.backoffMs;
+    if (backoffMsRaw === undefined || backoffMsRaw === null) {
+      return jsonTextResult({ success: false, error: 'backoffMs is required' });
+    }
+    const backoffMs = Math.max(0, Math.min(60_000, Math.trunc(Number(backoffMsRaw)) || 0));
+
+    const multiplierRaw = args.multiplier;
+    const multiplier =
+      multiplierRaw !== undefined && multiplierRaw !== null
+        ? Math.max(1, Math.min(10, Number(multiplierRaw) || 1))
+        : 2;
+
+    const policy: RetryPolicy = { maxAttempts, backoffMs, multiplier };
+
+    this.retryPolicy = policy;
+    setGlobalRetryPolicy(policy);
+
+    return jsonTextResult({ success: true, stored: true, policy });
   }
 }

@@ -1,4 +1,4 @@
-import type { WorkflowExecutionContext } from '@server/workflows/WorkflowContract';
+import type { RetryPolicy, WorkflowExecutionContext } from '@server/workflows/WorkflowContract';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -22,6 +22,8 @@ export interface ExecuteWorkflowOptions {
   preflightMode?: 'warn' | 'strict' | 'skip';
   nodeInputOverrides?: Record<string, Record<string, unknown>>;
   timeoutMs?: number;
+  /** Global retry policy used as fallback when a tool node has no per-node retry config. */
+  retryPolicy?: RetryPolicy;
 }
 
 export interface PreflightWarning {
