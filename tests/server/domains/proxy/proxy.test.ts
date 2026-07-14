@@ -71,13 +71,18 @@ type FakeBuilder = {
   thenReply: ReturnType<typeof vi.fn>;
 };
 
+let fakeEndpointSeq = 0;
 function installFakeRuleServer(handlers: ProxyHandlers) {
+  const endpoint = () => ({
+    id: `fake-endpoint-${++fakeEndpointSeq}`,
+    dispose: vi.fn(async () => undefined),
+  });
   const builder: FakeBuilder = {
     delay: vi.fn((): FakeBuilder => builder),
-    thenPassThrough: vi.fn(async () => ({ id: 'fake-endpoint' })),
-    thenForwardTo: vi.fn(async () => ({ id: 'fake-endpoint' })),
-    thenCloseConnection: vi.fn(async () => ({ id: 'fake-endpoint' })),
-    thenReply: vi.fn(async () => ({ id: 'fake-endpoint' })),
+    thenPassThrough: vi.fn(async () => endpoint()),
+    thenForwardTo: vi.fn(async () => endpoint()),
+    thenCloseConnection: vi.fn(async () => endpoint()),
+    thenReply: vi.fn(async () => endpoint()),
   };
   const server = {
     forGet: vi.fn(() => builder),
@@ -86,6 +91,7 @@ function installFakeRuleServer(handlers: ProxyHandlers) {
     forDelete: vi.fn(() => builder),
     forMethod: vi.fn(() => builder),
     forAnyRequest: vi.fn(() => builder),
+    reset: vi.fn(() => undefined),
     stop: vi.fn(async () => undefined),
   };
   (handlers as any).server = server;
@@ -1043,5 +1049,219 @@ describe('ProxyHandlers (Integration)', () => {
     } finally {
       (handlers as any).server = null;
     }
+  });
+
+  it('removes a single rule by endpointId without resetting listeners', async () => {
+    const { server } = installFakeRuleServer(handlers);
+
+    // Add two rules
+    const r1 = parseResponse(
+      await handlers.handleProxyAddRule({
+        action: 'block',
+        method: 'GET',
+        urlPattern: '/keep/',
+      }),
+    );
+    const r2 = parseResponse(
+      await handlers.handleProxyAddRule({
+        action: 'mock_response',
+        method: 'POST',
+        urlPattern: '/remove/',
+        mockStatus: 201,
+        mockBody: '{}',
+      }),
+    );
+
+    expect(r1.success).toBe(true);
+    expect(r2.success).toBe(true);
+
+    // Remove the second rule
+    const removeRes = await handlers.handleProxyRemoveRule({ endpointId: r2.endpointId });
+    const removeData = parseResponse(removeRes);
+    expect(removeData.success).toBe(true);
+    expect(removeData.endpointId).toBe(r2.endpointId);
+    expect(removeData.removedRule).toMatchObject({
+      action: 'mock_response',
+      method: 'POST',
+      urlPattern: '/remove/',
+    });
+
+    // Verify only the first rule remains (endpointId may change due to re-registration)
+    const listData = parseResponse(await handlers.handleProxyListRules({}));
+    expect(listData.count).toBe(1);
+    expect(listData.rules[0]).toMatchObject({
+      action: 'block',
+      method: 'GET',
+      urlPattern: '/keep/',
+    });
+    expect(server.reset).not.toHaveBeenCalled();
+  });
+
+  it('errors on proxy_remove_rule when proxy is not running', async () => {
+    const result = await handlers.handleProxyRemoveRule({ endpointId: 'nonexistent' });
+    const data = parseAnyResponse(result);
+    expect(result.isError).toBe(true);
+    expect(data.error).toContain('Proxy must be running');
+  });
+
+  it('errors on proxy_remove_rule when endpointId is not found', async () => {
+    installFakeRuleServer(handlers);
+    const result = await handlers.handleProxyRemoveRule({ endpointId: 'nonexistent' });
+    const data = parseAnyResponse(result);
+    expect(result.isError).toBe(true);
+    expect(data.error).toContain('Rule not found');
+  });
+
+  it('errors on proxy_remove_rule when endpointId is missing', async () => {
+    installFakeRuleServer(handlers);
+    const result = await handlers.handleProxyRemoveRule({});
+    const data = parseAnyResponse(result);
+    expect(result.isError).toBe(true);
+    expect(data.error).toContain('endpointId is required');
+  });
+
+  it('retains the rule record when endpoint disposal fails', async () => {
+    const dispose = vi.fn(async () => {
+      throw new Error('dispose explosion');
+    });
+    const badServer = {
+      forGet: vi.fn(() => ({
+        thenPassThrough: vi.fn(async () => ({ id: 'rollback-ep' })),
+        thenCloseConnection: vi.fn(async () => ({ id: 'rollback-ep', dispose })),
+        thenReply: vi.fn(async () => ({ id: 'rollback-ep' })),
+        delay: vi.fn(function (this: any) {
+          return this;
+        }),
+      })),
+      stop: vi.fn(async () => undefined),
+    };
+    (handlers as any).server = badServer;
+
+    // Add a rule
+    const addRes = parseResponse(
+      await handlers.handleProxyAddRule({
+        action: 'block',
+        method: 'GET',
+        urlPattern: '/rollback/',
+      }),
+    );
+    expect(addRes.success).toBe(true);
+
+    const removeResult = await handlers.handleProxyRemoveRule({ endpointId: addRes.endpointId });
+    const removeData = parseAnyResponse(removeResult);
+    expect(removeResult.isError).toBe(true);
+    expect(removeData.error).toContain('Failed to remove rule');
+    expect(removeData.error).toContain('dispose explosion');
+
+    // Verify the rule is still in the list (rolled back)
+    const listData = parseResponse(await handlers.handleProxyListRules({}));
+    expect(listData.count).toBe(1);
+  });
+
+  it('validates chainUpstream.proxyUrl is required', async () => {
+    installFakeRuleServer(handlers);
+    const result = await handlers.handleProxyAddRule({
+      action: 'forward',
+      method: 'GET',
+      urlPattern: '/chain-test/',
+      forwardOptions: {
+        chainUpstream: { noProxy: ['localhost'] },
+      },
+    });
+    const data = parseAnyResponse(result);
+    expect(result.isError).toBe(true);
+    expect(data.error).toContain('proxyUrl is required');
+  });
+
+  it('validates chainUpstream proxyUrl is a string', async () => {
+    installFakeRuleServer(handlers);
+    const result = await handlers.handleProxyAddRule({
+      action: 'forward',
+      method: 'GET',
+      urlPattern: '/chain-test/',
+      forwardOptions: {
+        chainUpstream: { proxyUrl: 123 },
+      },
+    });
+    const data = parseAnyResponse(result);
+    expect(result.isError).toBe(true);
+    expect(data.error).toContain('proxyUrl must be a string');
+  });
+
+  it('parses valid chainUpstream and records it on the rule', async () => {
+    const { builder } = installFakeRuleServer(handlers);
+    const data = parseResponse(
+      await handlers.handleProxyAddRule({
+        action: 'forward',
+        method: 'GET',
+        urlPattern: '/chain-ok/',
+        forwardOptions: {
+          chainUpstream: {
+            proxyUrl: 'http://corp-proxy:3128',
+            noProxy: ['localhost', '*.internal'],
+          },
+        },
+      }),
+    );
+    expect(data.success).toBe(true);
+    expect(builder.thenPassThrough).toHaveBeenCalledOnce();
+    const opts = builder.thenPassThrough.mock.calls[0]![0] as Record<string, unknown>;
+    expect(opts['proxyConfig']).toMatchObject({
+      proxyUrl: 'http://corp-proxy:3128',
+      noProxy: ['localhost', '*.internal'],
+    });
+    expect(data.rule.forwardOptions).toMatchObject({
+      chainUpstream: {
+        proxyUrl: 'http://corp-proxy:3128',
+        noProxy: ['localhost', '*.internal'],
+      },
+    });
+  });
+
+  it('validates callbackScript.path is required', async () => {
+    installFakeRuleServer(handlers);
+    const result = await handlers.handleProxyAddRule({
+      action: 'forward',
+      method: 'GET',
+      urlPattern: '/cb-test/',
+      forwardOptions: {
+        callbackScript: {} as any,
+      },
+    });
+    const data = parseAnyResponse(result);
+    expect(result.isError).toBe(true);
+    expect(data.error).toContain('path must be a non-empty string');
+  });
+
+  it('rejects callbackScript combined with transformRequest (mutual exclusivity)', async () => {
+    installFakeRuleServer(handlers);
+    const result = await handlers.handleProxyAddRule({
+      action: 'forward',
+      method: 'GET',
+      urlPattern: '/cb-transform/',
+      forwardOptions: {
+        transformRequest: { replaceMethod: 'POST' },
+        callbackScript: { path: '/scripts/callback.mjs' },
+      },
+    });
+    const data = parseAnyResponse(result);
+    expect(result.isError).toBe(true);
+    expect(data.error).toContain('mutually exclusive');
+  });
+
+  it('rejects callbackScript combined with transformResponse (mutual exclusivity)', async () => {
+    installFakeRuleServer(handlers);
+    const result = await handlers.handleProxyAddRule({
+      action: 'forward',
+      method: 'GET',
+      urlPattern: '/cb-transform/',
+      forwardOptions: {
+        transformResponse: { replaceStatus: 500 },
+        callbackScript: { path: '/scripts/callback.mjs' },
+      },
+    });
+    const data = parseAnyResponse(result);
+    expect(result.isError).toBe(true);
+    expect(data.error).toContain('mutually exclusive');
   });
 });

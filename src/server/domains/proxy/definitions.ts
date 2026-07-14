@@ -142,7 +142,54 @@ export const PROXY_TOOLS: Tool[] = [
         },
         'Forward-only rewrite options. Only honored when action=forward; ignored otherwise. Omit for plain passthrough.',
       )
+      .object(
+        'chainUpstream',
+        {
+          proxyUrl: {
+            type: 'string',
+            description:
+              'Upstream proxy URL to forward traffic through (e.g., http://proxy:8080, socks5://proxy:1080).',
+          },
+          noProxy: {
+            type: 'array',
+            description:
+              'Hostnames whose traffic should bypass the upstream proxy (e.g., localhost, *.internal).',
+            items: { type: 'string' },
+          },
+          trustedCAs: {
+            type: 'array',
+            description: 'CA certificates trusted for TLS connections to the upstream proxy.',
+            items: {
+              type: 'object',
+              properties: {
+                cert: { type: 'string', description: 'PEM certificate string.' },
+                certPath: { type: 'string', description: 'Path to a PEM certificate file.' },
+              },
+            },
+          },
+        },
+        'Optional upstream proxy to chain through. Forward/reply traffic is routed via this proxy before reaching the target.',
+      )
+      .object(
+        'callbackScript',
+        {
+          path: {
+            type: 'string',
+            description:
+              'Path to a JS module exporting beforeRequest and/or beforeResponse functions.',
+          },
+        },
+        'Path to a callback script module. The script must export beforeRequest(req) and/or beforeResponse(res, req) functions. Mutually exclusive with transformRequest/transformResponse.',
+      )
       .required('action'),
+  ),
+  tool('proxy_remove_rule', (t) =>
+    t
+      .desc(
+        'Remove a single proxy interception rule by endpointId. Returns the removed rule record.',
+      )
+      .string('endpointId', 'The endpointId returned when the rule was added.')
+      .required('endpointId'),
   ),
   tool('proxy_list_rules', (t) =>
     t.desc('List active proxy interception rules tracked by this handler.').query(),

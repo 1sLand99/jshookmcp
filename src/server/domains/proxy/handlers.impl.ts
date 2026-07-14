@@ -82,9 +82,23 @@ interface ForwardTransformResponse {
  * modes (`beforeRequest`/`beforeResponse`) are intentionally not exposed
  * (MCP cannot transport functions; lesson #51 honest boundary).
  */
+interface ChainUpstream {
+  proxyUrl?: string;
+  noProxy?: string[];
+  trustedCAs?: Array<{ cert?: string; certPath?: string }>;
+}
+
+interface CallbackScript {
+  path: string;
+}
+
 interface ForwardOptions {
   transformRequest?: ForwardTransformRequest;
   transformResponse?: ForwardTransformResponse;
+  /** Upstream proxy to chain through (e.g., corporate proxy or SOCKS5 relay). */
+  chainUpstream?: ChainUpstream;
+  /** Path to a JS module exporting beforeRequest(req) and/or beforeResponse(res, req). Mutually exclusive with transformRequest/transformResponse. */
+  callbackScript?: CallbackScript;
 }
 
 interface ProxyRuleRecord {
@@ -93,6 +107,7 @@ interface ProxyRuleRecord {
   method: string;
   urlPattern: string;
   mockStatus?: number;
+  mockBody?: string;
   forwardOptions?: ForwardOptions;
   targetUrl?: string;
   delayMs?: number;
@@ -406,6 +421,62 @@ function buildForwardOptions(args: Record<string, unknown>): ForwardOptions | un
       transformResponse as Record<string, unknown>,
     );
   }
+
+  // Parse chainUpstream (optional upstream proxy)
+  const chainRaw = raw['chainUpstream'];
+  if (chainRaw !== undefined && chainRaw !== null) {
+    if (typeof chainRaw !== 'object' || Array.isArray(chainRaw)) {
+      throw new Error('forwardOptions.chainUpstream must be an object');
+    }
+    const cu = chainRaw as Record<string, unknown>;
+    const chainUpstream: ChainUpstream = {};
+    if (cu['proxyUrl'] !== undefined && cu['proxyUrl'] !== null) {
+      if (typeof cu['proxyUrl'] !== 'string') {
+        throw new Error('forwardOptions.chainUpstream.proxyUrl must be a string');
+      }
+      chainUpstream.proxyUrl = cu['proxyUrl'];
+    } else {
+      throw new Error('forwardOptions.chainUpstream.proxyUrl is required');
+    }
+    const noProxy = cu['noProxy'];
+    if (noProxy !== undefined && noProxy !== null) {
+      if (!Array.isArray(noProxy) || noProxy.some((v) => typeof v !== 'string')) {
+        throw new Error('forwardOptions.chainUpstream.noProxy must be an array of strings');
+      }
+      chainUpstream.noProxy = noProxy as string[];
+    }
+    const trustedCAs = cu['trustedCAs'];
+    if (trustedCAs !== undefined && trustedCAs !== null) {
+      if (!Array.isArray(trustedCAs)) {
+        throw new Error('forwardOptions.chainUpstream.trustedCAs must be an array');
+      }
+      chainUpstream.trustedCAs = trustedCAs as Array<{ cert?: string; certPath?: string }>;
+    }
+    result.chainUpstream = chainUpstream;
+  }
+
+  // Parse callbackScript (mutually exclusive with declarative transform)
+  const cbRaw = raw['callbackScript'];
+  if (cbRaw !== undefined && cbRaw !== null) {
+    if (typeof cbRaw !== 'object' || Array.isArray(cbRaw)) {
+      throw new Error('forwardOptions.callbackScript must be an object with a path field');
+    }
+    const cb = cbRaw as Record<string, unknown>;
+    if (typeof cb['path'] !== 'string' || cb['path'].trim() === '') {
+      throw new Error('forwardOptions.callbackScript.path must be a non-empty string');
+    }
+    // Mutual exclusivity: callbackScript cannot be combined with transformRequest/transformResponse
+    if (result.transformRequest || result.transformResponse) {
+      throw new Error(
+        'forwardOptions.callbackScript is mutually exclusive with transformRequest/transformResponse',
+      );
+    }
+    result.callbackScript = { path: cb['path'] };
+  } else if (!result.transformRequest && !result.transformResponse && !result.chainUpstream) {
+    // No options at all → undefined (plain passthrough)
+    return undefined;
+  }
+
   return result;
 }
 
@@ -500,6 +571,7 @@ export class ProxyHandlers {
   private currentPort: number | null = null;
   private captureBuffer: CaptureEntry[] = [];
   private ruleRecords: ProxyRuleRecord[] = [];
+  private ruleEndpoints = new Map<string, { id: string; dispose?: () => Promise<void> }>();
   private mockttpModule: typeof import('mockttp') | null = null;
   private caReady = false;
 
@@ -531,6 +603,10 @@ export class ProxyHandlers {
 
   async handleProxyListRulesTool(args: Record<string, unknown>): Promise<ToolResponse> {
     return handleSafe(async () => await this.handleProxyListRules(args));
+  }
+
+  async handleProxyRemoveRuleTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleProxyRemoveRule(args));
   }
 
   async handleProxyClearRulesTool(args: Record<string, unknown>): Promise<ToolResponse> {
@@ -692,6 +768,7 @@ export class ProxyHandlers {
     this.server = null;
     this.currentPort = null;
     this.ruleRecords = [];
+    this.ruleEndpoints.clear();
     return ResponseBuilder.success({ message: 'Proxy stopped successfully' });
   }
 
@@ -828,11 +905,16 @@ export class ProxyHandlers {
       switch (action) {
         case 'forward':
           forwardOptions = buildForwardOptions(args);
-          endpoint = await builder.thenPassThrough(forwardOptions);
+          endpoint = await builder.thenPassThrough(
+            await this.resolveMockttpOptions(forwardOptions ?? {}),
+          );
           break;
         case 'redirect':
           forwardOptions = buildForwardOptions(args);
-          endpoint = await builder.thenForwardTo(targetUrl ?? '', forwardOptions);
+          endpoint = await builder.thenForwardTo(
+            targetUrl ?? '',
+            await this.resolveMockttpOptions(forwardOptions ?? {}),
+          );
           break;
         case 'block':
           endpoint = await builder.thenCloseConnection();
@@ -841,6 +923,11 @@ export class ProxyHandlers {
           endpoint = await builder.thenReply(mockStatus ?? 200, mockBody ?? '');
           break;
       }
+
+      this.ruleEndpoints.set(
+        endpoint.id,
+        endpoint as unknown as { id: string; dispose?: () => Promise<void> },
+      );
 
       return ResponseBuilder.success({
         message: 'Rule added successfully',
@@ -851,6 +938,7 @@ export class ProxyHandlers {
           method,
           urlPattern,
           ...(action === 'mock_response' ? { mockStatus: mockStatus ?? 200 } : {}),
+          ...(action === 'mock_response' ? { mockBody: mockBody ?? '' } : {}),
           ...(targetUrl ? { targetUrl } : {}),
           ...(delayMs > 0 ? { delayMs } : {}),
           ...(forwardOptions ? { forwardOptions } : {}),
@@ -859,6 +947,50 @@ export class ProxyHandlers {
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       return ResponseBuilder.error(`Failed to add rule: ${message}`);
+    }
+  }
+
+  async handleProxyRemoveRule(args: Record<string, unknown>) {
+    if (!this.server) {
+      return ResponseBuilder.error('Proxy must be running to remove rules.');
+    }
+
+    const endpointId = argString(args, 'endpointId');
+    if (!endpointId) {
+      return ResponseBuilder.error('endpointId is required');
+    }
+
+    const idx = this.ruleRecords.findIndex((r) => r.endpointId === endpointId);
+    if (idx === -1) {
+      return ResponseBuilder.error(
+        `Rule not found: ${endpointId}. Use proxy_list_rules to see active rules.`,
+      );
+    }
+
+    const removed = this.ruleRecords[idx]!;
+    const endpoint = this.ruleEndpoints.get(endpointId);
+    if (!endpoint?.dispose) {
+      return ResponseBuilder.error(`Rule endpoint cannot be disposed: ${endpointId}`);
+    }
+
+    try {
+      await endpoint.dispose();
+      this.ruleEndpoints.delete(endpointId);
+      this.ruleRecords.splice(idx, 1);
+
+      return ResponseBuilder.success({
+        message: 'Rule removed successfully.',
+        endpointId,
+        removedRule: {
+          action: removed.action,
+          method: removed.method,
+          urlPattern: removed.urlPattern,
+          createdAt: removed.createdAt,
+        },
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return ResponseBuilder.error(`Failed to remove rule: ${message}`);
     }
   }
 
@@ -884,6 +1016,7 @@ export class ProxyHandlers {
     await server.setRequestRules();
     const cleared = this.ruleRecords.length;
     this.ruleRecords = [];
+    this.ruleEndpoints.clear();
     return ResponseBuilder.success({
       message: 'Proxy rules cleared.',
       cleared,
@@ -984,6 +1117,66 @@ export class ProxyHandlers {
       const message = e instanceof Error ? e.message : String(e);
       return ResponseBuilder.error(`Failed to configure ADB device: ${message}`);
     }
+  }
+
+  /**
+   * Translate our ForwardOptions into mockttp-compatible PassThroughStepOptions.
+   * - chainUpstream → proxyConfig
+   * - callbackScript → beforeRequest / beforeResponse (dynamic import)
+   */
+  private async resolveMockttpOptions(
+    forwardOptions: ForwardOptions,
+  ): Promise<Record<string, unknown>> {
+    const opts: Record<string, unknown> = {};
+
+    // Pass declarative transforms through directly
+    if (forwardOptions.transformRequest) {
+      opts['transformRequest'] = forwardOptions.transformRequest;
+    }
+    if (forwardOptions.transformResponse) {
+      opts['transformResponse'] = forwardOptions.transformResponse;
+    }
+
+    // Translate chainUpstream → mockttp proxyConfig
+    if (forwardOptions.chainUpstream) {
+      const cu = forwardOptions.chainUpstream;
+      const proxySetting: Record<string, unknown> = {};
+      if (cu.proxyUrl) proxySetting['proxyUrl'] = cu.proxyUrl;
+      if (cu.noProxy) proxySetting['noProxy'] = cu.noProxy;
+      if (cu.trustedCAs) {
+        proxySetting['trustedCAs'] = cu.trustedCAs.map((ca: Record<string, unknown>) => {
+          if (ca.cert) return { cert: ca.cert };
+          if (ca.certPath) return { certPath: ca.certPath };
+          return {};
+        });
+      }
+      opts['proxyConfig'] = proxySetting;
+    }
+
+    // Translate callbackScript → beforeRequest / beforeResponse (dynamic import)
+    if (forwardOptions.callbackScript) {
+      try {
+        const scriptPath = forwardOptions.callbackScript.path;
+        const mod = await import(scriptPath);
+        if (typeof mod.beforeRequest === 'function') {
+          opts['beforeRequest'] = mod.beforeRequest;
+        }
+        if (typeof mod.beforeResponse === 'function') {
+          opts['beforeResponse'] = mod.beforeResponse;
+        }
+        if (!mod.beforeRequest && !mod.beforeResponse) {
+          throw new Error(
+            `Callback script ${scriptPath} must export beforeRequest and/or beforeResponse`,
+          );
+        }
+      } catch (e) {
+        if (e instanceof Error && e.message.includes('must export')) throw e;
+        const message = e instanceof Error ? e.message : String(e);
+        throw new Error(`Failed to load callback script: ${message}`, { cause: e });
+      }
+    }
+
+    return opts;
   }
 
   private recordRule(rule: Omit<ProxyRuleRecord, 'createdAt'>): ProxyRuleRecord {
