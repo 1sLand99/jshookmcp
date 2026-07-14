@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { MOJO_MONITOR_TIMEOUT_MS } from '@src/constants';
+import { MOJO_MONITOR_TIMEOUT_MS, MOJO_FRIDA_PROBE_TIMEOUT_MS } from '@src/constants';
 
 /**
  * Best-effort message direction inferred from the header flags byte
@@ -124,7 +124,7 @@ function detectFridaNpmPackage(): boolean {
 async function probeFridaCli(): Promise<string | null> {
   return new Promise<string | null>((resolve) => {
     const child = spawn('frida', ['--version'], {
-      timeout: MOJO_MONITOR_TIMEOUT_MS,
+      timeout: MOJO_FRIDA_PROBE_TIMEOUT_MS,
       windowsHide: true,
     });
 
@@ -256,7 +256,7 @@ function buildFridaScript(): string {
   //
   // HONEST LIMITATIONS (see research/mojo-ipc.md #4):
   // - Mojo write-path symbols (MojoWriteMessage / MojoWriteMessageNew) are
-  //   Chromium build/version-specific exports. The script probes every loaded
+  //   build/version-specific exports. The script probes every loaded
   //   module for the common C-API names; if none resolve it reports the
   //   failure back so the host stays in simulation mode instead of faking
   //   capture (lesson #51: no hollow capture).
@@ -689,7 +689,7 @@ export class MojoMonitor {
   }
 
   async captureWithFrida(deviceId?: string): Promise<void> {
-    const targetProcess = deviceId ?? 'chrome';
+    const targetProcess = deviceId ?? 'chromium';
     const script = buildFridaScript();
     // Stay in simulation until a real Mojo message arrives from the script.
     this.simulationMode = true;
@@ -748,7 +748,7 @@ export class MojoMonitor {
       this.simulationMode = false;
       this.fridaProbeSucceeded = true;
       // Direction is best-effort derived from the captured payload header;
-      // the wire layout is Chromium-version-specific so this stays fail-soft.
+      // the wire layout is build-version-specific so this stays fail-soft.
       const direction = deriveDirectionFromPayload(message.hex);
       this.recordMessage({
         timestamp: Date.now(),

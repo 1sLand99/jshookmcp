@@ -4,6 +4,7 @@ import {
   MojoDecoder,
   MojoMonitor,
 } from '@modules/mojo-ipc';
+import { buildVerifyLiveScript } from '@modules/mojo-ipc/symbol-db';
 import {
   capabilityFailure,
   capabilityReport,
@@ -570,5 +571,30 @@ export class MojoIPCHandlers {
     }
 
     return this.decoder;
+  }
+
+  // ── mojo_verify_live ──
+
+  async handleMojoVerifyLiveTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => {
+      const platform = argString(args, 'platform') as 'win32' | 'linux' | 'darwin' | undefined;
+      if (!platform || !['win32', 'linux', 'darwin'].includes(platform)) {
+        throw new Error('platform must be one of: win32, linux, darwin');
+      }
+      const chromiumVersion = argNumber(args, 'chromiumVersion');
+      const channel = (argString(args, 'channel') ?? 'stable') as
+        | 'stable'
+        | 'beta'
+        | 'dev'
+        | 'canary';
+      const targetProcess = argString(args, 'targetProcess');
+
+      return buildVerifyLiveScript({
+        platform,
+        chromiumVersion,
+        channel,
+        targetProcess,
+      });
+    });
   }
 }

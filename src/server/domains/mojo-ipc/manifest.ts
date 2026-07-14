@@ -20,6 +20,7 @@ const registrations = defineMethodRegistrations<H, (typeof mojoIpcTools)[number]
     { tool: 'mojo_list_interfaces', method: 'handleMojoListInterfacesTool' },
     { tool: 'mojo_messages_get', method: 'handleMojoMessagesGetTool' },
     { tool: 'mojo_messages_summarize', method: 'handleMojoMessagesSummarizeTool' },
+    { tool: 'mojo_verify_live', method: 'handleMojoVerifyLiveTool' },
   ],
 });
 

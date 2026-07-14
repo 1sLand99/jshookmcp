@@ -83,6 +83,25 @@ export const mojoIpcTools: Tool[] = [
       )
       .query(),
   ),
+  tool('mojo_verify_live', (t) =>
+    t
+      .desc(
+        'Generate a Frida verification script that probes a target Chromium process ' +
+          'for known Mojo C-API exports (MojoWriteMessage, MojoWriteMessageNew) across ' +
+          'modules. Uses a curated symbol database covering Chromium M96+ across Win32, ' +
+          'Linux, and macOS. Returns a ready-to-run Frida script and probe metadata. ' +
+          'Honest boundary (B-class): symbol DB is manually curated; symbols may vary by ' +
+          'build config. Verified flag is always false — confirm against the live binary.',
+      )
+      .enum('platform', ['win32', 'linux', 'darwin'], 'Target platform')
+      .number('chromiumVersion', 'Chromium major version (e.g. 120) for version-aware probing')
+      .enum('channel', ['stable', 'beta', 'dev', 'canary'], 'Chromium release channel', {
+        default: 'stable',
+      })
+      .string('targetProcess', 'Browser process name for the frida command (default: chrome)')
+      .required('platform')
+      .readOnly(),
+  ),
   tool('mojo_messages_summarize', (t) =>
     t
       .desc(
