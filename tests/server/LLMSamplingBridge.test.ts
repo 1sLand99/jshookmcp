@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { LLMSamplingBridge } from '@server/LLMSamplingBridge';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { runWithToolRequestContext } from '@server/runtime/ToolRequestContext';
 
 function createMockServer(capabilities?: { sampling?: object }): McpServer {
   return {
@@ -152,6 +153,23 @@ describe('LLMSamplingBridge', () => {
       expect(mockServer.server.createMessage).toHaveBeenCalledWith(
         expect.objectContaining({ maxTokens: 512 }),
       );
+    });
+
+    it('routes sampling back to the agent that initiated the tool call', async () => {
+      mockServer = createMockServer({ sampling: {} });
+      (mockServer.server.createMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
+        content: [{ type: 'text', text: 'ok' }],
+      });
+
+      const bridge = new LLMSamplingBridge(mockServer);
+      await runWithToolRequestContext(
+        { sessionId: 'session-a', requestId: 'http:session-a:4' },
+        () => bridge.sampleText({ systemPrompt: 'test', userMessage: 'test' }),
+      );
+
+      expect(mockServer.server.createMessage).toHaveBeenCalledWith(expect.any(Object), {
+        relatedRequestId: 'http:session-a:4',
+      });
     });
   });
 });

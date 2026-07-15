@@ -29,6 +29,10 @@ interface RequestRouteRecord {
   transport: StreamableHTTPServerTransport;
 }
 
+export interface MultiplexedStreamableHttpTransportOptions {
+  onSessionClosed?: (sessionId: string) => void;
+}
+
 function getSessionHeader(req: IncomingMessage): string | null {
   const raw = req.headers['mcp-session-id'];
   if (Array.isArray(raw)) {
@@ -53,6 +57,8 @@ export class MultiplexedStreamableHttpTransport implements Transport {
   private readonly sessionOriginalToInternal = new Map<string, Map<string, string>>();
   private requestSequence = 0;
 
+  constructor(private readonly options: MultiplexedStreamableHttpTransportOptions = {}) {}
+
   async start(): Promise<void> {
     if (this.started) {
       throw new Error('MultiplexedStreamableHttpTransport already started');
@@ -65,6 +71,7 @@ export class MultiplexedStreamableHttpTransport implements Transport {
     this.sessions.clear();
     this.requestRoutes.clear();
     this.sessionOriginalToInternal.clear();
+    for (const session of sessions) this.notifySessionClosed(session.sessionId);
     await Promise.allSettled(sessions.map((session) => session.transport.close()));
     this.onclose?.();
   }
@@ -196,9 +203,24 @@ export class MultiplexedStreamableHttpTransport implements Transport {
         this.sessionOriginalToInternal.set(sessionId, perSession);
       }
       perSession.set(keyForRequestId(message.id), internalId);
+      const params =
+        typeof message.params === 'object' && message.params !== null
+          ? (message.params as Record<string, unknown>)
+          : {};
+      const meta =
+        typeof params['_meta'] === 'object' && params['_meta'] !== null
+          ? (params['_meta'] as Record<string, unknown>)
+          : {};
       return {
         ...message,
         id: internalId,
+        params: {
+          ...params,
+          _meta: {
+            ...meta,
+            sessionId,
+          },
+        },
       };
     }
 
@@ -250,13 +272,24 @@ export class MultiplexedStreamableHttpTransport implements Transport {
   }
 
   private dropSession(sessionId: string): void {
-    this.sessions.delete(sessionId);
+    const existed = this.sessions.delete(sessionId);
     this.sessionOriginalToInternal.delete(sessionId);
     for (const [routeKey, route] of this.requestRoutes) {
       if (route.sessionId === sessionId) {
         this.requestRoutes.delete(routeKey);
       }
     }
+    if (existed) this.notifySessionClosed(sessionId);
     logger.info(`[http] MCP session closed: ${sessionId}`);
+  }
+
+  private notifySessionClosed(sessionId: string): void {
+    try {
+      this.options.onSessionClosed?.(sessionId);
+    } catch (error) {
+      logger.warn(
+        `[http] session cleanup failed for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 }

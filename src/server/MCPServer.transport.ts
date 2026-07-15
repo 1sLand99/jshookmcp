@@ -17,6 +17,7 @@ import { logger } from '@utils/logger';
 import { ProcessRegistry } from '@utils/ProcessRegistry';
 import type { MCPServerContext } from '@server/MCPServer.context';
 import { MultiplexedStreamableHttpTransport } from '@server/transport/MultiplexedStreamableHttpTransport';
+import type { BrowserSessionCoordinator } from '@server/runtime/BrowserSessionCoordinator';
 
 export async function startStdioTransport(ctx: MCPServerContext): Promise<void> {
   const transport = new StdioServerTransport();
@@ -78,7 +79,13 @@ export async function startHttpTransport(ctx: MCPServerContext): Promise<void> {
   const port = parseInt(process.env.MCP_PORT ?? '3000', 10);
   const host = process.env.MCP_HOST ?? '127.0.0.1';
 
-  const transport = new MultiplexedStreamableHttpTransport();
+  const transport = new MultiplexedStreamableHttpTransport({
+    onSessionClosed: (sessionId) => {
+      ctx
+        .getDomainInstance<BrowserSessionCoordinator>('browserSessionCoordinator')
+        ?.dropSession(sessionId);
+    },
+  });
 
   await ctx.server.connect(transport);
 

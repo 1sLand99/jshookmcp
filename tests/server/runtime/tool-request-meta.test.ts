@@ -70,4 +70,16 @@ describe('tool-request-meta helpers', () => {
       },
     });
   });
+
+  it('derives the session id from Streamable HTTP request headers', () => {
+    expect(
+      attachToolRequestMeta(
+        { tool: 'example' },
+        { requestInfo: { headers: { 'mcp-session-id': 'http-session' } } },
+      ),
+    ).toEqual({
+      tool: 'example',
+      _meta: { sessionId: 'http-session' },
+    });
+  });
 });

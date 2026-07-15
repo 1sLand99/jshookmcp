@@ -46,4 +46,14 @@ describe('BrowserSessionCoordinator', () => {
     expect(collector.selectPage).toHaveBeenNthCalledWith(2, 4);
     expect(collector.attachCdpTarget).toHaveBeenCalledWith('target-4');
   });
+
+  it('drops state when the owning HTTP session closes', () => {
+    const coordinator = new BrowserSessionCoordinator(() => null);
+    const original = coordinator.getTabRegistry('session-a');
+    original.setSharedContext('owner', 'a');
+
+    expect(coordinator.dropSession('session-a')).toBe(true);
+    expect(coordinator.dropSession('session-a')).toBe(false);
+    expect(coordinator.getTabRegistry('session-a')).not.toBe(original);
+  });
 });

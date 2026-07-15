@@ -46,6 +46,10 @@ import { handleCallTool } from '@server/MCPServer.search.handlers.call';
 import { getRuntimeState } from '@server/runtime/ServerRuntimeState';
 import { ensureAllDomainsLoaded } from '@server/registry/index';
 import { attachToolRequestMeta } from '@server/runtime/tool-request-meta';
+import {
+  runWithToolRequestContext,
+  type ToolRequestExtra,
+} from '@server/runtime/ToolRequestContext';
 
 // ── single-source meta-tool definitions ──
 
@@ -301,16 +305,18 @@ export function registerSearchMetaTools(ctx: MCPServerContext): void {
         description: def.description,
         inputSchema: shape as Record<string, z.ZodAny>,
       },
-      async (args: Record<string, unknown>, extra?: { _meta?: unknown; sessionId?: string }) => {
-        try {
-          const augmentedArgs = attachToolRequestMeta(args, extra);
-          const response = await def.handler(ctx, augmentedArgs);
-          getRuntimeState(ctx)?.recordToolCall(def.name, augmentedArgs);
-          return response;
-        } catch (error) {
-          logger.error(`${def.name} failed`, error);
-          return asErrorResponse(error);
-        }
+      async (args: Record<string, unknown>, extra?: ToolRequestExtra) => {
+        return runWithToolRequestContext(extra, async () => {
+          try {
+            const augmentedArgs = attachToolRequestMeta(args, extra);
+            const response = await def.handler(ctx, augmentedArgs);
+            getRuntimeState(ctx)?.recordToolCall(def.name, augmentedArgs);
+            return response;
+          } catch (error) {
+            logger.error(`${def.name} failed`, error);
+            return asErrorResponse(error);
+          }
+        });
       },
     );
 

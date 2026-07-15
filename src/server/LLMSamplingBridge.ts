@@ -18,6 +18,7 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { logger } from '@utils/logger';
+import { getToolRequestContext } from '@server/runtime/ToolRequestContext';
 
 export interface SampleTextParams {
   /** System-level instruction for the LLM */
@@ -64,7 +65,8 @@ export class LLMSamplingBridge {
     }
 
     try {
-      const result = await this.mcpServer.server.createMessage({
+      const requestContext = getToolRequestContext();
+      const request = {
         messages: [
           {
             role: 'user' as const,
@@ -84,7 +86,13 @@ export class LLMSamplingBridge {
               },
             }
           : {}),
-      });
+      };
+      const result =
+        requestContext?.requestId === null || requestContext?.requestId === undefined
+          ? await this.mcpServer.server.createMessage(request)
+          : await this.mcpServer.server.createMessage(request, {
+              relatedRequestId: requestContext.requestId,
+            });
 
       // Extract text from the response content
       const content = result.content;

@@ -17,6 +17,7 @@ import type {
   PrimitiveSchemaDefinition,
 } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from '@utils/logger';
+import { getToolRequestContext } from '@server/runtime/ToolRequestContext';
 
 /** Result of an elicitation request */
 export interface ElicitationResult {
@@ -65,7 +66,13 @@ export class ElicitationBridge {
     }
 
     try {
-      const result = await this.mcpServer.server.elicitInput(params);
+      const requestContext = getToolRequestContext();
+      const result =
+        requestContext?.requestId === null || requestContext?.requestId === undefined
+          ? await this.mcpServer.server.elicitInput(params)
+          : await this.mcpServer.server.elicitInput(params, {
+              relatedRequestId: requestContext.requestId,
+            });
 
       return {
         action: result.action as 'accept' | 'decline' | 'dismiss',

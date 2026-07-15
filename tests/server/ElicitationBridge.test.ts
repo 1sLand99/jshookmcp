@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ElicitationBridge } from '@server/ElicitationBridge';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { TEST_URLS, withPath } from '@tests/shared/test-urls';
+import { runWithToolRequestContext } from '@server/runtime/ToolRequestContext';
 
 function createMockServer(capabilities?: { elicitation?: object }): McpServer {
   return {
@@ -123,6 +124,27 @@ describe('ElicitationBridge', () => {
       });
 
       expect(result).toBeNull();
+    });
+
+    it('routes elicitation back to the agent that initiated the tool call', async () => {
+      const server = createMockServer({ elicitation: {} });
+      (server.server.elicitInput as ReturnType<typeof vi.fn>).mockResolvedValue({
+        action: 'accept',
+        content: {},
+      });
+      const bridge = new ElicitationBridge(server);
+      await runWithToolRequestContext(
+        { sessionId: 'session-b', requestId: 'http:session-b:9' },
+        () =>
+          bridge.requestFormInput({
+            message: 'test',
+            requestedSchema: { type: 'object', properties: {} },
+          }),
+      );
+
+      expect(server.server.elicitInput).toHaveBeenCalledWith(expect.any(Object), {
+        relatedRequestId: 'http:session-b:9',
+      });
     });
   });
 

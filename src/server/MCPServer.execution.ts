@@ -43,7 +43,6 @@ export async function executeToolWithTracking(ctx: MCPServerContext, name: strin
   const executionCpuStart = collectExecutionMetrics ? process.cpuUsage() : null;
   const executionMemoryBefore = collectExecutionMetrics ? captureExecutionMetricMemory() : null;
   try {
-    ctx.setDomainInstance('activeToolArgs', args);
     timeoutTimer = setTimeout(() => {
       try {
         const safeArgs = JSON.stringify(args).slice(0, 500);
@@ -203,6 +202,6 @@ export async function executeToolWithTracking(ctx: MCPServerContext, name: strin
       ?.commit();
     throw error;
   } finally {
-    ctx.setDomainInstance('activeToolArgs', undefined);
+    if (timeoutTimer) clearTimeout(timeoutTimer);
   }
 }

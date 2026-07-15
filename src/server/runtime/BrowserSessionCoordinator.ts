@@ -122,6 +122,12 @@ export class BrowserSessionCoordinator {
     };
   }
 
+  dropSession(sessionId: string): boolean {
+    const normalized = this.normalizeSessionId(sessionId);
+    if (this.lastActiveSessionId === normalized) this.lastActiveSessionId = null;
+    return this.sessions.delete(normalized);
+  }
+
   async restoreSessionContext(sessionId: string | null | undefined): Promise<void> {
     const normalized = this.normalizeSessionId(sessionId);
     const entry = this.getOrCreateSession(normalized);

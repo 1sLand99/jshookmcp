@@ -1,3 +1,8 @@
+import {
+  resolveToolRequestSessionId,
+  type ToolRequestExtra,
+} from '@server/runtime/ToolRequestContext';
+
 export interface ToolRequestMeta {
   progressToken?: string | number;
   sessionId?: string;
@@ -27,7 +32,7 @@ export function readToolSessionId(args: Record<string, unknown>): string | null 
 
 export function attachToolRequestMeta(
   args: Record<string, unknown>,
-  extra?: { _meta?: unknown; sessionId?: string },
+  extra?: ToolRequestExtra,
 ): Record<string, unknown> {
   const merged = { ...args };
   const nextMeta: ToolRequestMeta = {};
@@ -38,8 +43,9 @@ export function attachToolRequestMeta(
   if (isRecord(extra?._meta)) {
     Object.assign(nextMeta, extra?._meta as Record<string, unknown>);
   }
-  if (typeof extra?.sessionId === 'string' && extra.sessionId.trim().length > 0) {
-    nextMeta.sessionId = extra.sessionId;
+  const sessionId = resolveToolRequestSessionId(extra);
+  if (sessionId) {
+    nextMeta.sessionId = sessionId;
   }
   if (Object.keys(nextMeta).length > 0) {
     merged['_meta'] = nextMeta;

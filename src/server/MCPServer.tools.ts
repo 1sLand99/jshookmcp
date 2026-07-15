@@ -7,6 +7,10 @@ import type { ToolArgs } from '@server/types';
 import { buildZodShape } from '@server/MCPServer.schema';
 import type { MCPServerContext } from '@server/MCPServer.context';
 import { attachToolRequestMeta } from '@server/runtime/tool-request-meta';
+import {
+  runWithToolRequestContext,
+  type ToolRequestExtra,
+} from '@server/runtime/ToolRequestContext';
 
 function mapErrorCode(code: ToolErrorCode): number {
   switch (code) {
@@ -113,14 +117,16 @@ export function registerSingleTool(ctx: MCPServerContext, toolDef: Tool): Regist
     const registeredTool = ctx.server.registerTool(
       toolDef.name,
       { description, inputSchema: shape as Record<string, z.ZodAny> },
-      async (args: ToolArgs, extra?: any) => {
-        try {
-          const augmentedArgs = attachToolRequestMeta(args, extra);
-          // If taskStore is provided (SDK handles polling), we can use it internally if needed
-          return await ctx.executeToolWithTracking(toolDef.name, augmentedArgs);
-        } catch (error) {
-          return handleToolError(toolDef.name, error);
-        }
+      async (args: ToolArgs, extra?: ToolRequestExtra) => {
+        return runWithToolRequestContext(extra, async () => {
+          try {
+            const augmentedArgs = attachToolRequestMeta(args, extra);
+            // If taskStore is provided (SDK handles polling), we can use it internally if needed
+            return await ctx.executeToolWithTracking(toolDef.name, augmentedArgs);
+          } catch (error) {
+            return handleToolError(toolDef.name, error);
+          }
+        });
       },
     );
 
@@ -137,13 +143,15 @@ export function registerSingleTool(ctx: MCPServerContext, toolDef: Tool): Regist
   const registeredTool = ctx.server.registerTool(
     toolDef.name,
     { description },
-    async (_args: any, extra?: any) => {
-      try {
-        const augmentedArgs = attachToolRequestMeta({}, extra);
-        return await ctx.executeToolWithTracking(toolDef.name, augmentedArgs);
-      } catch (error) {
-        return handleToolError(toolDef.name, error);
-      }
+    async (_args: unknown, extra?: ToolRequestExtra) => {
+      return runWithToolRequestContext(extra, async () => {
+        try {
+          const augmentedArgs = attachToolRequestMeta({}, extra);
+          return await ctx.executeToolWithTracking(toolDef.name, augmentedArgs);
+        } catch (error) {
+          return handleToolError(toolDef.name, error);
+        }
+      });
     },
   );
 

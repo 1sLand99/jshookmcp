@@ -113,6 +113,8 @@ describe('MultiplexedStreamableHttpTransport', () => {
 
     expect(seenMessages).toHaveLength(2);
     expect(seenMessages[0]!.id).not.toBe(seenMessages[1]!.id);
+    expect(seenMessages[0]!.params._meta.sessionId).toBe(sessionA.sessionId);
+    expect(seenMessages[1]!.params._meta.sessionId).toBe(sessionB.sessionId);
 
     const responseA: JSONRPCResponse = {
       jsonrpc: '2.0',
@@ -144,6 +146,32 @@ describe('MultiplexedStreamableHttpTransport', () => {
       },
       undefined,
     );
+  });
+
+  it('preserves client request metadata while enforcing the transport session id', async () => {
+    const transport = new MultiplexedStreamableHttpTransport();
+    await transport.start();
+    const seenMessages: any[] = [];
+    // eslint-disable-next-line unicorn/prefer-add-event-listener
+    transport.onmessage = (message) => seenMessages.push(message);
+
+    await transport.handleRequest(createReq('POST'), createRes(), {});
+    const session = mocks.innerTransports[0];
+    session.onmessage?.({
+      jsonrpc: '2.0',
+      id: 7,
+      method: 'tools/call',
+      params: {
+        name: 'search_tools',
+        arguments: {},
+        _meta: { progressToken: 'p1', sessionId: 'spoofed' },
+      },
+    });
+
+    expect(seenMessages[0]!.params._meta).toEqual({
+      progressToken: 'p1',
+      sessionId: session.sessionId,
+    });
   });
 
   it('rewrites cancellation notifications back onto internal request ids', async () => {
@@ -241,7 +269,8 @@ describe('MultiplexedStreamableHttpTransport', () => {
   });
 
   it('routes by relatedRequestId and clears session state on close', async () => {
-    const transport = new MultiplexedStreamableHttpTransport();
+    const onSessionClosed = vi.fn();
+    const transport = new MultiplexedStreamableHttpTransport({ onSessionClosed });
     const onclose = vi.fn();
     // eslint-disable-next-line unicorn/prefer-add-event-listener
     transport.onclose = onclose;
@@ -273,6 +302,7 @@ describe('MultiplexedStreamableHttpTransport', () => {
     );
 
     session.onclose?.();
+    expect(onSessionClosed).toHaveBeenCalledWith(session.sessionId);
     await transport.close();
     expect(onclose).toHaveBeenCalledOnce();
   });
