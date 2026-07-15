@@ -224,7 +224,14 @@ export default defineConfig({
         //        re-include once the external-tool mocks exist)
         //     4. The big CDP handler chains (network/v8/streaming — need ctx mocks)
         lines: 83,
-        functions: 85.0,
+        // functions CI baseline drifts ~84.97-85.5% across Node 22/24 V8 builds
+        // (artifacts/tmp ENOENT + handler-tail surface). 85.0 had NO buffer — unlike
+        // lines/branches/statements (~1.3% below baseline) — so a 0.03% runner delta
+        // tripped it on a docs-only commit (c3e3b367: 84.97% < 85%, test suite 1071
+        // green). 84.0 restores a ~1% buffer matching the other thresholds and the
+        // config's stated "buffer below Linux baseline" policy. Restoring toward 86
+        // remains tracked by the coverage-campaign TODO above.
+        functions: 84.0,
         branches: 72,
         statements: 81.5,
       },
