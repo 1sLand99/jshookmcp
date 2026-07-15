@@ -34,6 +34,21 @@
 
 *(Windows 用户：若找不到 `npx`，请使用 `npx.cmd` 绝对路径)*
 
+### 多个 Agent 共用一个本地进程
+
+默认 stdio 配置会让每个 MCP 宿主启动一份完整的 jshook。若要共享 embedding 模型、
+浏览器运行时和缓存，可以启动一个本地 Streamable HTTP daemon：
+
+```bash
+pnpm build
+pnpm daemon
+```
+
+然后在各 MCP 客户端的 HTTP/URL server 配置中统一指向
+`http://127.0.0.1:3000/mcp`。每个客户端拥有独立的 MCP 会话和响应路由，重量级运行时
+资源只保留一份。建议保持默认的本机回环监听；如需对外暴露，必须先设置
+`MCP_AUTH_TOKEN`。
+
 ## 🌟 核心亮点
 
 - 🤖 **AI 智能分析** — LLM 驱动的 JS 反混淆、加密识别、AST 深度理解

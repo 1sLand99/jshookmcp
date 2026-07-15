@@ -89,6 +89,11 @@ Clone 仓库后，在项目根目录创建 `.env` 文件（参考 `.env.example`
 | `SEARCH_VECTOR_LEARN_UP`                  | 选中工具在向量 top-N 内时的权重上调步长。             | `0.07`                    |
 | `SEARCH_VECTOR_LEARN_DOWN`                | 选中工具在向量 top-N 外时的权重下调步长。             | `0.02`                    |
 | `SEARCH_VECTOR_LEARN_TOP_N`               | 区分向量"命中"与"未命中"的排名阈值。                  | `6`                       |
+| `SEARCH_VECTOR_PREWARM`                   | 搜索引擎启动时是否立即加载 ONNX；共享 daemon 默认按需加载。 | `false`                 |
+| `SEARCH_VECTOR_WORKER_IDLE_MS`            | embedding worker 空闲多久后释放；`0` 表示常驻。          | `15000`                 |
+| `SEARCH_VECTOR_RETRY_COOLDOWN_MS`         | embedding 加载失败后的重试冷却时间。                     | `60000`                 |
+| `SEARCH_VECTOR_CACHE_ENABLED`             | 是否将工具目录 embedding 持久化到磁盘。                  | `true`                  |
+| `JSHOOK_EMBEDDING_CACHE_DIR`              | embedding 磁盘缓存目录覆盖值。                            | `~/.jshookmcp/cache/embeddings` |
 
 ### 4. 传输、HTTP 与安全
 
@@ -109,6 +114,11 @@ Clone 仓库后，在项目根目录创建 `.env` 文件（参考 `.env.example`
 | `MCP_RATE_LIMIT_ENABLED`          | 设为 `false` / `0` 可关闭 HTTP 限流。                  | 默认开启           |
 | `MCP_TRUST_PROXY`                 | 设为 `true` / `1` 信任 `X-Forwarded-For` 头。          | 默认关闭           |
 | `MCP_HEALTH_VERBOSE`              | 设为 `true` / `1` 启用详细 health-check 输出。         | 默认关闭           |
+
+多个 Agent 共用一个进程时，先运行 `pnpm build && pnpm daemon`，再让所有 MCP 客户端连接
+`http://127.0.0.1:3000/mcp`。HTTP transport 会按 `Mcp-Session-Id` 分离请求和响应路由，
+同时共享 embedding、缓存与浏览器运行时。仅在 localhost 使用时可以不设 token；绑定到其他
+地址前必须配置 `MCP_AUTH_TOKEN`。
 
 ### 5. 扩展目录、签名与 registry
 

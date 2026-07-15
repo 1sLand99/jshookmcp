@@ -34,6 +34,21 @@ No global install needed — add to your MCP client config and you're ready:
 
 *(Windows: use `npx.cmd` absolute path if `npx` is not found)*
 
+### Share one daemon across multiple agents
+
+The default stdio configuration starts one full jshook process per MCP host. To share the
+embedding model, browser runtime, and caches, start one local Streamable HTTP daemon:
+
+```bash
+pnpm build
+pnpm daemon
+```
+
+Then point every MCP client at `http://127.0.0.1:3000/mcp` using its HTTP/URL server
+configuration. Each client receives its own MCP session and response route while heavyweight
+runtime resources remain in one process. Keep the default loopback bind; set `MCP_AUTH_TOKEN`
+before exposing the endpoint beyond localhost.
+
 ## 🌟 Highlights
 
 - 🤖 **AI-Driven Analysis** — LLM-powered deobfuscation, crypto detection, AST comprehension

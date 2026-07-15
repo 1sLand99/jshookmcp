@@ -89,6 +89,11 @@ Runtime configuration is defined by `src/utils/config.ts`. The current runtime d
 | `SEARCH_VECTOR_LEARN_UP`                  | Weight step-up when selected tool is in vector top-N.             | `0.07`                           |
 | `SEARCH_VECTOR_LEARN_DOWN`                | Weight step-down when selected tool is outside vector top-N.      | `0.02`                           |
 | `SEARCH_VECTOR_LEARN_TOP_N`               | Rank threshold separating "hit" from "miss" for learning.         | `6`                              |
+| `SEARCH_VECTOR_PREWARM`                   | Load ONNX when the search engine starts; shared daemons load lazily by default. | `false`             |
+| `SEARCH_VECTOR_WORKER_IDLE_MS`            | Release the embedding worker after this idle period; `0` keeps it resident. | `15000`              |
+| `SEARCH_VECTOR_RETRY_COOLDOWN_MS`         | Retry cooldown after an embedding load failure.                   | `60000`                          |
+| `SEARCH_VECTOR_CACHE_ENABLED`             | Persist catalog embeddings on disk.                               | `true`                           |
+| `JSHOOK_EMBEDDING_CACHE_DIR`              | Override the embedding cache directory.                           | `~/.jshookmcp/cache/embeddings`  |
 
 ### 4. Transport, HTTP, and security
 
@@ -109,6 +114,12 @@ Runtime configuration is defined by `src/utils/config.ts`. The current runtime d
 | `MCP_RATE_LIMIT_ENABLED`          | Set to `false` / `0` to disable HTTP rate limiting.    | enabled by default      |
 | `MCP_TRUST_PROXY`                 | Set to `true` / `1` to trust `X-Forwarded-For` header. | disabled by default     |
 | `MCP_HEALTH_VERBOSE`              | Set to `true` / `1` for verbose health-check output.   | disabled by default     |
+
+To share one process across agents, run `pnpm build && pnpm daemon`, then configure every MCP
+client to connect to `http://127.0.0.1:3000/mcp`. The HTTP transport separates request and
+response routing by `Mcp-Session-Id` while sharing embeddings, caches, and browser runtime.
+Authentication is optional on the loopback default; configure `MCP_AUTH_TOKEN` before binding to
+any non-local interface.
 
 ### 5. Extension roots, signatures, and registry
 
