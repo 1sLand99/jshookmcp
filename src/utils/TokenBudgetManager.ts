@@ -31,6 +31,7 @@ export class TokenBudgetManager {
   private readonly WARNING_THRESHOLDS = [0.8, 0.9, 0.95];
   private readonly BYTES_PER_TOKEN = 4;
   private readonly AUTO_CLEANUP_THRESHOLD = 0.9;
+  private readonly AUTO_CLEANUP_REARM_THRESHOLD = 0.8;
   private readonly HISTORY_RETENTION = 5 * 60 * 1000;
 
   private currentUsage = 0;
@@ -38,6 +39,7 @@ export class TokenBudgetManager {
   private warnings = new Set<number>();
   private sessionStartTime = Date.now();
   private trackingEnabled = true;
+  private autoCleanupArmed = true;
 
   private readonly MAX_ESTIMATION_DEPTH = 4;
   private readonly MAX_ESTIMATION_ARRAY_ITEMS = 50;
@@ -307,10 +309,14 @@ export class TokenBudgetManager {
 
   private shouldAutoCleanup(): boolean {
     const ratio = this.currentUsage / this.MAX_TOKENS;
-    return ratio >= this.AUTO_CLEANUP_THRESHOLD;
+    if (ratio < this.AUTO_CLEANUP_REARM_THRESHOLD) {
+      this.autoCleanupArmed = true;
+    }
+    return this.autoCleanupArmed && ratio >= this.AUTO_CLEANUP_THRESHOLD;
   }
 
   private autoCleanup(): void {
+    this.autoCleanupArmed = false;
     logger.info('Auto-cleanup triggered at 90% usage.');
 
     const beforeUsage = this.currentUsage;
@@ -342,6 +348,9 @@ export class TokenBudgetManager {
     );
 
     const newRatio = afterUsage / this.MAX_TOKENS;
+    if (newRatio < this.AUTO_CLEANUP_REARM_THRESHOLD) {
+      this.autoCleanupArmed = true;
+    }
     this.warnings = new Set(Array.from(this.warnings).filter((threshold) => newRatio >= threshold));
   }
 
@@ -444,6 +453,7 @@ export class TokenBudgetManager {
     this.currentUsage = 0;
     this.toolCallHistory = [];
     this.warnings.clear();
+    this.autoCleanupArmed = true;
     this.sessionStartTime = Date.now();
     logger.info('Token budget reset complete');
   }

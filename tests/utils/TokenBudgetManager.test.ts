@@ -61,8 +61,9 @@ describe('TokenBudgetManager', () => {
     const largeRef = { detailId: 'detail_x', summary: { size: 262_144 } };
     manager.recordToolCall('network_get_requests', largeRef, largeRef);
     manager.recordToolCall('network_get_requests', largeRef, largeRef);
+    manager.recordToolCall('network_get_requests', largeRef, largeRef);
 
-    expect(cleanupFn).toHaveBeenCalled();
+    expect(cleanupFn).toHaveBeenCalledTimes(1);
     expect(manager.getStats().warnings.some((w) => w >= 90)).toBe(true);
   });
 
