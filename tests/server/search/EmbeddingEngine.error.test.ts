@@ -4,7 +4,7 @@ const workerState = vi.hoisted(() => ({
   mode: 'result' as 'result' | 'message-error' | 'worker-error' | 'exit-error',
 }));
 
-vi.mock('worker_threads', () => {
+vi.mock('node:worker_threads', () => {
   class MockWorker {
     private handlers = new Map<string, (...args: any[]) => void>();
 

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock worker_threads to avoid actually spawning worker threads in tests
-vi.mock('worker_threads', () => {
+vi.mock('node:worker_threads', () => {
   class MockWorker {
     private messageHandler: ((msg: any) => void) | null = null;
 
@@ -128,5 +128,27 @@ describe('search/EmbeddingEngine', () => {
     // Should not throw
     await engine.terminate();
     expect(engine.isReady()).toBe(false);
+  });
+
+  it('releases and lazily recreates the worker after the idle window', async () => {
+    const engine = new EmbeddingEngine({ idleMs: 25 });
+    await engine.embed('warm');
+    expect(engine.isWorkerAlive()).toBe(true);
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(engine.isWorkerAlive()).toBe(false);
+    expect(engine.isReady()).toBe(false);
+
+    await expect(engine.embed('again')).resolves.toBeInstanceOf(Float32Array);
+    expect(engine.isWorkerAlive()).toBe(true);
+    await engine.terminate();
+  });
+
+  it('keeps the worker alive when idle release is disabled', async () => {
+    const engine = new EmbeddingEngine({ idleMs: 0 });
+    await engine.embed('warm');
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(engine.isWorkerAlive()).toBe(true);
+    await engine.terminate();
   });
 });

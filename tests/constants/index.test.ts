@@ -32,6 +32,10 @@ describe('constants barrel export', () => {
     expect(constants.SEARCH_AFFINITY_BOOST_FACTOR).toBeTypeOf('number');
     expect(constants.SEARCH_BM25_K1).toBeTypeOf('number');
     expect(constants.SEARCH_VECTOR_ENABLED).toBeTypeOf('boolean');
+    expect(constants.SEARCH_VECTOR_PREWARM).toBeTypeOf('boolean');
+    expect(constants.SEARCH_VECTOR_CACHE_ENABLED).toBeTypeOf('boolean');
+    expect(constants.SEARCH_VECTOR_WORKER_IDLE_MS).toBeTypeOf('number');
+    expect(constants.SEARCH_VECTOR_RETRY_COOLDOWN_MS).toBeTypeOf('number');
     expect(constants.PREDICTIVE_MAX_HISTORY).toBeTypeOf('number');
     expect(constants.RERANK_MAINTENANCE_PENALTY).toBeTypeOf('number');
   });
@@ -307,6 +311,8 @@ describe('constants barrel export', () => {
     test('boolean flags have boolean type', ({ expect }) => {
       const booleanConstants = [
         'SEARCH_VECTOR_ENABLED',
+        'SEARCH_VECTOR_PREWARM',
+        'SEARCH_VECTOR_CACHE_ENABLED',
         'SEARCH_RERANK_WORKFLOW_TOOLS',
         'SEARCH_AFFINITY_BOOST_ENABLED',
       ];

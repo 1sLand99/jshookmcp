@@ -25,9 +25,13 @@ import {
   SEARCH_TRIGRAM_WEIGHT,
   SEARCH_VECTOR_ENABLED,
   SEARCH_VECTOR_BM25_SKIP_THRESHOLD,
+  SEARCH_VECTOR_MODEL_ID,
+  SEARCH_VECTOR_PREWARM,
+  SEARCH_VECTOR_RETRY_COOLDOWN_MS,
 } from '@src/constants';
 import { BM25ScorerImpl } from './BM25Scorer';
 import { EmbeddingEngine } from './EmbeddingEngine';
+import { loadToolEmbeddingsCache, saveToolEmbeddingsCache } from './EmbeddingCache';
 import { IntentBoostImpl } from './IntentBoost';
 import { TrigramIndex } from './TrigramIndex';
 import { FeedbackTracker } from './FeedbackTracker';
@@ -169,6 +173,7 @@ export class ToolSearchEngine {
 
   // ── Dense vector search (Phase 8) ──
   private readonly embeddingEngine: EmbeddingEngine | null;
+  private readonly vectorModelId: string;
   private toolEmbeddings: Float32Array[] | null = null;
   /**
    * In-flight prewarm promise guard. Ensures at most one embedBatch runs at a
@@ -176,6 +181,7 @@ export class ToolSearchEngine {
    * a failure. Reset to null on rejection so the next trigger can retry.
    */
   private prewarmPromise: Promise<void> | null = null;
+  private embeddingRetryAfterMs = 0;
   /** Feedback tracking for adaptive vector weight adjustment. */
   private readonly feedbackTracker: FeedbackTracker;
   /** Per-tool recency tracker for frequency / recency boosts. */
@@ -206,7 +212,10 @@ export class ToolSearchEngine {
 
     // Initialize vector search (Phase 8)
     const vectorEnabled = searchConfig?.vectorEnabled ?? SEARCH_VECTOR_ENABLED;
-    this.embeddingEngine = vectorEnabled ? new EmbeddingEngine() : null;
+    this.vectorModelId = searchConfig?.vectorModelId ?? SEARCH_VECTOR_MODEL_ID;
+    this.embeddingEngine = vectorEnabled
+      ? new EmbeddingEngine({ modelId: this.vectorModelId })
+      : null;
     this.feedbackTracker = new FeedbackTracker(searchConfig);
     this.intentBoost = new IntentBoostImpl(searchConfig?.intentToolBoostRules);
 
@@ -310,14 +319,9 @@ export class ToolSearchEngine {
     // ── Query result cache (§4.3 CSAPC) ──
     this.queryCache = new LRUCache<string, CachedSearchEntry>(SEARCH_QUERY_CACHE_CAPACITY);
 
-    // ── Background embedding prewarm (Phase 8) ──
-    // Compute all tool embeddings off the hot path so the first user-facing
-    // search isn't blocked on ~600 ONNX inferences (cold-start: seconds).
-    // Until prewarm completes, computeVectorCosineScores falls back to pure
-    // BM25 + trigram — the engine stays correct, just without the vector
-    // signal. Fire-and-forget: failure is swallowed by the existing try/catch
-    // in computeVectorCosineScores.
-    if (this.embeddingEngine) {
+    // A shared daemon should not load ONNX until vector scoring is actually needed.
+    // Operators can opt back into background prewarm for latency-sensitive deployments.
+    if (this.embeddingEngine && SEARCH_VECTOR_PREWARM) {
       void this.ensureToolEmbeddings().catch(() => {
         // Swallowed — computeVectorCosineScores retries lazily on next search.
       });
@@ -912,25 +916,13 @@ export class ToolSearchEngine {
 
   // ── Dense vector search methods (Phase 8) ──
 
-  /**
-   * Resolve once the background embedding prewarm has settled (success or
-   * failure). Production code never needs to await this — the first search
-   * degrades gracefully to BM25 + trigram until embeddings land. Exposed for
-   * tests and callers that want the vector signal guaranteed before a query.
-   */
   waitForEmbeddings(): Promise<void> {
-    return this.prewarmPromise ?? Promise.resolve();
+    return this.ensureToolEmbeddings();
   }
 
   /**
-   * Lazy-compute and cache tool description embeddings.
-   * Called once on first search; subsequent searches reuse cached embeddings.
-   */
-  /**
-   * Lazy-compute and cache tool description embeddings.
-   * Deduped via `prewarmPromise`: concurrent callers share one embedBatch run
-   * instead of racing multiple ONNX jobs. On success `toolEmbeddings` is
-   * populated; on failure the promise is cleared so the next call can retry.
+   * Load catalog embeddings from disk or compute them once. Concurrent callers
+   * share the same promise, while failures degrade to lexical search and remain retryable.
    */
   private ensureToolEmbeddings(): Promise<void> {
     if (this.toolEmbeddings || !this.embeddingEngine) {
@@ -939,25 +931,35 @@ export class ToolSearchEngine {
     if (this.prewarmPromise) {
       return this.prewarmPromise;
     }
+    if (Date.now() < this.embeddingRetryAfterMs) {
+      return Promise.resolve();
+    }
 
     const descriptions = this.docs.map(
       (doc) => `${doc.name.replace(/_/g, ' ')}: ${doc.description}`,
     );
-    const run = this.embeddingEngine
-      .embedBatch(descriptions)
-      .then((embeddings) => {
+    const modelId = this.vectorModelId;
+    const engine = this.embeddingEngine;
+    const run = (async () => {
+      try {
+        const cached = await loadToolEmbeddingsCache(modelId, descriptions);
+        if (cached && cached.length === descriptions.length) {
+          this.toolEmbeddings = cached;
+          this.embeddingRetryAfterMs = 0;
+          return;
+        }
+
+        const embeddings = await engine.embedBatch(descriptions);
         this.toolEmbeddings = embeddings;
-      })
-      .catch(() => {
-        // Swallowed: embedding failure is an expected graceful degradation,
-        // not a condition callers should handle. toolEmbeddings stays null and
-        // computeVectorCosineScores returns empty — the engine keeps serving
-        // BM25 + trigram results. Resolve (don't reject) so waitForEmbeddings
-        // reflects "settled" without forcing an error path on every waiter.
-      })
-      .then(() => {
+        this.embeddingRetryAfterMs = 0;
+        await saveToolEmbeddingsCache(modelId, descriptions, embeddings);
+      } catch {
+        // Embeddings are optional; BM25 and trigram remain available.
+        this.embeddingRetryAfterMs = Date.now() + Math.max(0, SEARCH_VECTOR_RETRY_COOLDOWN_MS);
+      } finally {
         this.prewarmPromise = null;
-      });
+      }
+    })();
     this.prewarmPromise = run;
     return run;
   }
@@ -976,10 +978,10 @@ export class ToolSearchEngine {
   private async computeVectorCosineScores(query: string): Promise<Map<number, number>> {
     if (!this.embeddingEngine) return new Map();
 
-    // Prewarm race: another in-flight prewarm owns the work; don't double-spawn
-    // and don't block — let this query degrade gracefully.
     if (!this.toolEmbeddings) {
-      return new Map();
+      if (this.prewarmPromise) return new Map();
+      await this.ensureToolEmbeddings();
+      if (!this.toolEmbeddings) return new Map();
     }
 
     let queryEmbedding: Float32Array;
@@ -992,6 +994,7 @@ export class ToolSearchEngine {
     const results = new Map<number, number>();
     for (let i = 0; i < this.toolEmbeddings.length; i++) {
       const toolEmb = this.toolEmbeddings[i]!;
+      if (toolEmb.length !== queryEmbedding.length) continue;
       // Dot product (embeddings are already normalised → cosine similarity)
       let dot = 0;
       for (let j = 0; j < queryEmbedding.length; j++) {

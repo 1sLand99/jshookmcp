@@ -21,8 +21,8 @@ type EmbedderPipeline = (
 ) => Promise<{ data: Float32Array | ArrayLike<number>; dims?: number[] }>;
 
 let embedder: EmbedderPipeline | null = null;
-
-const MODEL_ID = 'Xenova/bge-micro-v2';
+let loadedModelId: string | null = null;
+const DEFAULT_MODEL_ID = 'Xenova/bge-micro-v2';
 
 /**
  * Output dimension of bge-micro-v2. Used to slice the flattened batch tensor
@@ -39,12 +39,18 @@ const EMBEDDING_DIM = 384;
  */
 const EMBEDDING_BATCH_SIZE = 32;
 
-async function getEmbedder(): Promise<EmbedderPipeline> {
+async function getEmbedder(modelId: string): Promise<EmbedderPipeline> {
+  if (embedder && loadedModelId !== modelId) {
+    throw new Error(
+      `Embedding worker already loaded model ${loadedModelId}; cannot switch to ${modelId}`,
+    );
+  }
   if (!embedder) {
     const { pipeline } = await import('@huggingface/transformers');
-    embedder = (await pipeline('feature-extraction', MODEL_ID, {
+    embedder = (await pipeline('feature-extraction', modelId, {
       quantized: true,
     } as Record<string, unknown>)) as unknown as EmbedderPipeline;
+    loadedModelId = modelId;
   }
   return embedder;
 }
@@ -62,7 +68,17 @@ async function getEmbedder(): Promise<EmbedderPipeline> {
  * L2 pass is applied here.
  */
 function sliceBatch(data: Float32Array, batchSize: number, dims?: number[]): Float32Array[] {
-  const dim = (dims && dims.length > 0 ? dims[dims.length - 1] : EMBEDDING_DIM) ?? EMBEDDING_DIM;
+  const reportedDim = dims && dims.length > 0 ? dims[dims.length - 1] : undefined;
+  const inferredDim = data.length / batchSize;
+  const dim =
+    reportedDim && Number.isInteger(reportedDim) && reportedDim > 0
+      ? reportedDim
+      : Number.isInteger(inferredDim) && inferredDim > 0
+        ? inferredDim
+        : EMBEDDING_DIM;
+  if (data.length < batchSize * dim) {
+    throw new Error(`Unexpected embedding tensor size: ${data.length} for ${batchSize}x${dim}`);
+  }
   const out: Float32Array[] = [];
   for (let i = 0; i < batchSize; i++) {
     const row = new Float32Array(dim);
@@ -76,10 +92,11 @@ function sliceBatch(data: Float32Array, batchSize: number, dims?: number[]): Flo
 
 parentPort?.on(
   'message',
-  async (msg: { type: string; id: number; text?: string; texts?: string[] }) => {
+  async (msg: { type: string; id: number; modelId?: string; text?: string; texts?: string[] }) => {
     try {
+      const modelId = msg.modelId?.trim() || DEFAULT_MODEL_ID;
       if (msg.type === 'embed') {
-        const pipe = await getEmbedder();
+        const pipe = await getEmbedder(modelId);
         const output = await pipe(msg.text!, { pooling: 'mean', normalize: true });
         const raw = output.data as Float32Array;
         // pipeline `normalize:true` already L2-normalises per text;
@@ -89,7 +106,7 @@ parentPort?.on(
           embedding.buffer as ArrayBuffer,
         ]);
       } else if (msg.type === 'embed_batch') {
-        const pipe = await getEmbedder();
+        const pipe = await getEmbedder(modelId);
         const texts = msg.texts!;
         const embeddings: Float32Array[] = [];
         // Batch the inputs through the pipeline in fixed-size chunks. The

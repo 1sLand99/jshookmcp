@@ -13,7 +13,7 @@ const mockParentPort = {
   postMessage: vi.fn(),
 };
 
-vi.mock('worker_threads', () => ({
+vi.mock('node:worker_threads', () => ({
   parentPort: mockParentPort,
 }));
 

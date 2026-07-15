@@ -1,140 +1,189 @@
-/**
- * Host-side manager for the embedding worker thread.
- *
- * Provides a clean async API for generating embeddings while keeping
- * all heavy inference in a separate worker thread.
- *
- * Usage:
- *   const engine = new EmbeddingEngine();
- *   const vec = await engine.embed("search query");  // Float32Array[384]
- *   await engine.terminate();
- */
-import { Worker } from 'worker_threads';
+import { Worker } from 'node:worker_threads';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { SEARCH_VECTOR_MODEL_ID, SEARCH_VECTOR_WORKER_IDLE_MS } from '@src/constants';
 import { ProcessRegistry } from '@utils/ProcessRegistry';
 
-// ── Types ──
+type EmbeddingResult = Float32Array | Float32Array[];
 
 interface PendingRequest {
-  resolve: (value: Float32Array | Float32Array[]) => void;
+  worker: Worker;
+  resolve: (value: EmbeddingResult) => void;
   reject: (reason: Error) => void;
 }
 
-// ── EmbeddingEngine ──
+export interface EmbeddingEngineOptions {
+  idleMs?: number;
+  modelId?: string;
+}
 
 export class EmbeddingEngine {
   private worker: Worker | null = null;
   private ready = false;
   private nextId = 0;
   private readonly pending = new Map<number, PendingRequest>();
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly idleMs: number;
+  private readonly modelId: string;
 
-  /**
-   * Returns whether the worker is loaded and ready for requests.
-   */
+  constructor(options?: EmbeddingEngineOptions) {
+    const configuredIdleMs = options?.idleMs ?? SEARCH_VECTOR_WORKER_IDLE_MS;
+    this.idleMs = Number.isFinite(configuredIdleMs) ? Math.max(0, configuredIdleMs) : 0;
+    this.modelId = options?.modelId?.trim() || SEARCH_VECTOR_MODEL_ID;
+  }
+
   isReady(): boolean {
     return this.ready;
   }
 
-  /**
-   * Embed a single text string into a 384-dimensional Float32Array.
-   * Lazy-starts the worker on first call.
-   */
-  async embed(text: string): Promise<Float32Array> {
-    this.ensureWorker();
-    const id = this.nextId++;
-    return new Promise<Float32Array>((resolve, reject) => {
-      this.pending.set(id, {
-        resolve: resolve as (value: Float32Array | Float32Array[]) => void,
-        reject,
-      });
-      this.worker!.postMessage({ type: 'embed', id, text });
-    });
+  isWorkerAlive(): boolean {
+    return this.worker !== null;
   }
 
-  /**
-   * Batch embed multiple text strings.
-   * Returns an array of Float32Array, one per input text.
-   */
-  async embedBatch(texts: string[]): Promise<Float32Array[]> {
-    if (texts.length === 0) return [];
-    this.ensureWorker();
-    const id = this.nextId++;
-    return new Promise<Float32Array[]>((resolve, reject) => {
-      this.pending.set(id, {
-        resolve: resolve as (value: Float32Array | Float32Array[]) => void,
-        reject,
-      });
-      this.worker!.postMessage({ type: 'embed_batch', id, texts });
-    });
+  embed(text: string): Promise<Float32Array> {
+    return this.dispatch<Float32Array>('embed', { text });
   }
 
-  /**
-   * Gracefully shut down the worker thread.
-   */
+  embedBatch(texts: string[]): Promise<Float32Array[]> {
+    if (texts.length === 0) return Promise.resolve([]);
+    return this.dispatch<Float32Array[]>('embed_batch', { texts });
+  }
+
   async terminate(): Promise<void> {
-    if (this.worker) {
-      // Reject all pending requests
-      for (const [, req] of this.pending) {
-        req.reject(new Error('EmbeddingEngine terminated'));
-      }
-      this.pending.clear();
-
-      await this.worker.terminate();
-      this.worker = null;
+    this.clearIdleTimer();
+    const worker = this.worker;
+    if (!worker) {
       this.ready = false;
+      return;
+    }
+    await this.terminateWorker(worker, new Error('EmbeddingEngine terminated'));
+  }
+
+  private dispatch<T extends EmbeddingResult>(
+    type: 'embed' | 'embed_batch',
+    payload: { text: string } | { texts: string[] },
+  ): Promise<T> {
+    this.clearIdleTimer();
+    const worker = this.ensureWorker();
+    const id = this.nextId++;
+
+    const result = new Promise<T>((resolve, reject) => {
+      const request: PendingRequest = {
+        worker,
+        resolve: resolve as (value: EmbeddingResult) => void,
+        reject,
+      };
+      this.pending.set(id, request);
+      try {
+        worker.postMessage({ type, id, modelId: this.modelId, ...payload });
+      } catch (error) {
+        const pendingRequest = this.takePendingRequest(id);
+        pendingRequest?.reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+
+    return result.finally(() => this.armIdleRelease(worker));
+  }
+
+  private clearIdleTimer(): void {
+    if (!this.idleTimer) return;
+    clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+  }
+
+  private armIdleRelease(worker: Worker): void {
+    if (this.worker !== worker || this.idleMs <= 0 || this.hasPendingRequests(worker)) return;
+
+    this.clearIdleTimer();
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      if (this.worker !== worker || this.hasPendingRequests(worker)) return;
+      void this.terminateWorker(worker, new Error('Embedding worker released after idle timeout'));
+    }, this.idleMs);
+    this.idleTimer.unref?.();
+  }
+
+  private hasPendingRequests(worker: Worker): boolean {
+    return [...this.pending.values()].some((request) => request.worker === worker);
+  }
+
+  private takePendingRequest(id: number): PendingRequest | undefined {
+    const request = this.pending.get(id);
+    if (!request) return undefined;
+    this.pending.delete(id);
+    return request;
+  }
+
+  private rejectWorkerRequests(worker: Worker, error: Error): void {
+    for (const [id, request] of this.pending) {
+      if (request.worker !== worker) continue;
+      this.takePendingRequest(id);
+      request.reject(error);
     }
   }
 
-  // ── Private ──
+  private async terminateWorker(worker: Worker, reason: Error): Promise<void> {
+    if (this.worker === worker) {
+      this.worker = null;
+      this.ready = false;
+      this.clearIdleTimer();
+    }
+    this.rejectWorkerRequests(worker, reason);
+    try {
+      await worker.terminate();
+    } catch {
+      // The worker may already have exited.
+    }
+  }
 
-  private ensureWorker(): void {
-    if (this.worker) return;
+  private ensureWorker(): Worker {
+    if (this.worker) return this.worker;
 
-    const workerPath = new URL('./EmbeddingWorker.js', import.meta.url);
-    this.worker = new Worker(workerPath);
-    if (typeof this.worker.unref === 'function') this.worker.unref();
-    ProcessRegistry.register(this.worker);
+    const bundledWorkerPath = new URL('./server/search/EmbeddingWorker.mjs', import.meta.url);
+    const workerPath = existsSync(fileURLToPath(bundledWorkerPath))
+      ? bundledWorkerPath
+      : new URL('./EmbeddingWorker.ts', import.meta.url);
+    const worker = new Worker(workerPath);
+    this.worker = worker;
+    worker.unref?.();
+    ProcessRegistry.register(worker);
 
-    this.worker.on(
+    worker.on(
       'message',
-      (msg: {
-        type: string;
-        id: number;
-        embedding?: Float32Array | Float32Array[];
-        message?: string;
-      }) => {
-        const req = this.pending.get(msg.id);
-        if (!req) return;
-        this.pending.delete(msg.id);
+      (message: { type: string; id: number; embedding?: EmbeddingResult; message?: string }) => {
+        const request = this.pending.get(message.id);
+        if (!request || request.worker !== worker) return;
+        this.takePendingRequest(message.id);
 
-        if (msg.type === 'result') {
-          this.ready = true;
-          req.resolve(msg.embedding!);
-        } else if (msg.type === 'error') {
-          req.reject(new Error(msg.message ?? 'Unknown worker error'));
+        if (message.type === 'result' && message.embedding) {
+          if (this.worker === worker) this.ready = true;
+          request.resolve(message.embedding);
+        } else {
+          request.reject(new Error(message.message ?? 'Unknown embedding worker error'));
         }
       },
     );
 
-    this.worker.on('error', (err: Error) => {
-      // Reject all pending requests
-      for (const [, req] of this.pending) {
-        req.reject(err);
+    worker.on('error', (error: Error) => {
+      this.rejectWorkerRequests(worker, error);
+      if (this.worker === worker) {
+        this.worker = null;
+        this.ready = false;
+        this.clearIdleTimer();
       }
-      this.pending.clear();
-      this.worker = null;
-      this.ready = false;
     });
 
-    this.worker.on('exit', (code: number) => {
+    worker.on('exit', (code: number) => {
       if (code !== 0) {
-        const err = new Error(`Embedding worker exited with code ${code}`);
-        for (const [, req] of this.pending) {
-          req.reject(err);
-        }
-        this.pending.clear();
+        this.rejectWorkerRequests(worker, new Error(`Embedding worker exited with code ${code}`));
       }
-      this.worker = null;
-      this.ready = false;
+      if (this.worker === worker) {
+        this.worker = null;
+        this.ready = false;
+        this.clearIdleTimer();
+      }
     });
+
+    return worker;
   }
 }

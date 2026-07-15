@@ -3,8 +3,8 @@ import { defineConfig } from 'tsdown';
 const analyzeEnabled = process.env.BUNDLE_ANALYZE === '1';
 
 export default defineConfig(async () => ({
-  entry: ['src/index.ts', 'src/server/plugin-api.ts'],
-  format: 'esm',
+  entry: ['src/index.ts', 'src/server/plugin-api.ts', 'src/server/search/EmbeddingWorker.ts'],
+  format: 'esm' as const,
   clean: true,
   dts: false,
   minify: true,

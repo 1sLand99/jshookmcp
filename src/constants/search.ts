@@ -143,6 +143,18 @@ export const SEARCH_VECTOR_LEARN_TOP_N = int('SEARCH_VECTOR_LEARN_TOP_N', 3);
  */
 export const SEARCH_VECTOR_BM25_SKIP_THRESHOLD = float('SEARCH_VECTOR_BM25_SKIP_THRESHOLD', 8);
 
+/** Start catalog embedding work at construction time instead of on first vector search. */
+export const SEARCH_VECTOR_PREWARM = bool('SEARCH_VECTOR_PREWARM', false);
+
+/** Release the ONNX worker after this idle window. Set to 0 to keep it resident. */
+export const SEARCH_VECTOR_WORKER_IDLE_MS = int('SEARCH_VECTOR_WORKER_IDLE_MS', 15_000);
+
+/** Back off after an embedding load failure instead of restarting ONNX on every search. */
+export const SEARCH_VECTOR_RETRY_COOLDOWN_MS = int('SEARCH_VECTOR_RETRY_COOLDOWN_MS', 60_000);
+
+/** Persist catalog embeddings so daemon restarts do not repeat full-catalog inference. */
+export const SEARCH_VECTOR_CACHE_ENABLED = bool('SEARCH_VECTOR_CACHE_ENABLED', true);
+
 /* ================================================================== */
 /*  Profile tier-aware ranking                                         */
 /* ================================================================== */
