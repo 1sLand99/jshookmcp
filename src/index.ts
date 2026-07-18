@@ -5,6 +5,7 @@ import { getConfig, validateConfig } from '@utils/config';
 import { logger } from '@utils/logger';
 import { initRegistry } from '@server/registry/index';
 import { resolveCliFastPath } from '@utils/cliFastPath';
+import { registerServerInstance, unregisterServerInstance } from '@utils/InstanceRegistry';
 import {
   cleanupArtifacts,
   getArtifactRetentionConfig,
@@ -112,6 +113,8 @@ export async function main(): Promise<void> {
       explicitProfile === 'full' || explicitProfile === 'workflow' || explicitProfile === 'search'
         ? explicitProfile
         : 'search';
+    logger.info(`[startup] transport=${transportMode} profile=${profile}`);
+    await registerServerInstance({ transport: transportMode, profile });
     await initRegistry(profile);
     const server = new MCPServer(config);
     const stopArtifactRetentionScheduler = startArtifactRetentionScheduler();
@@ -170,6 +173,8 @@ export async function main(): Promise<void> {
         await server.close();
       } catch (error) {
         logger.error('Error during SIGINT shutdown:', error);
+      } finally {
+        await unregisterServerInstance();
       }
       clearTimeout(forceExitTimer);
       process.exit(0);
@@ -187,6 +192,8 @@ export async function main(): Promise<void> {
         await server.close();
       } catch (error) {
         logger.error('Error during SIGTERM shutdown:', error);
+      } finally {
+        await unregisterServerInstance();
       }
       clearTimeout(forceExitTimer);
       process.exit(0);
@@ -220,6 +227,8 @@ export async function main(): Promise<void> {
           await server.close();
         } catch (error) {
           logger.error('Error during stdin EOF shutdown:', error);
+        } finally {
+          await unregisterServerInstance();
         }
         clearTimeout(forceExitTimer);
         process.exit(0);
@@ -228,6 +237,7 @@ export async function main(): Promise<void> {
 
     logger.info('MCP server is running. Press Ctrl+C to stop.');
   } catch (error) {
+    await unregisterServerInstance();
     logger.error('Failed to start MCP server:');
 
     if (error instanceof Error) {

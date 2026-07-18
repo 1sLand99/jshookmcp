@@ -14,6 +14,15 @@ vi.mock('@server/registry/index', () => ({ initRegistry: vi.fn() }));
 vi.mock('@utils/cliFastPath', () => ({
   resolveCliFastPath: vi.fn(),
 }));
+vi.mock('@utils/InstanceRegistry', () => ({
+  registerServerInstance: vi.fn().mockResolvedValue({
+    livePeers: [],
+    liveCount: 1,
+    warned: false,
+    blocked: false,
+  }),
+  unregisterServerInstance: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('@utils/artifactRetention', () => ({
   cleanupArtifacts: vi.fn(),
   getArtifactRetentionConfig: vi.fn(),

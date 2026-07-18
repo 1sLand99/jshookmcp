@@ -18,6 +18,12 @@ export const RUNTIME_ERROR_WINDOW_MS = int('RUNTIME_ERROR_WINDOW_MS', 60_000);
 /** Max recoverable errors within the window before enabling degraded mode. */
 export const RUNTIME_ERROR_THRESHOLD = int('RUNTIME_ERROR_THRESHOLD', 8);
 
+/** Warn when this many live jshook server processes share the same user state directory. */
+export const JSHOOK_INSTANCE_WARN_AT = int('JSHOOK_INSTANCE_WARN_AT', 2);
+
+/** Optional hard cap for live jshook server processes. 0 disables the cap. */
+export const JSHOOK_MAX_INSTANCES = int('JSHOOK_MAX_INSTANCES', 0);
+
 /* ================================================================== */
 /*  Debug ports & endpoints                                            */
 /* ================================================================== */
