@@ -12,6 +12,9 @@ import { int } from './helpers.js';
 /** Browser pool idle timeout before auto-disconnect. Default: 5 minutes. */
 export const BROWSER_POOL_IDLE_TIMEOUT_MS = int('BROWSER_POOL_IDLE_TIMEOUT_MS', 300_000);
 
+/** Idle timeout for the production CodeCollector browser lifecycle. 0 disables reclamation. */
+export const BROWSER_IDLE_TIMEOUT_MS = int('BROWSER_IDLE_TIMEOUT_MS', 300_000);
+
 /** Max tabs per pooled browser instance. */
 export const BROWSER_POOL_MAX_TABS = int('BROWSER_POOL_MAX_TABS', 10);
 

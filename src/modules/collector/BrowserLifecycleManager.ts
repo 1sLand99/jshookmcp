@@ -9,11 +9,16 @@ import {
   type ResolvedChromeLaunchOptions,
 } from '@modules/collector/CodeCollectorLaunchOptions';
 import type { PuppeteerConfig } from '@internal-types/index';
+import { BROWSER_IDLE_TIMEOUT_MS } from '@src/constants';
 
 export interface CodeCollectorLaunchResult {
   action: 'launched' | 'relaunched' | 'reused';
   launchOptions: ResolvedChromeLaunchOptions;
   reason?: 'replacing-existing-browser-connection' | 'launch-options-changed';
+}
+
+export interface BrowserLifecycleOptions {
+  idleTimeoutMs?: number;
 }
 
 /**
@@ -26,6 +31,9 @@ export class BrowserLifecycleManager {
   private currentLaunchOptions: ResolvedChromeLaunchOptions | null = null;
   private connectedToExistingBrowser: boolean = false;
   private currentHeadless: boolean | null = null;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private closePromise: Promise<void> | null = null;
+  private readonly idleTimeoutMs: number;
 
   private static readonly BROWSER_CLOSE_TIMEOUT_MS = 5000;
 
@@ -33,7 +41,43 @@ export class BrowserLifecycleManager {
     private readonly config: PuppeteerConfig,
     private readonly viewport: { width: number; height: number },
     private readonly onDisconnected: () => void,
-  ) {}
+    options?: BrowserLifecycleOptions,
+  ) {
+    const configuredTimeout = options?.idleTimeoutMs ?? BROWSER_IDLE_TIMEOUT_MS;
+    this.idleTimeoutMs = Number.isFinite(configuredTimeout) ? Math.max(0, configuredTimeout) : 0;
+  }
+
+  /** Mark browser activity and move the idle reclamation deadline. */
+  touch(): void {
+    if (!this.browser || this.idleTimeoutMs <= 0 || this.closePromise) return;
+    this.clearIdleTimer();
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      void this.closeIdleBrowser();
+    }, this.idleTimeoutMs);
+    this.idleTimer.unref?.();
+  }
+
+  private clearIdleTimer(): void {
+    if (!this.idleTimer) return;
+    clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+  }
+
+  private async closeIdleBrowser(): Promise<void> {
+    if (!this.browser || this.closePromise) return;
+    const attached = this.connectedToExistingBrowser;
+    logger.info(
+      `[browser] idle for ${this.idleTimeoutMs}ms; ${attached ? 'disconnecting attached browser' : 'closing launched browser'}`,
+    );
+    try {
+      await this.disposeCurrentBrowser(false, async () => {});
+    } catch (error) {
+      logger.warn('[browser] idle reclamation failed:', error);
+    } finally {
+      this.onDisconnected();
+    }
+  }
 
   getBrowser(): Browser | null {
     return this.browser;
@@ -132,9 +176,11 @@ export class BrowserLifecycleManager {
     }
     this.currentHeadless = launchOptions.headless;
     this.currentLaunchOptions = launchOptions;
-    this.browser.on('disconnected', () => {
-      this.handleBrowserDisconnected();
+    const browser = this.browser;
+    browser.on('disconnected', () => {
+      this.handleBrowserDisconnected(browser);
     });
+    this.touch();
     logger.success('Browser initialized with enhanced anti-detection');
   }
 
@@ -159,8 +205,10 @@ export class BrowserLifecycleManager {
     return undefined;
   }
 
-  private handleBrowserDisconnected(): void {
+  private handleBrowserDisconnected(browser: Browser | null): void {
+    if (!browser || this.browser !== browser) return;
     logger.warn('Browser disconnected');
+    this.clearIdleTimer();
     this.browser = null;
     this.currentHeadless = null;
     this.currentLaunchOptions = null;
@@ -173,6 +221,18 @@ export class BrowserLifecycleManager {
     _markExplicitlyClosed: boolean,
     clearAllData: () => Promise<void>,
   ): Promise<void> {
+    if (this.closePromise) return this.closePromise;
+    const run = this.disposeCurrentBrowserInner(clearAllData);
+    this.closePromise = run;
+    try {
+      await run;
+    } finally {
+      if (this.closePromise === run) this.closePromise = null;
+    }
+  }
+
+  private async disposeCurrentBrowserInner(clearAllData: () => Promise<void>): Promise<void> {
+    this.clearIdleTimer();
     await clearAllData();
 
     const browser = this.browser;
@@ -248,9 +308,11 @@ export class BrowserLifecycleManager {
     this.browser = await connectWithTimeout(connectOptions, target);
     this.connectedToExistingBrowser = true;
     this.currentLaunchOptions = null;
-    this.browser.on('disconnected', () => {
-      this.handleBrowserDisconnected();
+    const browser = this.browser;
+    browser.on('disconnected', () => {
+      this.handleBrowserDisconnected(browser);
     });
+    this.touch();
     logger.success('Connected to existing browser successfully');
   }
 }

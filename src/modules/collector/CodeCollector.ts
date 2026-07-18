@@ -188,6 +188,7 @@ export class CodeCollector {
   async launch(overrides?: ChromeLaunchOverrides): Promise<CodeCollectorLaunchResult> {
     this.explicitlyClosed = false;
     const result = await this.lifecycleManager.launch(overrides, this.initPromise);
+    this.lifecycleManager.touch();
     return result;
   }
 
@@ -229,6 +230,7 @@ export class CodeCollector {
     }
   }
   private getPageTargets(): Target[] {
+    this.lifecycleManager.touch();
     const browser = this.lifecycleManager.getBrowser();
     if (!browser) {
       return [];
@@ -258,6 +260,7 @@ export class CodeCollector {
     return page;
   }
   async getActivePage(): Promise<Page> {
+    this.lifecycleManager.touch();
     if (this.cachedActivePage) {
       return this.cachedActivePage;
     }
@@ -302,6 +305,7 @@ export class CodeCollector {
     return urlMatch?.index ?? null;
   }
   async listPages(): Promise<Array<{ index: number; url: string; title: string }>> {
+    this.lifecycleManager.touch();
     const browser = this.lifecycleManager.getBrowser();
     if (!browser) {
       return [];
@@ -314,6 +318,7 @@ export class CodeCollector {
     }));
   }
   async listResolvedPages(timeoutMs = 1500): Promise<ResolvedPageDescriptor[]> {
+    this.lifecycleManager.touch();
     const browser = this.lifecycleManager.getBrowser();
     if (!browser) {
       return [];
@@ -351,6 +356,7 @@ export class CodeCollector {
     return pages.filter((page): page is ResolvedPageDescriptor => page !== null);
   }
   async selectResolvedPageByTargetId(targetId: string): Promise<ResolvedPageDescriptor | null> {
+    this.lifecycleManager.touch();
     const browser = this.lifecycleManager.getBrowser();
     if (!browser) return null;
 
@@ -386,6 +392,7 @@ export class CodeCollector {
     return null;
   }
   async selectPage(index: number): Promise<void> {
+    this.lifecycleManager.touch();
     const browser = this.lifecycleManager.getBrowser();
     if (!browser) {
       throw new Error('Browser not connected');
@@ -420,6 +427,7 @@ export class CodeCollector {
     }
   }
   async createPage(url?: string): Promise<Page> {
+    this.lifecycleManager.touch();
     let browser = this.lifecycleManager.getBrowser();
     if (!browser) {
       await this.init();
@@ -475,6 +483,7 @@ export class CodeCollector {
     v8NativeSyntaxEnabled?: boolean;
     launchArgs?: string[];
   }> {
+    this.lifecycleManager.touch();
     const browser = this.lifecycleManager.getBrowser();
     if (!browser) {
       return {
@@ -583,16 +592,16 @@ export class CodeCollector {
       (opts, tgt) => this.connectWithTimeout(opts, tgt, endpointOrOptions),
       target,
     );
+    this.lifecycleManager.touch();
   }
   getBrowser(): Browser | null {
+    this.lifecycleManager.touch();
     return this.lifecycleManager.getBrowser();
   }
 
   getBrowserTargetSessionManager(): BrowserTargetSessionManager {
     if (!this.browserTargetSessionManager) {
-      this.browserTargetSessionManager = new BrowserTargetSessionManager(() =>
-        this.lifecycleManager.getBrowser(),
-      );
+      this.browserTargetSessionManager = new BrowserTargetSessionManager(() => this.getBrowser());
     }
     return this.browserTargetSessionManager;
   }
