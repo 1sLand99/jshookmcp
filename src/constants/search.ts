@@ -123,7 +123,7 @@ export const SEARCH_BM25_B = float('SEARCH_BM25_B', 0.75);
  * Dense vector search (Phase 8 — Hybrid Semantic Routing).
  *
  * SEARCH_VECTOR_ENABLED: master switch for embedding-based search signal.
- * SEARCH_VECTOR_MODEL_ID: HuggingFace model used for embedding inference.
+ * SEARCH_VECTOR_MODEL_ID: Hugging Face ID of a Model2Vec-compatible static embedding model.
  * SEARCH_VECTOR_COSINE_WEIGHT: initial weight of the vector cosine signal in RRF fusion.
  * SEARCH_VECTOR_DYNAMIC_WEIGHT: when true, vector weight self-tunes based on tool-call feedback.
  * SEARCH_VECTOR_LEARN_UP / DOWN: step sizes applied when the selected tool was

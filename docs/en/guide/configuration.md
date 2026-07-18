@@ -90,15 +90,15 @@ Runtime configuration is defined by `src/utils/config.ts`. The current runtime d
 | `MCP_DEFAULT_PLUGIN_BOOST_TIER`           | Default tier for plugin auto-registration during boost.           | `full`                           |
 | `SEARCH_AUTO_ACTIVATE_DOMAINS`            | Auto-activate a domain when its tool is searched.                 | `true`                           |
 | `SEARCH_VECTOR_ENABLED`                   | Master switch for embedding-based search using a lightweight static model by default. | stdio: `false`; HTTP: `true` |
-| `SEARCH_VECTOR_MODEL_ID`                  | HuggingFace model ID for embedding inference.                     | `minishlab/potion-code-16M-v2`   |
-| `SEARCH_VECTOR_COSINE_WEIGHT`             | Initial weight of the vector cosine signal in RRF fusion.         | `0.69`                           |
+| `SEARCH_VECTOR_MODEL_ID`                  | HuggingFace ID of a Model2Vec-compatible static embedding model.  | `minishlab/potion-code-16M-v2`   |
+| `SEARCH_VECTOR_COSINE_WEIGHT`             | Initial weight of the vector cosine signal in RRF fusion.         | `0.53`                           |
 | `SEARCH_VECTOR_DYNAMIC_WEIGHT`            | Self-tune vector weight based on tool-call feedback.              | `true`                           |
-| `SEARCH_VECTOR_LEARN_UP`                  | Weight step-up when selected tool is in vector top-N.             | `0.07`                           |
+| `SEARCH_VECTOR_LEARN_UP`                  | Weight step-up when selected tool is in vector top-N.             | `0.13`                           |
 | `SEARCH_VECTOR_LEARN_DOWN`                | Weight step-down when selected tool is outside vector top-N.      | `0.02`                           |
-| `SEARCH_VECTOR_LEARN_TOP_N`               | Rank threshold separating "hit" from "miss" for learning.         | `6`                              |
+| `SEARCH_VECTOR_LEARN_TOP_N`               | Rank threshold separating "hit" from "miss" for learning.         | `3`                              |
 | `SEARCH_VECTOR_PREWARM`                   | Load the embedding model when the search engine starts; shared daemons load lazily by default. | `false`   |
 | `SEARCH_VECTOR_WORKER_IDLE_MS`            | Release the embedding worker after this idle period; `0` keeps it resident. | stdio: `15000`; HTTP: `300000` |
-| `SEARCH_VECTOR_FETCH_TIMEOUT_MS`          | Per-request timeout for remote model/tokenizer downloads.         | `15000`                          |
+| `SEARCH_VECTOR_FETCH_TIMEOUT_MS`          | Per-request timeout for static model/tokenizer downloads.         | `15000`                          |
 | `SEARCH_VECTOR_RETRY_COOLDOWN_MS`         | Retry cooldown after an embedding load failure.                   | `60000`                          |
 | `SEARCH_VECTOR_CACHE_ENABLED`             | Persist catalog embeddings on disk.                               | `true`                           |
 | `JSHOOK_EMBEDDING_CACHE_DIR`              | Override the embedding cache directory.                           | `~/.jshookmcp/cache/embeddings`  |

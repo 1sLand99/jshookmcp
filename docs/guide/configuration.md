@@ -90,15 +90,15 @@ Clone 仓库后，在项目根目录创建 `.env` 文件（参考 `.env.example`
 | `MCP_DEFAULT_PLUGIN_BOOST_TIER`           | plugin 在 boost 时自动注册的默认档位。                | `full`                    |
 | `SEARCH_AUTO_ACTIVATE_DOMAINS`            | 搜索到某域的工具时自动激活该域。                      | `true`                    |
 | `SEARCH_VECTOR_ENABLED`                   | 向量搜索信号总开关（默认使用静态轻量模型）。          | stdio：`false`；HTTP：`true` |
-| `SEARCH_VECTOR_MODEL_ID`                  | HuggingFace 嵌入推理模型 ID。                         | `minishlab/potion-code-16M-v2` |
-| `SEARCH_VECTOR_COSINE_WEIGHT`             | 向量余弦信号在 RRF 融合中的初始权重。                 | `0.69`                    |
+| `SEARCH_VECTOR_MODEL_ID`                  | Model2Vec 兼容的 HuggingFace 静态嵌入模型 ID。         | `minishlab/potion-code-16M-v2` |
+| `SEARCH_VECTOR_COSINE_WEIGHT`             | 向量余弦信号在 RRF 融合中的初始权重。                 | `0.53`                    |
 | `SEARCH_VECTOR_DYNAMIC_WEIGHT`            | 根据工具调用反馈自动调节向量权重。                    | `true`                    |
-| `SEARCH_VECTOR_LEARN_UP`                  | 选中工具在向量 top-N 内时的权重上调步长。             | `0.07`                    |
+| `SEARCH_VECTOR_LEARN_UP`                  | 选中工具在向量 top-N 内时的权重上调步长。             | `0.13`                    |
 | `SEARCH_VECTOR_LEARN_DOWN`                | 选中工具在向量 top-N 外时的权重下调步长。             | `0.02`                    |
-| `SEARCH_VECTOR_LEARN_TOP_N`               | 区分向量"命中"与"未命中"的排名阈值。                  | `6`                       |
+| `SEARCH_VECTOR_LEARN_TOP_N`               | 区分向量"命中"与"未命中"的排名阈值。                  | `3`                       |
 | `SEARCH_VECTOR_PREWARM`                   | 搜索引擎启动时是否立即加载 embedding 模型；共享 daemon 默认按需加载。 | `false`              |
 | `SEARCH_VECTOR_WORKER_IDLE_MS`            | embedding worker 空闲多久后释放；`0` 表示常驻。          | stdio：`15000`；HTTP：`300000` |
-| `SEARCH_VECTOR_FETCH_TIMEOUT_MS`          | 远程模型/tokenizer 单次下载请求超时。                    | `15000`                 |
+| `SEARCH_VECTOR_FETCH_TIMEOUT_MS`          | 静态模型/tokenizer 单次下载请求超时。                    | `15000`                 |
 | `SEARCH_VECTOR_RETRY_COOLDOWN_MS`         | embedding 加载失败后的重试冷却时间。                     | `60000`                 |
 | `SEARCH_VECTOR_CACHE_ENABLED`             | 是否将工具目录 embedding 持久化到磁盘。                  | `true`                  |
 | `JSHOOK_EMBEDDING_CACHE_DIR`              | embedding 磁盘缓存目录覆盖值。                            | `~/.jshookmcp/cache/embeddings` |
