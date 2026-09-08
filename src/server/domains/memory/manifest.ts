@@ -7,7 +7,6 @@
 
 import type { DomainManifest } from '@server/registry/contracts';
 import type { MCPServerContext } from '@server/MCPServer.context';
-import type { HardwareBreakpointEngine } from '@native/HardwareBreakpoint';
 import { memoryScanToolDefinitions } from './definitions';
 import type { MemoryScanHandlers } from './handlers.impl';
 import { UnifiedProcessManager } from '@server/domains/shared/modules/native';
@@ -43,21 +42,32 @@ async function ensure(ctx: MCPServerContext): Promise<H> {
   // Cross-platform modules (always loaded)
   const [
     memoryScanner,
+    nativeMemoryManager,
     scanSessionManager,
     pointerChainEngine,
     structureAnalyzer,
     codeInjector,
     memoryController,
+    platformFactory,
     heapAnalyzerMod,
   ] = await Promise.all([
     import('@native/MemoryScanner'),
+    import('@native/NativeMemoryManager.impl'),
     import('@native/MemoryScanSession'),
     import('@native/PointerChainEngine'),
     import('@native/StructureAnalyzer'),
     import('@native/CodeInjector'),
     import('@native/MemoryController'),
+    import('@native/platform/factory'),
     import('@native/HeapAnalyzer'),
   ]);
+  // Compose one provider for the core memory path. Compatibility singletons
+  // remain exported from their legacy modules, but domain handlers receive
+  // explicitly wired instances so provider lifecycle is visible and testable.
+  const provider = platformFactory.createPlatformProvider();
+  const domainMemoryManager = new nativeMemoryManager.NativeMemoryManager(provider);
+  const domainMemoryScanner = new memoryScanner.MemoryScanner(domainMemoryManager, provider);
+  const domainMemoryController = new memoryController.MemoryController(provider);
   if (!globalProcessManager) {
     globalProcessManager = new UnifiedProcessManager();
   }
@@ -81,7 +91,7 @@ async function ensure(ctx: MCPServerContext): Promise<H> {
     ]);
 
     ctxAny[DEP_KEY] = new MemoryScanHandlers(
-      memoryScanner.memoryScanner,
+      domainMemoryScanner,
       scanSessionManager.scanSessionManager,
       pointerChainEngine.pointerChainEngine,
       structureAnalyzer.structureAnalyzer,
@@ -89,7 +99,7 @@ async function ensure(ctx: MCPServerContext): Promise<H> {
       vehDebuggerEngine.vehDebuggerEngine,
       softwareBreakpointEngine.softwareBreakpointEngine,
       codeInjector.codeInjector,
-      memoryController.memoryController,
+      domainMemoryController,
       speedhack.speedhack,
       heapAnalyzerMod.heapAnalyzer,
       peAnalyzer.peAnalyzer,
@@ -104,15 +114,15 @@ async function ensure(ctx: MCPServerContext): Promise<H> {
     // (ptrace PTRACE_POKEUSER on Linux, Mach thread_set_state on macOS).
     const crossPlatformBp = await import('@native/CrossPlatformBreakpointEngine');
     ctxAny[DEP_KEY] = new MemoryScanHandlers(
-      memoryScanner.memoryScanner,
+      domainMemoryScanner,
       scanSessionManager.scanSessionManager,
       pointerChainEngine.pointerChainEngine,
       structureAnalyzer.structureAnalyzer,
-      crossPlatformBp.crossPlatformBreakpointEngine as unknown as HardwareBreakpointEngine,
+      crossPlatformBp.crossPlatformBreakpointEngine,
       null, // vehDebuggerEngine — Win32 VEH only; requires code injection
       null, // softBpEngine — Win32 INT3 only; requires Win32 debug APIs
       codeInjector.codeInjector,
-      memoryController.memoryController,
+      domainMemoryController,
       null, // speedhack
       heapAnalyzerMod.heapAnalyzer, // heapAnalyzer — cross-platform
       null, // peAnalyzer

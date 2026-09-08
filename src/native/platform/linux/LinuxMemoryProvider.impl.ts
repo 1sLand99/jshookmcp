@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { parseProcMaps } from '@modules/process/memory/linux/mapsParser.js';
+import { parseProcMaps } from './mapsParser.js';
 import type { PlatformMemoryAPI } from '../PlatformMemoryAPI.js';
 import {
   MemoryProtection,

@@ -17,7 +17,7 @@
 import type { MemoryScanner } from '@native/MemoryScanner';
 import type { MemoryScanSessionManager } from '@native/MemoryScanSession';
 import type { PointerChainEngine } from '@native/PointerChainEngine';
-import type { HardwareBreakpointEngine } from '@native/HardwareBreakpoint';
+import type { BreakpointEngine } from '@native/HardwareBreakpoint.types';
 import type { SoftwareBreakpointEngine } from '@native/SoftwareBreakpoint';
 import type { CodeInjector } from '@native/CodeInjector';
 import type { MemoryController } from '@native/MemoryController';
@@ -95,7 +95,7 @@ export class MemoryScanHandlers {
     sessionManager: MemoryScanSessionManager,
     ptrEngine: PointerChainEngine,
     structAnalyzer: import('@native/StructureAnalyzer').StructureAnalyzer,
-    bpEngine: HardwareBreakpointEngine | null,
+    bpEngine: BreakpointEngine | null,
     vehEngine: import('@native/VehDebugger').VehDebuggerEngine | null,
     softBpEngine: SoftwareBreakpointEngine | null,
     injector: CodeInjector,

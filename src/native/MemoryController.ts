@@ -26,6 +26,14 @@ export class MemoryController {
   private undoneStack: WriteHistoryEntry[] = [];
   private platformProvider: PlatformMemoryAPI | null = null;
 
+  /**
+   * Optional provider injection for portable operations. Windows continues to
+   * use the existing Win32 API path, regardless of this dependency.
+   */
+  constructor(provider?: PlatformMemoryAPI) {
+    this.platformProvider = provider ?? null;
+  }
+
   private getPortableProvider(): PlatformMemoryAPI {
     this.platformProvider ??= createPlatformProvider();
     return this.platformProvider;

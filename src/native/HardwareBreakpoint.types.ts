@@ -6,6 +6,28 @@
 export type BreakpointAccess = 'read' | 'write' | 'readwrite' | 'execute';
 export type BreakpointSize = 1 | 2 | 4 | 8;
 
+/** Platform-neutral hardware breakpoint surface used by memory handlers. */
+export interface BreakpointEngine {
+  attach(pid: number): Promise<void>;
+  detach(pid: number): Promise<void>;
+  setBreakpoint(
+    pid: number,
+    address: string,
+    access: BreakpointAccess,
+    size?: BreakpointSize,
+  ): Promise<BreakpointConfig>;
+  removeBreakpoint(id: string): Promise<boolean>;
+  listBreakpoints(): BreakpointListEntry[];
+  waitForHit(timeoutMs?: number): Promise<BreakpointHit | null>;
+  traceAccess(
+    pid: number,
+    address: string,
+    access: BreakpointAccess,
+    maxHits?: number,
+    timeoutMs?: number,
+  ): Promise<BreakpointHit[]>;
+}
+
 export interface BreakpointConfig {
   id: string;
   pid: number;

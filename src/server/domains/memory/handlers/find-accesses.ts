@@ -18,9 +18,9 @@
  * is set to `null` and no mnemonic is produced. We NEVER fabricate bytes.
  */
 
-import type { HardwareBreakpointEngine } from '@native/HardwareBreakpoint';
 import type {
   BreakpointAccess,
+  BreakpointEngine,
   BreakpointHit,
   BreakpointSize,
 } from '@native/HardwareBreakpoint.types';
@@ -89,13 +89,13 @@ export type DisassemblerFn = (
 ) => Promise<string>;
 
 export class FindAccessesHandlers {
-  private readonly bpEngine: HardwareBreakpointEngine | null;
+  private readonly bpEngine: BreakpointEngine | null;
   private readonly memoryReader: MemoryReaderFn | null;
   private readonly disassembler: DisassemblerFn | null;
   private readonly processManager?: UnifiedProcessManager;
   private readonly ctx?: MCPServerContext;
   constructor(
-    bpEngine: HardwareBreakpointEngine | null,
+    bpEngine: BreakpointEngine | null,
     memoryReader: MemoryReaderFn | null,
     disassembler: DisassemblerFn | null,
     processManager?: UnifiedProcessManager,

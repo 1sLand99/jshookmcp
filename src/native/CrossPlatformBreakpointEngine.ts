@@ -20,33 +20,11 @@ import type {
   BreakpointHit,
   BreakpointListEntry,
   BreakpointSize,
+  BreakpointEngine,
 } from './HardwareBreakpoint.types';
 
-// ── shared engine interface (structural — no named interface needed) ───
-
-interface IBreakpointEngine {
-  attach(pid: number): Promise<void>;
-  detach(pid: number): Promise<void>;
-  setBreakpoint(
-    pid: number,
-    address: string,
-    access: BreakpointAccess,
-    size?: BreakpointSize,
-  ): Promise<BreakpointConfig>;
-  removeBreakpoint(id: string): Promise<boolean>;
-  listBreakpoints(): BreakpointListEntry[];
-  waitForHit(timeoutMs?: number): Promise<BreakpointHit | null>;
-  traceAccess(
-    pid: number,
-    address: string,
-    access: BreakpointAccess,
-    maxHits?: number,
-    timeoutMs?: number,
-  ): Promise<BreakpointHit[]>;
-}
-
 export class CrossPlatformBreakpointEngine {
-  private engine: IBreakpointEngine | null = null;
+  private engine: BreakpointEngine | null = null;
   private readonly platform: string;
 
   constructor() {
@@ -59,7 +37,7 @@ export class CrossPlatformBreakpointEngine {
         : process.platform;
   }
 
-  private async ensureEngine(): Promise<IBreakpointEngine> {
+  private async ensureEngine(): Promise<BreakpointEngine> {
     if (this.engine) return this.engine;
 
     if (this.platform === 'win32') {

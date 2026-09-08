@@ -78,8 +78,14 @@ export class MemoryScanner {
     this.providerCache = value;
   }
 
-  constructor(nmm: NativeMemoryManager) {
+  /**
+   * The provider is injectable so a domain can compose scanner and manager
+   * against the same lifecycle. The legacy one-argument constructor remains
+   * supported and lazily creates the platform provider as before.
+   */
+  constructor(nmm: NativeMemoryManager, provider?: PlatformMemoryAPI) {
     this.nmm = nmm;
+    this.providerCache = provider ?? null;
   }
 
   /**

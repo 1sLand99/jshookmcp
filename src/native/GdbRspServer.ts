@@ -19,7 +19,7 @@
 import * as net from 'node:net';
 import type { Socket } from 'node:net';
 import { EventEmitter } from 'node:events';
-import type { EmulatorSession } from '@modules/native-emulator/SessionManager';
+import type { GdbEmulatorSession } from './GdbRspServer.types.js';
 import {
   GDB_REG_NAMES,
   decodeRspPacket,
@@ -37,7 +37,7 @@ export interface GdbServerConfig {
   port: number;
   sessionId: string;
   /** Called to resolve the emulator session on each command. */
-  getSession: (sessionId: string) => EmulatorSession;
+  getSession: (sessionId: string) => GdbEmulatorSession;
 }
 
 export interface GdbClientInfo {

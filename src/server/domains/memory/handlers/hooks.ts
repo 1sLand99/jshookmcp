@@ -1,8 +1,8 @@
-import type { HardwareBreakpointEngine } from '@native/HardwareBreakpoint';
 import type { SoftwareBreakpointEngine } from '@native/SoftwareBreakpoint';
 import type { VehDebuggerEngine } from '@native/VehDebugger';
 import type {
   BreakpointAccess,
+  BreakpointEngine as PlatformBreakpointEngine,
   BreakpointListEntry,
   BreakpointSize,
 } from '@native/HardwareBreakpoint.types';
@@ -133,10 +133,10 @@ type DebuggerBackend = 'win32' | 'veh';
 type BreakpointType = 'hardware' | 'software';
 
 /** Union type for engines that support the breakpoint lifecycle interface. */
-type BreakpointEngine = HardwareBreakpointEngine | SoftwareBreakpointEngine | VehDebuggerEngine;
+type BreakpointEngine = PlatformBreakpointEngine | SoftwareBreakpointEngine | VehDebuggerEngine;
 
 export class HookHandlers {
-  private readonly bpEngine: HardwareBreakpointEngine | null;
+  private readonly bpEngine: PlatformBreakpointEngine | null;
   private readonly vehEngine: VehDebuggerEngine | null;
   private readonly softBpEngine: SoftwareBreakpointEngine | null;
   private readonly injector: CodeInjector;
@@ -145,7 +145,7 @@ export class HookHandlers {
   private readonly auditTrail: MemoryAuditTrail | null;
 
   constructor(
-    bpEngine: HardwareBreakpointEngine | null,
+    bpEngine: PlatformBreakpointEngine | null,
     vehEngine: VehDebuggerEngine | null,
     softBpEngine: SoftwareBreakpointEngine | null,
     injector: CodeInjector,

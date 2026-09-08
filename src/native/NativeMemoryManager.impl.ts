@@ -91,6 +91,17 @@ export async function scanRegionInChunks(
 export class NativeMemoryManager {
   private providerCache: PlatformMemoryAPI | null = null;
 
+  /**
+   * Create a manager with an optional provider.
+   *
+   * The optional dependency keeps the legacy no-argument construction path
+   * intact while allowing domain composition and tests to share one provider
+   * instance explicitly.
+   */
+  constructor(provider?: PlatformMemoryAPI) {
+    this.providerCache = provider ?? null;
+  }
+
   /** Lazily create the platform memory provider */
   private get provider(): PlatformMemoryAPI {
     if (!this.providerCache) {

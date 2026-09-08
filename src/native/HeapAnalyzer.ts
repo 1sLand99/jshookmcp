@@ -30,7 +30,7 @@ import type {
 } from './HeapAnalyzer.types';
 import { LF32, HF32 } from './HeapAnalyzer.types';
 import { TH32CS } from '@native/Win32Debug';
-import { parseProcMaps } from '@modules/process/memory/linux/mapsParser';
+import { parseProcMaps } from './platform/linux/mapsParser.js';
 
 // ── Toolhelp32 Heap APIs (Win32, lazy) ──
 
