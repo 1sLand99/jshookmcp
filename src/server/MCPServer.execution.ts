@@ -17,6 +17,7 @@ import { asErrorResponse } from '@server/domains/shared/response';
 import { getToolDomain } from '@server/ToolCatalog';
 import { fastValidateToolArgs } from '@server/registry/compiled-validators';
 import { refreshDomainTtlForTool } from '@server/MCPServer.activation.ttl';
+import { emitBusEvent } from '@server/EventBus';
 import {
   buildDoomLoopErrorResponse,
   buildToolGateDenyResponse,
@@ -65,6 +66,27 @@ const MAX_BROWSER_COST_HINT_MS = 30_000;
 
 function finitePositiveNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/** Max characters of an error message carried on execution events (metadata only). */
+const EXECUTION_EVENT_ERROR_SUMMARY_MAX_CHARS = 200;
+
+/**
+ * Resolve the MCP session id attached to a tool call for event metadata:
+ * explicit `_meta.sessionId` wins over the per-request AsyncLocalStorage scope.
+ */
+function resolveCallSessionId(args: ToolArgs): string | null {
+  const explicit = (args['_meta'] as { sessionId?: unknown } | undefined)?.sessionId;
+  if (typeof explicit === 'string' && explicit.trim().length > 0) return explicit.trim();
+  return getToolRequestContext()?.sessionId ?? null;
+}
+
+/** Truncate an error message for `tool.execution.finished.errorSummary` (no payloads). */
+function truncateErrorSummary(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.length > EXECUTION_EVENT_ERROR_SUMMARY_MAX_CHARS
+    ? `${message.slice(0, EXECUTION_EVENT_ERROR_SUMMARY_MAX_CHARS)}…`
+    : message;
 }
 
 export function estimateBrowserSessionToolCostMs(toolName: string, args: ToolArgs): number {
@@ -120,10 +142,33 @@ function checkToolExecutionGate(
   );
   const decision = evaluateToolRules(compiledRules, name, argsJson);
   if (!decision.allowed && decision.matchedRule) {
+    // Metadata-only deny telemetry (rule is static config, never runtime args).
+    emitBusEvent(ctx.eventBus, 'tool.gate.denied', {
+      toolName: name,
+      source: decision.matchedRule.source ?? 'rules',
+      rule: {
+        tool: decision.matchedRule.tool,
+        ...(decision.matchedRule.pattern !== undefined
+          ? { pattern: decision.matchedRule.pattern }
+          : {}),
+        action: decision.matchedRule.action,
+      },
+      sessionId: resolveCallSessionId(args),
+      timestamp: new Date().toISOString(),
+    });
     return buildToolGateDenyResponse(name, decision.matchedRule, compiledRules);
   }
   const trip = ctx.contextGuard.recordDoomLoopCall(name, argsJson, MCP_DOOM_LOOP_THRESHOLD);
   if (trip) {
+    emitBusEvent(ctx.eventBus, 'tool.gate.denied', {
+      toolName: name,
+      source: 'doom-loop',
+      rule: null,
+      consecutiveCount: trip.count,
+      threshold: trip.threshold,
+      sessionId: resolveCallSessionId(args),
+      timestamp: new Date().toISOString(),
+    });
     return buildDoomLoopErrorResponse(name, argsJson, trip);
   }
   return null;
@@ -194,6 +239,15 @@ export async function executeToolWithTracking(ctx: MCPServerContext, name: strin
         isError: true,
       };
     }
+
+    // Admitted for execution: broadcast started BEFORE any execution machinery
+    // runs (paired with exactly one finished on both the success and error paths).
+    emitBusEvent(ctx.eventBus, 'tool.execution.started', {
+      toolName: name,
+      domain: getToolDomain(name) ?? null,
+      sessionId: resolveCallSessionId(args),
+      timestamp: new Date().toISOString(),
+    });
 
     let enriched;
     try {
@@ -338,6 +392,15 @@ export async function executeToolWithTracking(ctx: MCPServerContext, name: strin
         isError: enriched.isError === true,
       },
     });
+    // Metadata-only execution telemetry for the unified event stream (GET /events).
+    emitBusEvent(ctx.eventBus, 'tool.execution.finished', {
+      toolName: name,
+      domain: getToolDomain(name) ?? null,
+      sessionId: resolveCallSessionId(args),
+      durationMs: Number((performance.now() - executionStartTime).toFixed(2)),
+      ok: toolResultSuccess,
+      timestamp: new Date().toISOString(),
+    });
     const searchQualityTracker =
       ctx.getDomainInstance<import('@server/search/SearchQualityTracker').SearchQualityTracker>(
         'searchQualityTracker',
@@ -357,6 +420,17 @@ export async function executeToolWithTracking(ctx: MCPServerContext, name: strin
       ?.commit();
     return enriched;
   } catch (error) {
+    // Pair the earlier started event even on the failure path. Message-only
+    // summary — never the args or response payloads.
+    emitBusEvent(ctx.eventBus, 'tool.execution.finished', {
+      toolName: name,
+      domain: getToolDomain(name) ?? null,
+      sessionId: resolveCallSessionId(args),
+      durationMs: Number((performance.now() - executionStartTime).toFixed(2)),
+      ok: false,
+      errorSummary: truncateErrorSummary(error),
+      timestamp: new Date().toISOString(),
+    });
     const admissionError =
       error instanceof BrowserSessionQueueError ||
       error instanceof BrowserFleetLeaseError ||

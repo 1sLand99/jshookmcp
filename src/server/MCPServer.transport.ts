@@ -21,6 +21,7 @@ import {
   checkRateLimit,
   readBodyWithLimit,
 } from '@server/http/HttpMiddleware';
+import { createEventsEndpoint, type EventsEndpoint } from '@server/http/EventsEndpoint';
 import { logger } from '@utils/logger';
 import { ProcessRegistry } from '@utils/ProcessRegistry';
 import type { MCPServerContext } from '@server/MCPServer.context';
@@ -183,6 +184,14 @@ export async function startHttpTransport(ctx: MCPServerContext): Promise<void> {
 
   await ctx.server.connect(transport);
 
+  // Unified event stream (GET /events): SSE mirror of the server EventBus.
+  // Auth is enforced per-request below with the exact chain used by POST /mcp
+  // (origin check → Bearer auth → rate limit). Optional because partial test
+  // contexts may not wire an event bus; the route then returns 503.
+  const eventsEndpoint: EventsEndpoint | null = ctx.eventBus
+    ? createEventsEndpoint(ctx.eventBus)
+    : null;
+
   // MCP 2.0 modern leg. The factory creates a fresh SDK server for every
   // request while delegating execution to the shared runtime context. Keeping
   // this on /mcp/v2 makes the migration opt-in and leaves existing /mcp
@@ -247,9 +256,25 @@ export async function startHttpTransport(ctx: MCPServerContext): Promise<void> {
       return;
     }
 
+    // Unified event stream — same auth chain as /mcp (origin → auth → rate
+    // limit), then handed to the SSE endpoint (see @server/http/EventsEndpoint).
+    if (url.pathname === '/events') {
+      if (!eventsEndpoint) {
+        res.writeHead(503, { 'Content-Type': 'text/plain' });
+        res.end('Service Unavailable – event bus not initialized');
+        return;
+      }
+      if (!checkOrigin(req, res, authConfig)) return;
+      const authenticated = checkAuth(req, res, authConfig);
+      if (!authenticated) return;
+      if (!checkRateLimit(req, res, authenticated, rateLimitConfig)) return;
+      eventsEndpoint.handleRequest(req, res);
+      return;
+    }
+
     if (url.pathname !== '/mcp') {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
-      res.end('Not Found – use POST /mcp or GET /health');
+      res.end('Not Found – use POST /mcp, GET /events or GET /health');
       return;
     }
 

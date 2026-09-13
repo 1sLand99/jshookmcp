@@ -2,6 +2,7 @@
  * Handlers for activate_tools and deactivate_tools meta-tools.
  */
 import { logger } from '@utils/logger';
+import { emitBusEvent } from '@server/EventBus';
 import {
   registerExtensionToolRecord,
   unregisterExtensionToolRecord,
@@ -118,6 +119,21 @@ export async function activateToolNames(
       `${notFound.length}, budget_exceeded ${budgetExceeded.length}`,
   );
 
+  if (activated.length > 0) {
+    emitBusEvent(ctx.eventBus, 'tool.activation.changed', {
+      action: 'activated',
+      toolNames: activated,
+      timestamp: new Date().toISOString(),
+    });
+  }
+  if (budgetExceeded.length > 0) {
+    emitBusEvent(ctx.eventBus, 'tool.activation.changed', {
+      action: 'budget-rejected',
+      toolNames: budgetExceeded,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   return {
     activated,
     alreadyActive,
@@ -226,6 +242,14 @@ export async function handleDeactivateTools(
   logger.info(
     `deactivate_tools: deactivated ${deactivated.length}, not_activated ${notActivated.length}`,
   );
+
+  if (deactivated.length > 0) {
+    emitBusEvent(ctx.eventBus, 'tool.activation.changed', {
+      action: 'deactivated',
+      toolNames: deactivated,
+      timestamp: new Date().toISOString(),
+    });
+  }
 
   return asTextResponse(
     JSON.stringify({

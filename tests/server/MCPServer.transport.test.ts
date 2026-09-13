@@ -506,7 +506,7 @@ describe('MCPServer.transport', () => {
     server.requestHandlerForTest({ url: '/other', method: 'GET' }, res);
 
     expect(res.status).toBe(404);
-    expect(res.body).toBe('Not Found – use POST /mcp or GET /health');
+    expect(res.body).toBe('Not Found – use POST /mcp, GET /events or GET /health');
   });
 
   it('stops processing when origin, auth, or rate limit checks fail', async () => {

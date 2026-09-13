@@ -14,6 +14,46 @@ export interface ServerEventMap {
   [key: string]: unknown;
   'tool:activated': { toolName: string; domain: string; timestamp: string };
   'tool:deactivated': { toolName: string; domain: string; timestamp: string };
+  /**
+   * Unified event-stream catalog (mirrored to GET /events SSE subscribers).
+   *
+   * Payload contract: METADATA ONLY. Tool arguments, results and response
+   * bodies must never be attached — these events are broadcast to any
+   * authenticated /events subscriber. See src/server/http/EventsEndpoint.ts
+   * for the SSE allowlist mirror.
+   */
+  'tool.execution.started': {
+    toolName: string;
+    domain: string | null;
+    sessionId: string | null;
+    timestamp: string;
+  };
+  'tool.execution.finished': {
+    toolName: string;
+    domain: string | null;
+    sessionId: string | null;
+    durationMs: number;
+    ok: boolean;
+    /** Truncated error message only (no args/result payloads). Absent on success. */
+    errorSummary?: string;
+    timestamp: string;
+  };
+  'tool.gate.denied': {
+    toolName: string;
+    /** Which gate mechanism denied the call. */
+    source: 'allowTools' | 'rules' | 'doom-loop';
+    /** Matched permission rule (static config — never runtime args). */
+    rule: { tool: string; pattern?: string; action: 'allow' | 'deny' } | null;
+    consecutiveCount?: number;
+    threshold?: number;
+    sessionId: string | null;
+    timestamp: string;
+  };
+  'tool.activation.changed': {
+    action: 'activated' | 'deactivated' | 'budget-rejected';
+    toolNames: string[];
+    timestamp: string;
+  };
   'tool:called': {
     toolName: string;
     domain: string | null;
@@ -349,6 +389,28 @@ export class EventBus<TMap extends Record<string, unknown> = ServerEventMap> {
  */
 export function createServerEventBus(): EventBus<ServerEventMap> {
   return new EventBus<ServerEventMap>();
+}
+
+/**
+ * Fire-and-forget event publication for hot execution paths.
+ *
+ * Guarantees:
+ * - Tolerates absent/mock buses (duck-typed via `emit` presence) so partial
+ *   test contexts and degraded startup modes never crash the caller.
+ * - Isolates observer faults: a synchronous throw or a rejected emit promise
+ *   is swallowed and must never propagate into tool execution.
+ */
+export function emitBusEvent<K extends keyof ServerEventMap>(
+  bus: EventBus<ServerEventMap> | undefined | null,
+  event: K,
+  payload: ServerEventMap[K],
+): void {
+  if (!bus || typeof bus.emit !== 'function') return;
+  try {
+    Promise.resolve(bus.emit(event, payload)).catch(() => undefined);
+  } catch {
+    // Observer failures must never break the caller (tool execution path).
+  }
 }
 
 /**
