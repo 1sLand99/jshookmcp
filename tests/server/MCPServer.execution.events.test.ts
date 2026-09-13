@@ -49,6 +49,7 @@ vi.mock('@server/runtime/ServerRuntimeState', () => ({
   getRuntimeState: () => undefined,
 }));
 
+import { buildTestUrl } from '@tests/shared/test-urls';
 import { createServerEventBus, type ServerEventMap } from '@server/EventBus';
 import { executeToolWithTracking } from '@server/MCPServer.execution';
 import { R } from '@server/domains/shared/ResponseBuilder';
@@ -139,7 +140,7 @@ describe('executeToolWithTracking — unified event stream publication', () => {
     const events = collect(ctx);
 
     const response = await executeToolWithTracking(ctx, 'page_navigate', {
-      url: 'https://secret.example',
+      url: buildTestUrl('secret'),
     });
     await settle();
 
@@ -206,7 +207,7 @@ describe('executeToolWithTracking — unified event stream publication', () => {
     const events = collect(ctx);
 
     const response = await executeToolWithTracking(ctx, 'page_navigate', {
-      url: 'https://secret.example',
+      url: buildTestUrl('secret'),
     });
     await settle();
 
@@ -251,7 +252,9 @@ describe('executeToolWithTracking — unified event stream publication', () => {
     });
     const events = collect(ctx);
 
-    const response = await executeToolWithTracking(ctx, 'page_navigate', { url: 'https://x' });
+    const response = await executeToolWithTracking(ctx, 'page_navigate', {
+      url: buildTestUrl('x'),
+    });
     await settle();
 
     expect(response).toMatchObject({ isError: true });

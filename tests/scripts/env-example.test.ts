@@ -99,6 +99,7 @@ const allowedRawProcessEnvironment = new Set([
   'src/modules/collector/CodeCollectorConnectionInternal.ts:LOCALAPPDATA',
   'src/modules/collector/CodeCollectorConnectionInternal.ts:XDG_CONFIG_HOME',
   'src/modules/external/ExternalToolRunner.ts:<dynamic>',
+  'src/utils/artifact-snapshot.ts:<all>',
   'src/modules/external/ExternalToolRunner.ts:PATH',
   'src/modules/external/ExternalToolRunner.ts:SYSTEMROOT',
   'src/modules/external/ExternalToolRunner.ts:SystemRoot',
