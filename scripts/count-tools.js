@@ -1,6 +1,6 @@
 // Count tools in each domain
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const domainsDir = 'src/server/domains';
 let total = 0;

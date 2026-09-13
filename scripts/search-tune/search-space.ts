@@ -2,8 +2,8 @@
  * Search tuning parameter space: whitelist, ranges, sampling, and env mapping.
  */
 /* eslint-disable no-underscore-dangle */
-import { resolve } from 'path';
-import { fileURLToPath } from 'url';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const __dirname = resolve(fileURLToPath(import.meta.url), '..');
 

@@ -5,7 +5,7 @@
  * Usage:
  *   tsx scripts/search-tune/report.ts [--in artifacts/search-tuning/trials.jsonl] [--out artifacts/search-tuning/report.md]
  */
-import { readFile, writeFile } from 'fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import type { TrialParams } from './search-space';
 import type { TrialResult } from './worker';
 

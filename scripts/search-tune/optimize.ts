@@ -14,11 +14,11 @@
  * Usage:
  *   npx tsx scripts/search-tune/optimize.ts [--seed 42] [--phase1-trials 800]
  */
-import { execFile } from 'child_process';
-import { mkdir, appendFile, readFile, writeFile } from 'fs/promises';
-import { resolve as pathResolve } from 'path';
-import { fileURLToPath } from 'url';
-import { cpus } from 'os';
+import { execFile } from 'node:child_process';
+import { mkdir, appendFile, readFile, writeFile } from 'node:fs/promises';
+import { resolve as pathResolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { cpus } from 'node:os';
 import {
   loadSearchSpace,
   getPhaseParams,

@@ -11,10 +11,10 @@
  *   node scripts/tune-env.mjs --dump         # print current effective values
  *   node scripts/tune-env.mjs --diff         # show non-default overrides in .env
  */
-import { promises as fs } from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { createInterface } from 'readline';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createInterface } from 'node:readline';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 // Constants were refactored from the monolithic src/constants.ts into
