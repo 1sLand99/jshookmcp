@@ -728,5 +728,6 @@
   "snapshot_restore": "待补充中文：Restore a directory to a recorded shadow-git snapshot. DESTRUCTIVE: files modified after the snapshot are overwritten, files created after it are DELETED, and files deleted after it are written back (full revert semantics). The isolated store never touches the project .git. Create a fresh snapshot_create first if you may need the current state.",
   "session_progress_record": "记录当前会话的逆向进度证据（已 Hook 的进程、Hook 点或已解析的协议字段）；相同 (kind, key) 重复记录幂等，仅原地更新 metadata，不产生重复条目。",
   "session_progress_coverage": "查询会话进度台账：各类证据条目计数与按记录时间倒序的条目列表，用于审计逆向覆盖面并发现覆盖缺口。",
-  "session_progress_clear": "清空会话进度条目：不指定 kind 时重置整个会话台账，指定 kind 时仅清空该类证据，返回移除的条目数。"
+  "session_progress_clear": "清空会话进度条目：不指定 kind 时重置整个会话台账，指定 kind 时仅清空该类证据，返回移除的条目数。",
+  "nemu_mem_inspect": "客户机内存检查族的单一收敛入口——一个工具、五个 `action` 子命令，每个子命令与一个既有的只读内存工具一一对应（既有工具保持不变）：read → nemu_read_memory（原始字节 base64 预览/数据）、dump → nemu_data_dump（u32/u64 字表并自动分类指针/字节码/ASCII）、chain → nemu_pointer_chain（逐跳跟随指针间接引用）、frame → nemu_dump_frame（解码 256 字节 CreateLitevm 帧结构）、scan → nemu_scan_memory（在地址范围内按字节模式搜索，pattern 为 base64）。每个子命令的参数与被包装工具完全一致；子命令级必填参数由处理器的 action 判别联合校验，默认值沿用被包装工具。所有子命令都是对仿真会话客户机内存的只读观察。"
 }

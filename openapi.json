@@ -12211,6 +12211,86 @@
         "required": ["sessionId", "dependencyPaths", "primaryPath"],
         "type": "object"
       },
+      "native_emulator_nemu_mem_inspect": {
+        "properties": {
+          "action": {
+            "description": "Subcommand: read=nemu_read_memory, dump=nemu_data_dump, chain=nemu_pointer_chain, frame=nemu_dump_frame, scan=nemu_scan_memory",
+            "enum": ["read", "dump", "chain", "frame", "scan"],
+            "type": "string"
+          },
+          "address": {
+            "description": "read/dump/frame: guest address to inspect",
+            "type": "number"
+          },
+          "base": {
+            "description": "chain: starting guest address for the pointer chain (required for chain)",
+            "type": "number"
+          },
+          "columns": {
+            "description": "dump: words per output row (wrapped-tool default: 4)",
+            "type": "number"
+          },
+          "count": {
+            "description": "dump: number of words to read (wrapped-tool default: 64)",
+            "type": "number"
+          },
+          "dataLen": {
+            "description": "chain: bytes of data shown at each hop (wrapped-tool default: 32)",
+            "type": "number"
+          },
+          "endAddr": {
+            "description": "scan: ending guest address of the scan range, exclusive (required for scan)",
+            "type": "number"
+          },
+          "includeDataBase64": {
+            "description": "read: include full base64 bytes when true (default: false)",
+            "type": "boolean"
+          },
+          "length": {
+            "description": "read: number of bytes to read (required for read)",
+            "type": "number"
+          },
+          "maxBytes": {
+            "description": "read: optional per-call cap, bounded by server configuration",
+            "type": "number"
+          },
+          "maxDepth": {
+            "description": "chain: maximum number of hops (wrapped-tool default: 5)",
+            "type": "number"
+          },
+          "maxResults": {
+            "description": "scan: maximum number of results (wrapped-tool default: 100, max: 1000)",
+            "type": "number"
+          },
+          "offset": {
+            "description": "chain: byte offset added at each hop before reading the next pointer (wrapped-tool default: 0)",
+            "type": "number"
+          },
+          "pattern": {
+            "description": "scan: byte pattern to search for, as a base64 string (required for scan)",
+            "type": "string"
+          },
+          "previewBytes": {
+            "description": "read: number of bytes included in previewBase64 (wrapped-tool default applies)",
+            "type": "number"
+          },
+          "sessionId": {
+            "description": "Session id to inspect (required by every subcommand)",
+            "type": "string"
+          },
+          "startAddr": {
+            "description": "scan: starting guest address of the scan range (required for scan)",
+            "type": "number"
+          },
+          "wordSize": {
+            "description": "dump: word size (wrapped-tool default: u64)",
+            "enum": ["u32", "u64"],
+            "type": "string"
+          }
+        },
+        "required": ["action", "sessionId"],
+        "type": "object"
+      },
       "native_emulator_nemu_mem_map": {
         "properties": {
           "address": {
@@ -32267,7 +32347,7 @@
     },
     "/meta/search_tools": {
       "post": {
-        "description": "Search 730 tools across 36 capability domains. This includes built-in tools plus any loaded plugin/workflow tools (0 currently loaded). In search-tier sessions, call this before assuming a capability is unavailable. Use activate_tools for exact matches, activate_domain for an entire domain. Domains: browser (85) | memory (74) | native-emulator (56) | binary-instrument (44) | network (38) | boringssl-inspector (29) | process (28) | adb-bridge (26) | core (25) | debugger (21) | exploit-dev (21) | v8-inspector (21) | protocol-analysis (20) | platform (18) | maintenance (17) | streaming (17) | wasm (17) | dart-inspector (16) | syscall-hook (15) | instrumentation (13) | workflow (13) | coordination (12) | canvas (11) | proxy (11) | trace (10) | webgpu (10) | cross-domain (8) | mojo-ipc (8) | extension-registry (7) | graphql (7) | sourcemap (7) | transform (7) | native-bridge (6) | encoding (5) | tasks (4) | session (3). Query tip: before searching, distill your intent into key concepts (action verb + target + domain). The engine combines token matching, fuzzy names, profile context, and optional static embeddings.",
+        "description": "Search 731 tools across 36 capability domains. This includes built-in tools plus any loaded plugin/workflow tools (0 currently loaded). In search-tier sessions, call this before assuming a capability is unavailable. Use activate_tools for exact matches, activate_domain for an entire domain. Domains: browser (85) | memory (74) | native-emulator (57) | binary-instrument (44) | network (38) | boringssl-inspector (29) | process (28) | adb-bridge (26) | core (25) | debugger (21) | exploit-dev (21) | v8-inspector (21) | protocol-analysis (20) | platform (18) | maintenance (17) | streaming (17) | wasm (17) | dart-inspector (16) | syscall-hook (15) | instrumentation (13) | workflow (13) | coordination (12) | canvas (11) | proxy (11) | trace (10) | webgpu (10) | cross-domain (8) | mojo-ipc (8) | extension-registry (7) | graphql (7) | sourcemap (7) | transform (7) | native-bridge (6) | encoding (5) | tasks (4) | session (3). Query tip: before searching, distill your intent into key concepts (action verb + target + domain). The engine combines token matching, fuzzy names, profile context, and optional static embeddings.",
         "operationId": "search_tools",
         "requestBody": {
           "content": {
@@ -32291,7 +32371,7 @@
             "description": "Tool execution result returned as MCP tool result text content."
           }
         },
-        "summary": "Search 730 tools across 36 capability domains.",
+        "summary": "Search 731 tools across 36 capability domains.",
         "tags": ["meta"]
       }
     },
@@ -33624,6 +33704,37 @@
           }
         },
         "summary": "Load a chain of dependent libraries into a session, resolving inter-library imports.",
+        "tags": ["native-emulator"],
+        "x-domain": "native-emulator"
+      }
+    },
+    "/native-emulator/nemu_mem_inspect": {
+      "post": {
+        "description": "Single convergence entry point for the guest-memory inspection family — one tool, five `action` subcommands, each mapping 1:1 onto an existing read-only memory tool (which remains available unchanged): read → nemu_read_memory (raw bytes as base64 preview/data), dump → nemu_data_dump (u32/u64 word table with pointer/bytecode/ASCII classification), chain → nemu_pointer_chain (follow pointer indirection hops), frame → nemu_dump_frame (decode a 256-byte CreateLitevm frame), scan → nemu_scan_memory (byte-pattern search over an address range, pattern as base64). Each subcommand accepts exactly the parameters of the wrapped tool; per-subcommand required parameters are enforced by the handler's action-discriminated union, and defaults are those of the wrapped tool. All subcommands are read-only observations of guest memory in an emulator session.",
+        "operationId": "nemu_mem_inspect",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/native_emulator_nemu_mem_inspect"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Single convergence entry point for the guest-memory inspection family — one tool, five `action` subcommands, each map...",
         "tags": ["native-emulator"],
         "x-domain": "native-emulator"
       }

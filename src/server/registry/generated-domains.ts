@@ -317,7 +317,7 @@ export const DOMAIN_TOOL_COUNT_MAP: Readonly<Record<string, number>> = {
   memory: 74,
   'mojo-ipc': 8,
   'native-bridge': 6,
-  'native-emulator': 56,
+  'native-emulator': 57,
   network: 38,
   platform: 18,
   process: 28,

@@ -21,7 +21,7 @@ In-process, dependency-free self-built ARM64 interpreter for emulating Android `
 - native-emulator + binary-instrument
 - native-emulator + dart-inspector
 
-## Full tool list (56)
+## Full tool list (57)
 
 | Tool | Description |
 | --- | --- |
@@ -81,3 +81,4 @@ In-process, dependency-free self-built ARM64 interpreter for emulating Android `
 | `nemu_xor_region` | XOR a region of emulated memory with a single-byte key. Returns the XOR result as base64. Use for quick decryption testing — XOR a buffer with a candidate key byte and inspect the preview without modifying guest state. Set dryRun=false to write the XOR result back into guest memory. |
 | `nemu_relay` | Connect to a remote native-emulator session via IPC relay. Proxies nemu operations through a named pipe (Windows) or Unix domain socket (Linux/macOS) with JSON-RPC over length-prefixed frames. Use to drive ARM64 nemu sessions on a Linux host from a Windows MCP server (or vice versa). |
 | `nemu_gdbserver` | GDB Remote Serial Protocol (RSP) TCP server. Starts a real TCP server on host:port that GDB clients can connect to. Provides full register read/write, memory read/write, step, continue, software breakpoints (Z0/z0), vCont extended step/continue, qXfer target description, thread listing, and feature negotiation (qSupported). The server dispatches commands to the nemu emulator session in real-time. Packet format: $data#checksum (RFC 5.1 GDB Remote Serial Protocol). Actions: start (launch TCP server), stop (shut down), status (server + clients). Note: step/continue are simulated (PC += 4, immediate SIGTRAP); real execution control requires CpuEngine.runUntilBreakpoint() which is not yet exposed. |
+| `nemu_mem_inspect` | Single convergence entry point for the guest-memory inspection family — one tool, five `action` subcommands, each mapping 1:1 onto an existing read-only memory tool (which remains available unchanged): read → nemu_read_memory (raw bytes as base64 preview/data), dump → nemu_data_dump (u32/u64 word table with pointer/bytecode/ASCII classification), chain → nemu_pointer_chain (follow pointer indirection hops), frame → nemu_dump_frame (decode a 256-byte CreateLitevm frame), scan → nemu_scan_memory (byte-pattern search over an address range, pattern as base64). Each subcommand accepts exactly the parameters of the wrapped tool; per-subcommand required parameters are enforced by the handler's action-discriminated union, and defaults are those of the wrapped tool. All subcommands are read-only observations of guest memory in an emulator session. |

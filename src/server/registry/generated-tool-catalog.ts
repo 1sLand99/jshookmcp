@@ -17433,6 +17433,104 @@ export const GENERATED_TOOL_CATALOG = [
   },
   {
     tool: {
+      name: 'nemu_mem_inspect',
+      description:
+        "Single convergence entry point for the guest-memory inspection family — one tool, five `action` subcommands, each mapping 1:1 onto an existing read-only memory tool (which remains available unchanged): read → nemu_read_memory (raw bytes as base64 preview/data), dump → nemu_data_dump (u32/u64 word table with pointer/bytecode/ASCII classification), chain → nemu_pointer_chain (follow pointer indirection hops), frame → nemu_dump_frame (decode a 256-byte CreateLitevm frame), scan → nemu_scan_memory (byte-pattern search over an address range, pattern as base64). Each subcommand accepts exactly the parameters of the wrapped tool; per-subcommand required parameters are enforced by the handler's action-discriminated union, and defaults are those of the wrapped tool. All subcommands are read-only observations of guest memory in an emulator session.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['read', 'dump', 'chain', 'frame', 'scan'],
+            description:
+              'Subcommand: read=nemu_read_memory, dump=nemu_data_dump, chain=nemu_pointer_chain, frame=nemu_dump_frame, scan=nemu_scan_memory',
+          },
+          sessionId: {
+            type: 'string',
+            description: 'Session id to inspect (required by every subcommand)',
+          },
+          address: {
+            type: 'number',
+            description: 'read/dump/frame: guest address to inspect',
+          },
+          length: {
+            type: 'number',
+            description: 'read: number of bytes to read (required for read)',
+          },
+          previewBytes: {
+            type: 'number',
+            description:
+              'read: number of bytes included in previewBase64 (wrapped-tool default applies)',
+          },
+          maxBytes: {
+            type: 'number',
+            description: 'read: optional per-call cap, bounded by server configuration',
+          },
+          includeDataBase64: {
+            type: 'boolean',
+            description: 'read: include full base64 bytes when true (default: false)',
+          },
+          count: {
+            type: 'number',
+            description: 'dump: number of words to read (wrapped-tool default: 64)',
+          },
+          wordSize: {
+            type: 'string',
+            enum: ['u32', 'u64'],
+            description: 'dump: word size (wrapped-tool default: u64)',
+          },
+          columns: {
+            type: 'number',
+            description: 'dump: words per output row (wrapped-tool default: 4)',
+          },
+          base: {
+            type: 'number',
+            description: 'chain: starting guest address for the pointer chain (required for chain)',
+          },
+          maxDepth: {
+            type: 'number',
+            description: 'chain: maximum number of hops (wrapped-tool default: 5)',
+          },
+          offset: {
+            type: 'number',
+            description:
+              'chain: byte offset added at each hop before reading the next pointer (wrapped-tool default: 0)',
+          },
+          dataLen: {
+            type: 'number',
+            description: 'chain: bytes of data shown at each hop (wrapped-tool default: 32)',
+          },
+          pattern: {
+            type: 'string',
+            description: 'scan: byte pattern to search for, as a base64 string (required for scan)',
+          },
+          startAddr: {
+            type: 'number',
+            description: 'scan: starting guest address of the scan range (required for scan)',
+          },
+          endAddr: {
+            type: 'number',
+            description:
+              'scan: ending guest address of the scan range, exclusive (required for scan)',
+          },
+          maxResults: {
+            type: 'number',
+            description: 'scan: maximum number of results (wrapped-tool default: 100, max: 1000)',
+          },
+        },
+        required: ['action', 'sessionId'],
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    domain: 'native-emulator',
+  },
+  {
+    tool: {
       name: 'nemu_mem_map',
       description:
         'Map a memory region in guest address space. Use to extend the mapped area for output buffers or scratch data that would otherwise cause unmapped-memory faults. Idempotent — safe to call on already-mapped regions.',

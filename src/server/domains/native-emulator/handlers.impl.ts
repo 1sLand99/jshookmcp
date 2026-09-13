@@ -50,6 +50,11 @@ import {
   NEMU_VFS_MAX_TOTAL_BYTES,
 } from '@src/constants';
 import { nativeCallFailure, nativeDiagnostics } from './handler-call';
+import {
+  formatMemInspectIssues,
+  memInspectSchema,
+  type MemInspectArgs,
+} from './handler-mem-inspect';
 import { formatOpcodeInput, parseOpcodeInput, parseProgramCounter } from './handler-disasm';
 import { buildJavaFieldValue, buildJavaMockImpl } from './handler-java';
 import { decodeLiteVmWord, LITEVM_KNOWN_DATA } from './handler-litevm';
@@ -2654,6 +2659,42 @@ export class NativeEmulatorHandlers {
       await server.start();
       return server.status;
     });
+  }
+
+  /**
+   * nemu_mem_inspect — convergence entry point for the guest-memory inspection
+   * family. Validates the `action`-discriminated union (see ./handler-mem-inspect)
+   * and delegates each subcommand to the wrapped tool's existing handler
+   * unchanged: read → handleReadMemory, dump → handleDataDump,
+   * chain → handlePointerChain, frame → handleDumpFrame, scan → handleScanMemory.
+   * No family logic is duplicated here — the wrapped handlers stay authoritative.
+   */
+  async handleMemInspect(args: ToolArgs): Promise<ToolResponse> {
+    const parsed = memInspectSchema.safeParse(args);
+    if (!parsed.success) {
+      return R.fail(
+        new Error(
+          `nemu_mem_inspect: invalid subcommand arguments — ${formatMemInspectIssues(parsed.error)}`,
+        ),
+      ).json();
+    }
+    return this.dispatchMemInspect(parsed.data);
+  }
+
+  /** Route a validated subcommand to its wrapped handler (exhaustive over the union). */
+  private dispatchMemInspect(sub: MemInspectArgs): Promise<ToolResponse> {
+    switch (sub.action) {
+      case 'read':
+        return this.handleReadMemory(sub);
+      case 'dump':
+        return this.handleDataDump(sub);
+      case 'chain':
+        return this.handlePointerChain(sub);
+      case 'frame':
+        return this.handleDumpFrame(sub);
+      case 'scan':
+        return this.handleScanMemory(sub);
+    }
   }
 
   private requireSession(args: ToolArgs): EmulatorSession {

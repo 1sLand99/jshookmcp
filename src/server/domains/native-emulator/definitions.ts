@@ -899,4 +899,52 @@ export const nativeEmulatorTools: Tool[] = [
       .number('port', 'TCP port to listen on (default: 1234)', { default: 1234 })
       .required('action'),
   ),
+  // ── Convergence pilot: guest-memory inspection family ─────────────
+  tool('nemu_mem_inspect', (t) =>
+    t
+      .desc(
+        'Single convergence entry point for the guest-memory inspection family — one tool, five `action` subcommands, each mapping 1:1 onto an existing read-only memory tool (which remains available unchanged): ' +
+          'read → nemu_read_memory (raw bytes as base64 preview/data), ' +
+          'dump → nemu_data_dump (u32/u64 word table with pointer/bytecode/ASCII classification), ' +
+          'chain → nemu_pointer_chain (follow pointer indirection hops), ' +
+          'frame → nemu_dump_frame (decode a 256-byte CreateLitevm frame), ' +
+          'scan → nemu_scan_memory (byte-pattern search over an address range, pattern as base64). ' +
+          "Each subcommand accepts exactly the parameters of the wrapped tool; per-subcommand required parameters are enforced by the handler's action-discriminated union, and defaults are those of the wrapped tool. All subcommands are read-only observations of guest memory in an emulator session.",
+      )
+      .enum(
+        'action',
+        ['read', 'dump', 'chain', 'frame', 'scan'],
+        'Subcommand: read=nemu_read_memory, dump=nemu_data_dump, chain=nemu_pointer_chain, frame=nemu_dump_frame, scan=nemu_scan_memory',
+      )
+      .string('sessionId', 'Session id to inspect (required by every subcommand)')
+      .number('address', 'read/dump/frame: guest address to inspect')
+      .number('length', 'read: number of bytes to read (required for read)')
+      .number(
+        'previewBytes',
+        'read: number of bytes included in previewBase64 (wrapped-tool default applies)',
+      )
+      .number('maxBytes', 'read: optional per-call cap, bounded by server configuration')
+      .boolean('includeDataBase64', 'read: include full base64 bytes when true (default: false)')
+      .number('count', 'dump: number of words to read (wrapped-tool default: 64)')
+      .enum('wordSize', ['u32', 'u64'], 'dump: word size (wrapped-tool default: u64)')
+      .number('columns', 'dump: words per output row (wrapped-tool default: 4)')
+      .number('base', 'chain: starting guest address for the pointer chain (required for chain)')
+      .number('maxDepth', 'chain: maximum number of hops (wrapped-tool default: 5)')
+      .number(
+        'offset',
+        'chain: byte offset added at each hop before reading the next pointer (wrapped-tool default: 0)',
+      )
+      .number('dataLen', 'chain: bytes of data shown at each hop (wrapped-tool default: 32)')
+      .string('pattern', 'scan: byte pattern to search for, as a base64 string (required for scan)')
+      .number('startAddr', 'scan: starting guest address of the scan range (required for scan)')
+      .number(
+        'endAddr',
+        'scan: ending guest address of the scan range, exclusive (required for scan)',
+      )
+      .number(
+        'maxResults',
+        'scan: maximum number of results (wrapped-tool default: 100, max: 1000)',
+      )
+      .required('action', 'sessionId'),
+  ),
 ];

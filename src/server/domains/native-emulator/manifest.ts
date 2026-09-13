@@ -74,6 +74,8 @@ const registrations = defineMethodRegistrations<H, (typeof nativeEmulatorTools)[
     { tool: 'nemu_xor_region', method: 'handleXorRegion' },
     { tool: 'nemu_relay', method: 'handleRelay' },
     { tool: 'nemu_gdbserver', method: 'handleGdbserver' },
+    // Convergence pilot: guest-memory inspection family (read/dump/chain/frame/scan)
+    { tool: 'nemu_mem_inspect', method: 'handleMemInspect' },
   ],
 });
 
