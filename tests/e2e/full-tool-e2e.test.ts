@@ -450,8 +450,6 @@ function getOverrides(ctx: E2EContext, cfg: E2EConfig): Record<string, Record<st
     get_token_budget_stats: {},
     get_cache_stats: {},
     get_collection_stats: {},
-    boost_profile: { profile: 'full' },
-    unboost_profile: {},
     ...(asarPath ? { asar_extract: { inputPath: asarPath } } : {}),
     ...(electronPath ? { electron_inspect_app: { appPath: electronPath } } : {}),
     ...(electronPath ? { electron_check_fuses: { exePath: electronPath } } : {}),
@@ -694,8 +692,8 @@ function getOverrides(ctx: E2EContext, cfg: E2EConfig): Record<string, Record<st
     // ── Trace alias ──
     trace_recording: { action: 'status' },
     // ── Search meta ──
-    activate_tools: { tools: ['search_tools'] },
-    deactivate_tools: { tools: ['search_tools'] },
+    activate_tools: { names: ['search_tools'] },
+    deactivate_tools: { names: ['search_tools'] },
     activate_domain: { domain: 'maintenance' },
     call_tool: { name: 'get_cache_stats', arguments: {} },
     // ── WS monitor alias ──

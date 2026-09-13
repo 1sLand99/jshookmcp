@@ -39,6 +39,9 @@ export async function activateToolNames(
   ctx: MCPServerContext,
   names: string[],
 ): Promise<ActivationSummary> {
+  // Dynamic import keeps the module graph acyclic: search.ts registers the
+  // handlers defined in this module, so a static import would form a cycle.
+  const { META_TOOL_NAMES } = await import('@server/MCPServer.search');
   const activeNames = getActiveToolNames(ctx);
   const activated: string[] = [];
   const alreadyActive: string[] = [];
@@ -46,6 +49,14 @@ export async function activateToolNames(
 
   for (const rawName of names) {
     const name = normalizeToolName(rawName);
+    // Meta-tools are always registered as top-level tools and never appear in
+    // the domain search catalog, so report them as already active instead of
+    // notFound.
+    if (META_TOOL_NAMES.has(name)) {
+      alreadyActive.push(name);
+      continue;
+    }
+
     if (activeNames.has(name)) {
       alreadyActive.push(name);
       continue;

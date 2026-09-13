@@ -25,6 +25,8 @@ const state = vi.hoisted(() => ({
   getToolByName: vi.fn(),
   getSearchEngine: vi.fn(),
   activateToolNames: vi.fn(),
+  handleActivateTools: vi.fn(),
+  handleDeactivateTools: vi.fn(),
   getToolInputSchema: vi.fn(),
 }));
 
@@ -35,6 +37,12 @@ vi.mock('@utils/logger', () => ({
 vi.mock('@server/domains/shared/response', () => ({
   asTextResponse: (text: string) => ({
     content: [{ type: 'text', text }],
+  }),
+  asErrorResponse: (error: unknown) => ({
+    content: [
+      { type: 'text', text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+    ],
+    isError: true,
   }),
 }));
 
@@ -49,6 +57,8 @@ vi.mock('@server/MCPServer.search.helpers', () => ({
 
 vi.mock('@server/MCPServer.search.handlers.activate', () => ({
   activateToolNames: state.activateToolNames,
+  handleActivateTools: state.handleActivateTools,
+  handleDeactivateTools: state.handleDeactivateTools,
 }));
 
 vi.mock('@server/ToolRouter.probe', () => ({

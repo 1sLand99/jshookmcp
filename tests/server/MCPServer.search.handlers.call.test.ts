@@ -24,6 +24,9 @@ const state = vi.hoisted(() => ({
   getToolByName: vi.fn(),
   getSearchEngine: vi.fn(),
   activateToolNames: vi.fn(),
+  handleActivateTools: vi.fn(),
+  handleDeactivateTools: vi.fn(),
+  ensureAllDomainsLoaded: vi.fn(),
   getToolInputSchema: vi.fn(),
 }));
 
@@ -34,6 +37,12 @@ vi.mock('@utils/logger', () => ({
 vi.mock('@server/domains/shared/response', () => ({
   asTextResponse: (text: string) => ({
     content: [{ type: 'text', text }],
+  }),
+  asErrorResponse: (error: unknown) => ({
+    content: [
+      { type: 'text', text: `Error: ${error instanceof Error ? error.message : String(error)}` },
+    ],
+    isError: true,
   }),
 }));
 
@@ -48,6 +57,14 @@ vi.mock('@server/MCPServer.search.helpers', () => ({
 
 vi.mock('@server/MCPServer.search.handlers.activate', () => ({
   activateToolNames: state.activateToolNames,
+  handleActivateTools: state.handleActivateTools,
+  handleDeactivateTools: state.handleDeactivateTools,
+}));
+
+vi.mock('@server/registry/index', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  ensureAllDomainsLoaded: state.ensureAllDomainsLoaded.mockResolvedValue(undefined),
+  getAllDomains: vi.fn(() => new Set(['browser'])),
 }));
 
 vi.mock('@server/ToolRouter.probe', () => ({
@@ -309,6 +326,76 @@ describe('MCPServer.search.handlers.call', () => {
 
     expect(result.success).toBe(false);
     expect(state.activateToolNames).not.toHaveBeenCalled();
+  });
+
+  it('dispatches deactivate_tools to its meta handler with parsed args', async () => {
+    state.handleDeactivateTools.mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ success: true, deactivated: ['page_navigate'], notActivated: [] }),
+        },
+      ],
+    });
+    const ctx = createCtx();
+
+    const response = await handleCallTool(ctx, {
+      name: 'deactivate_tools',
+      args: { names: ['page_navigate'] },
+    });
+    const result = parseResponse(response);
+
+    expect(state.handleDeactivateTools).toHaveBeenCalledTimes(1);
+    expect(state.handleDeactivateTools).toHaveBeenCalledWith(ctx, { names: ['page_navigate'] });
+    expect(result.success).toBe(true);
+    expect(result.deactivated).toEqual(['page_navigate']);
+    expect(result.wasAutoActivated).toBe(false);
+    expect(ctx.router.has).not.toHaveBeenCalled();
+    expect(ctx.executeToolWithTracking).not.toHaveBeenCalled();
+  });
+
+  it('dispatches coverage_report to its meta handler and returns the summary', async () => {
+    const ctx = createCtx();
+
+    const response = await handleCallTool(ctx, { name: 'coverage_report' });
+    const result = parseResponse(response);
+
+    expect(state.ensureAllDomainsLoaded).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(true);
+    expect(result.calledCount).toBe(0);
+    expect(result.wasAutoActivated).toBe(false);
+    expect(ctx.router.has).not.toHaveBeenCalled();
+    expect(ctx.executeToolWithTracking).not.toHaveBeenCalled();
+  });
+
+  it('returns an error instead of recursing when call_tool targets itself', async () => {
+    const ctx = createCtx();
+
+    const response = await handleCallTool(ctx, {
+      name: 'call_tool',
+      args: { name: 'deactivate_tools' },
+    });
+    const result = parseResponse(response);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('directly as a top-level tool');
+    expect(state.handleDeactivateTools).not.toHaveBeenCalled();
+    expect(ctx.executeToolWithTracking).not.toHaveBeenCalled();
+  });
+
+  it('matches the direct-call failure shape when a dispatched meta tool throws', async () => {
+    state.handleDeactivateTools.mockRejectedValue(new Error('deactivate boom'));
+    const ctx = createCtx();
+
+    const response = await handleCallTool(ctx, {
+      name: 'deactivate_tools',
+      args: { names: ['page_navigate'] },
+    });
+
+    expect(response.isError).toBe(true);
+    // Direct meta-tool failures return `Error: <message>` via asErrorResponse.
+    expect(response.content[0]).toMatchObject({ type: 'text', text: 'Error: deactivate boom' });
+    expect(state.logger.error).toHaveBeenCalled();
   });
 
   it('records search engine feedback after successful execution', async () => {

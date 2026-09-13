@@ -6,16 +6,27 @@
  * server-side, such clients still cannot see it in their cached tool list.
  * call_tool lets them invoke any catalogued tool by name + args, with
  * automatic on-demand activation when the tool is not yet registered.
+ *
+ * Meta-tools themselves (search_tools, activate_tools, coverage_report, ...)
+ * are top-level tools that live in neither the router nor the search catalog;
+ * call_tool dispatches them directly to their registered handlers.
  */
 import { logger } from '@utils/logger';
-import { asTextResponse } from '@server/domains/shared/response';
+import { asTextResponse, asErrorResponse } from '@server/domains/shared/response';
 import type { MCPServerContext } from '@server/MCPServer.context';
 import type { ToolResponse } from '@server/types';
 import { normalizeToolName } from '@server/MCPServer.search.validation';
 import { getSearchEngine } from '@server/MCPServer.search.helpers';
+import { getRuntimeState } from '@server/runtime/ServerRuntimeState';
 import { getToolInputSchema } from '@server/ToolRouter.probe';
 import { loadSearchCatalog } from '@server/registry/SearchCatalog';
 import { validateToolArgsAgainstSchema } from '@server/MCPServer.search.validation.runtime';
+
+/** Structural mirror of the meta-tool handler type exported by MCPServer.search. */
+type MetaToolDispatchHandler = (
+  ctx: MCPServerContext,
+  args: Record<string, unknown>,
+) => Promise<ToolResponse>;
 
 interface CallToolMetadata {
   wasAutoActivated?: boolean;
@@ -65,6 +76,56 @@ function attachCallToolMetadata(response: ToolResponse, metadata: CallToolMetada
       }
     }),
   };
+}
+
+/**
+ * Dispatch a meta-tool through its registered handler, mirroring the top-level
+ * registration wrapper in registerSearchMetaTools (record the call; wrap
+ * handler throws in asErrorResponse so failures match direct invocation).
+ */
+async function dispatchMetaTool(
+  ctx: MCPServerContext,
+  name: string,
+  toolArgs: Record<string, unknown>,
+  callMetadata: CallToolMetadata,
+  getMetaToolHandler: (handlerName: string) => MetaToolDispatchHandler | undefined,
+): Promise<ToolResponse> {
+  if (name === 'call_tool') {
+    // Self-reference would recurse infinitely — call_tool must be invoked
+    // directly as a top-level tool instead.
+    return asTextResponse(
+      JSON.stringify({
+        success: false,
+        error:
+          'Tool "call_tool" cannot be invoked through call_tool itself. Call it directly as a top-level tool.',
+        ...callMetadata,
+      }),
+    );
+  }
+
+  const handler = getMetaToolHandler(name);
+  if (!handler) {
+    // Defensive only: META_TOOL_NAMES and the handler registry share one source.
+    return asTextResponse(
+      JSON.stringify({
+        success: false,
+        error: `Tool "${name}" is a meta tool but no handler is registered for it.`,
+        ...callMetadata,
+      }),
+    );
+  }
+
+  try {
+    const response = await handler(ctx, toolArgs);
+    // Mirror the top-level wrapper so coverage_report sees call_tool-routed
+    // meta calls too.
+    getRuntimeState(ctx)?.recordToolCall(name, toolArgs);
+    return attachCallToolMetadata(response, callMetadata);
+  } catch (error) {
+    // Match the direct-call failure path instead of call_tool's own JSON error.
+    logger.error(`call_tool: meta tool "${name}" failed`, error);
+    return asErrorResponse(error);
+  }
 }
 
 export async function handleCallTool(
@@ -168,6 +229,15 @@ export async function handleCallTool(
   }
 
   const callMetadata = defaultMetadata;
+
+  // Meta-tools live in neither the router nor the search catalog — dispatch
+  // them straight to their registered handlers before auto-activation logic.
+  // Dynamic import keeps the graph acyclic: search.ts registers handleCallTool
+  // (implemented here), so a static import of META_TOOL_NAMES would cycle.
+  const { META_TOOL_NAMES, getMetaToolHandler } = await import('@server/MCPServer.search');
+  if (META_TOOL_NAMES.has(name)) {
+    return dispatchMetaTool(ctx, name, toolArgs, callMetadata, getMetaToolHandler);
+  }
 
   // Auto-activate the tool if it's known but not yet registered.
   // This bridges the gap for MCP clients that cannot see tools/list_changed

@@ -13,6 +13,7 @@
 
 import { logger } from '@utils/logger';
 import { getToolRequestContext } from '@server/runtime/ToolRequestContext';
+import { META_TOOL_NAMES } from '@server/MCPServer.search';
 
 /** Minimal TabRegistry surface needed by the guard. */
 interface TabContextProvider {
@@ -154,15 +155,7 @@ const NETWORK_RAW_TOOLS = new Set([
 ]);
 
 /** Meta-tools excluded from repeat detection — agents legitimately chain these. */
-const REPEAT_GUARD_EXCLUDES = new Set([
-  'search_tools',
-  'route_tool',
-  'describe_tool',
-  'call_tool',
-  'activate_tools',
-  'deactivate_tools',
-  'activate_domain',
-]);
+const REPEAT_GUARD_EXCLUDES = META_TOOL_NAMES;
 
 /** Suggested alternative tools per domain prefix when a repeat loop is detected. */
 const DOMAIN_ALTERNATIVES: ReadonlyMap<string, readonly string[]> = new Map([

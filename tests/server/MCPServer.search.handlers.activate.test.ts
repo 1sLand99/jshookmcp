@@ -184,6 +184,36 @@ describe('MCPServer.search.handlers.activate', () => {
     expect(ctx.server.sendToolListChanged).not.toHaveBeenCalled();
   });
 
+  it('reports meta tools as already active instead of notFound', async () => {
+    const ctx = createCtx();
+
+    // Meta tools are top-level tools that never appear in the domain catalog.
+    const result = await activateToolNames(ctx, ['deactivate_tools', 'coverage_report']);
+
+    expect(result).toEqual({
+      activated: [],
+      alreadyActive: ['deactivate_tools', 'coverage_report'],
+      notFound: [],
+      totalActive: 1,
+    });
+    expect(ctx.registerSingleTool).not.toHaveBeenCalled();
+    expect(ctx.router.addHandlers).not.toHaveBeenCalled();
+    expect(ctx.server.sendToolListChanged).not.toHaveBeenCalled();
+  });
+
+  it('returns meta tool names as alreadyActive through handleActivateTools', async () => {
+    const ctx = createCtx();
+
+    expect(
+      parseResponse(await handleActivateTools(ctx, { names: ['search_tools'] })),
+    ).toMatchObject({
+      success: true,
+      activated: [],
+      alreadyActive: ['search_tools'],
+      notFound: [],
+    });
+  });
+
   it('downgrades sendToolListChanged failures to warnings during activation', async () => {
     const ctx = createCtx({
       server: {

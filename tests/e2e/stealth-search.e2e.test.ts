@@ -100,21 +100,25 @@ describe.skipIf(!TARGET_URL)('Stealth & Search E2E', { timeout: 180_000, sequent
     expect(stats.result.status).not.toBe('FAIL');
   });
 
-  test('SEARCH-03: boost_profile changes search rankings', async () => {
-    const requiredTools = ['boost_profile', 'unboost_profile'];
+  test('SEARCH-03: activate_tools/deactivate_tools round-trip', async () => {
+    const requiredTools = ['activate_tools', 'deactivate_tools'];
     const missing = requiredTools.filter((t) => !client.getToolMap().has(t));
     if (missing.length > 0) {
-      client.recordSynthetic('boost-profile', 'SKIP', `Missing: ${missing.join(', ')}`);
+      client.recordSynthetic('search-activation', 'SKIP', `Missing: ${missing.join(', ')}`);
       return;
     }
 
-    // Activate a boost profile
-    const boost = await client.call('boost_profile', { profile: 'full' }, 15_000);
-    expect(boost.result.status).not.toBe('FAIL');
+    // Dynamically activate a tool from the search catalog
+    const activate = await client.call('activate_tools', { names: ['dns_resolve'] }, 15_000);
+    expect(activate.result.status).not.toBe('FAIL');
 
-    // Deactivate
-    const unboost = await client.call('unboost_profile', {}, 15_000);
-    expect(unboost.result.status).not.toBe('FAIL');
+    // Release it again
+    const deactivate = await client.call('deactivate_tools', { names: ['dns_resolve'] }, 15_000);
+    expect(deactivate.result.status).not.toBe('FAIL');
+    const parsed = deactivate.parsed as { removed?: string[]; notActivated?: string[] } | undefined;
+    expect(
+      parsed?.removed?.includes('dns_resolve') || parsed?.notActivated?.includes('dns_resolve'),
+    ).toBe(true);
   });
 
   // ── P0 diagnostic surface (2026-05-06) ──

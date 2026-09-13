@@ -11,6 +11,7 @@ vi.mock('@src/utils/logger', () => ({
 }));
 
 import { ToolCallContextGuard } from '@server/ToolCallContextGuard';
+import { META_TOOL_NAMES } from '@server/MCPServer.search';
 import { runWithToolRequestContext } from '@server/runtime/ToolRequestContext';
 
 interface TextContent {
@@ -384,6 +385,21 @@ describe('ToolCallContextGuard', () => {
       const parsed = JSON.parse(getText(enriched));
 
       expect(parsed.repeatWarning).toBeUndefined();
+    });
+
+    it('excludes the full shared META_TOOL_NAMES set from repeat detection', () => {
+      const guard = new ToolCallContextGuard(() => null);
+
+      // coverage_report was historically missing from the local excludes list.
+      expect(META_TOOL_NAMES.size).toBe(8);
+      for (const name of META_TOOL_NAMES) {
+        // Excluded tools are not tracked and never accumulate a repeat count.
+        expect(guard.recordCall(name)).toBe(0);
+      }
+      expect(guard.isRepeatLoop()).toBe(false);
+
+      // Non-meta tools are still tracked.
+      expect(guard.recordCall('page_navigate')).toBe(1);
     });
 
     it('does not inject warning for fewer than 3 repeats', () => {

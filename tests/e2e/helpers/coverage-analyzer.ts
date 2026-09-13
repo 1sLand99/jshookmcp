@@ -190,8 +190,6 @@ function inferDomain(toolName: string): string {
     ['smart_cache_', 'maintenance'],
     ['cleanup_', 'maintenance'],
     ['doctor_', 'maintenance'],
-    ['boost_profile', 'maintenance'],
-    ['unboost_profile', 'maintenance'],
     ['get_collection_stats', 'maintenance'],
     ['clear_', 'maintenance'],
     ['create_task_', 'coordination'],

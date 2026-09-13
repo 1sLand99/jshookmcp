@@ -107,7 +107,7 @@ If the package is truly missing, stealth features using Camoufox will fall back 
 
 **Symptom**: `search_tools` returns results but `activate_tools` fails.
 
-**Cause**: Tool name mismatch or tier not high enough.
+**Cause**: Tool name mismatch (activation requires the exact name returned by `search_tools`).
 
 **Solution**:
 
@@ -117,22 +117,21 @@ If the package is truly missing, stealth features using Camoufox will fall back 
 
 # Correct pattern:
 1. search_tools "open a page"
-2. Activate the exact tool name returned
-3. If tool requires higher tier, use boost_profile
+2. Activate the exact tool name returned with activate_tools
+3. To activate every tool in a domain at once, use activate_domain
 ```
 
-### Dynamic Boost Too Aggressive
+### Too Many Activated Tools
 
-**Symptom**: Automatically upgraded to `full` tier for simple tasks.
+**Symptom**: Context fills up after activating many tools.
 
 **Solution**:
 
-```bash
-# Disable dynamic boost
-DYNAMIC_BOOST_ENABLED=false
+```text
+# Release tools you no longer need
+deactivate_tools { names: ["tool_a", "tool_b"] }
 
-# Or limit which tiers can be auto-selected
-SEARCH_WORKFLOW_BOOST_TIERS=workflow
+# Activated tools are also released automatically when their activation TTL expires
 ```
 
 ### Search Results Not Relevant

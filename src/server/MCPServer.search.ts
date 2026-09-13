@@ -53,11 +53,24 @@ import {
 
 // ── single-source meta-tool definitions ──
 
+/** Handler signature shared by top-level registration and call_tool dispatch. */
+export type MetaToolHandler = (
+  ctx: MCPServerContext,
+  args: Record<string, unknown>,
+) => Promise<ToolResponse>;
+
+/**
+ * Descriptions are either static text or resolved lazily at registration time.
+ * Module-level definitions must stay free of context-dependent values so that
+ * META_TOOL_NAMES can be derived at import time.
+ */
+type MetaToolDescription = string | ((ctx: MCPServerContext) => string);
+
 interface MetaToolDef {
   name: string;
-  description: string;
+  description: MetaToolDescription;
   inputSchema: Record<string, unknown>;
-  handler: (ctx: MCPServerContext, args: Record<string, unknown>) => Promise<ToolResponse>;
+  handler: MetaToolHandler;
 }
 
 async function handleCoverageReport(
@@ -92,203 +105,230 @@ async function handleCoverageReport(
   };
 }
 
-function buildMetaToolDefinitions(ctx: MCPServerContext): MetaToolDef[] {
-  return [
-    {
-      name: 'search_tools',
-      description: buildDomainDescription(ctx),
-      inputSchema: {
-        type: 'object',
-        properties: {
-          query: {
-            type: 'string',
-            description:
-              'Before calling, distill your intent into 2-5 key concepts: what action, on what target, in which ' +
-              'domain. ' +
-              'Pass only those distilled keywords — not the original user request.',
-          },
-          top_k: { type: 'number', description: 'Max results to return (default: 10, max: 30)' },
-          auto_activate: {
-            type: 'boolean',
-            description:
-              'Auto-activate found tools so they are immediately callable. Set false to only search without activating (default: true)',
-            default: true,
-          },
+const META_TOOL_DEFINITIONS: MetaToolDef[] = [
+  {
+    name: 'search_tools',
+    description: (ctx) => buildDomainDescription(ctx),
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description:
+            'Before calling, distill your intent into 2-5 key concepts: what action, on what target, in which ' +
+            'domain. ' +
+            'Pass only those distilled keywords — not the original user request.',
         },
-        required: ['query'],
+        top_k: { type: 'number', description: 'Max results to return (default: 10, max: 30)' },
+        auto_activate: {
+          type: 'boolean',
+          description:
+            'Auto-activate found tools so they are immediately callable. Set false to only search without activating (default: true)',
+          default: true,
+        },
       },
-      handler: handleSearchTools,
+      required: ['query'],
     },
-    {
-      name: 'route_tool',
-      description:
-        'One-stop tool router: accepts a natural language task description, returns recommended tools and next ' +
-        'actions. ' +
-        'Automatically detects workflow patterns, recommends activation order, and provides example arguments. ' +
-        'Use this instead of search_tools when you want guided tool discovery with actionable next steps.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          task: {
-            type: 'string',
-            description: 'Natural language description of the task you want to accomplish',
-          },
-          context: {
-            type: 'object',
-            description: 'Optional context hints for routing',
-            properties: {
-              preferredDomain: {
-                type: 'string',
-                description: 'Domain preference (e.g., "browser", "network")',
-              },
-              autoActivate: {
-                type: 'boolean',
-                description: 'Whether to auto-activate recommended tools (default: false)',
-              },
-              maxRecommendations: {
-                type: 'number',
-                description: 'Maximum number of recommendations (default: 5)',
-              },
+    handler: handleSearchTools,
+  },
+  {
+    name: 'route_tool',
+    description:
+      'One-stop tool router: accepts a natural language task description, returns recommended tools and next ' +
+      'actions. ' +
+      'Automatically detects workflow patterns, recommends activation order, and provides example arguments. ' +
+      'Use this instead of search_tools when you want guided tool discovery with actionable next steps.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task: {
+          type: 'string',
+          description: 'Natural language description of the task you want to accomplish',
+        },
+        context: {
+          type: 'object',
+          description: 'Optional context hints for routing',
+          properties: {
+            preferredDomain: {
+              type: 'string',
+              description: 'Domain preference (e.g., "browser", "network")',
+            },
+            autoActivate: {
+              type: 'boolean',
+              description: 'Whether to auto-activate recommended tools (default: false)',
+            },
+            maxRecommendations: {
+              type: 'number',
+              description: 'Maximum number of recommendations (default: 5)',
             },
           },
         },
-        required: ['task'],
       },
-      handler: handleRouteTool,
+      required: ['task'],
     },
-    {
-      name: 'describe_tool',
-      description:
-        'Get detailed information about a specific tool, including its input schema. ' +
-        'Use this to see the exact parameters a tool expects before calling it.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          name: { type: 'string', description: 'Tool name to describe' },
+    handler: handleRouteTool,
+  },
+  {
+    name: 'describe_tool',
+    description:
+      'Get detailed information about a specific tool, including its input schema. ' +
+      'Use this to see the exact parameters a tool expects before calling it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Tool name to describe' },
+      },
+      required: ['name'],
+    },
+    handler: handleDescribeTool,
+  },
+  {
+    name: 'activate_tools',
+    description:
+      'Dynamically register specific tools by name, regardless of current base tier. ' +
+      'Use after search_tools to enable exactly the tools you need. ' +
+      'In search-tier sessions this is usually enough; use activate_domain when you need every tool in a ' +
+      'domain. ' +
+      'Activated tools appear in the tool list immediately. ' +
+      'If tools do not appear after activation, use call_tool to invoke them directly.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        names: {
+          anyOf: [
+            { type: 'array', items: { type: 'string' } },
+            {
+              type: 'string',
+              description:
+                'JSON stringified array for MCP clients that serialize arrays as strings',
+            },
+          ],
+          description:
+            'Array of tool names to activate (from search_tools results). Also accepts a JSON stringified array for clients that serialize arrays as strings.',
         },
-        required: ['name'],
       },
-      handler: handleDescribeTool,
+      required: ['names'],
     },
-    {
-      name: 'activate_tools',
-      description:
-        'Dynamically register specific tools by name, regardless of current base tier. ' +
-        'Use after search_tools to enable exactly the tools you need. ' +
-        'In search-tier sessions this is usually enough; you do not need boost_profile just to use a few exact ' +
-        'tools. ' +
-        'Activated tools appear in the tool list immediately. ' +
-        'If tools do not appear after activation, use call_tool to invoke them directly.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          names: {
-            anyOf: [
-              { type: 'array', items: { type: 'string' } },
-              {
-                type: 'string',
-                description:
-                  'JSON stringified array for MCP clients that serialize arrays as strings',
-              },
-            ],
-            description:
-              'Array of tool names to activate (from search_tools results). Also accepts a JSON stringified array for clients that serialize arrays as strings.',
-          },
+    handler: handleActivateTools,
+  },
+  {
+    name: 'deactivate_tools',
+    description:
+      'Remove previously activated tools to free context. ' +
+      'Only affects dynamically activated tools (added via activate_tools, activate_domain, or extension ' +
+      'activation), not base profile tools.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        names: {
+          anyOf: [
+            { type: 'array', items: { type: 'string' } },
+            { type: 'string', description: 'JSON stringified array' },
+          ],
+          description: 'Array of tool names to deactivate',
         },
-        required: ['names'],
       },
-      handler: handleActivateTools,
+      required: ['names'],
     },
-    {
-      name: 'deactivate_tools',
-      description:
-        'Remove previously activated tools to free context. ' +
-        'Only affects tools added via activate_tools, not base profile tools.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          names: {
-            anyOf: [
-              { type: 'array', items: { type: 'string' } },
-              { type: 'string', description: 'JSON stringified array' },
-            ],
-            description: 'Array of tool names to deactivate',
-          },
+    handler: handleDeactivateTools,
+  },
+  {
+    name: 'activate_domain',
+    description: () =>
+      `Activate all tools in a domain at once. ` +
+      `Domains: ${[...getAllDomains()].join(', ')}. ` +
+      `Use reload_extensions first to include external plugin/workflow domains.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        domain: {
+          type: 'string',
+          description: 'Domain name to activate (e.g. "debugger", "network")',
         },
-        required: ['names'],
-      },
-      handler: handleDeactivateTools,
-    },
-    {
-      name: 'activate_domain',
-      description:
-        `Activate all tools in a domain at once. ` +
-        `Domains: ${[...getAllDomains()].join(', ')}. ` +
-        `Use reload_extensions first to include external plugin/workflow domains.`,
-      inputSchema: {
-        type: 'object',
-        properties: {
-          domain: {
-            type: 'string',
-            description: 'Domain name to activate (e.g. "debugger", "network")',
-          },
-          ttlMinutes: {
-            type: 'number',
-            description: 'Auto-deactivate after N minutes (default: 30, set 0 for no expiry)',
-          },
+        ttlMinutes: {
+          type: 'number',
+          description: 'Auto-deactivate after N minutes (default: 30, set 0 for no expiry)',
         },
-        required: ['domain'],
       },
-      handler: handleActivateDomain,
+      required: ['domain'],
     },
-    {
-      name: 'call_tool',
-      description:
-        'Execute an already-active tool by name. ' +
-        'Use this when activate_tools/activate_domain registered a tool but your client did not refresh its tool ' +
-        'list. ' +
-        'Does not auto-activate inactive tools.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          name: {
-            type: 'string',
-            description: 'The tool name to execute (from search_tools or describe_tool results)',
-          },
-          args: {
-            type: 'object',
-            description: 'Arguments object to pass to the tool',
-            additionalProperties: true,
-          },
-          parameters: {
-            type: 'string',
-            description:
-              'Alternative: JSON-serialized arguments string. ' +
-              'Some MCP clients serialize the nested arguments as a single stringified-JSON field.',
-          },
-          arguments: {
-            type: 'string',
-            description:
-              'Another alternative: MCP clients that stringify the entire arguments wrapper. ' +
-              'Carries the same nested {name, args/parameters} payload as a JSON string.',
-          },
+    handler: handleActivateDomain,
+  },
+  {
+    name: 'call_tool',
+    description:
+      'Execute an already-active tool by name. ' +
+      'Use this when activate_tools/activate_domain registered a tool but your client did not refresh its tool ' +
+      'list. ' +
+      'Does not auto-activate inactive tools.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'The tool name to execute (from search_tools or describe_tool results)',
         },
-        required: ['name'],
+        args: {
+          type: 'object',
+          description: 'Arguments object to pass to the tool',
+          additionalProperties: true,
+        },
+        parameters: {
+          type: 'string',
+          description:
+            'Alternative: JSON-serialized arguments string. ' +
+            'Some MCP clients serialize the nested arguments as a single stringified-JSON field.',
+        },
+        arguments: {
+          type: 'string',
+          description:
+            'Another alternative: MCP clients that stringify the entire arguments wrapper. ' +
+            'Carries the same nested {name, args/parameters} payload as a JSON string.',
+        },
       },
-      handler: handleCallTool,
+      required: ['name'],
     },
-    {
-      name: 'coverage_report',
-      description:
-        'Report which tools have been called in the current runtime and which known tools remain uncalled. ' +
-        'Loads all domains first so the uncalled list reflects the full tool catalog, not just currently active tools.',
-      inputSchema: {
-        type: 'object',
-        properties: {},
-      },
-      handler: handleCoverageReport,
+    handler: handleCallTool,
+  },
+  {
+    name: 'coverage_report',
+    description:
+      'Report which tools have been called in the current runtime and which known tools remain uncalled. ' +
+      'Loads all domains first so the uncalled list reflects the full tool catalog, not just currently active tools.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
     },
-  ];
+    handler: handleCoverageReport,
+  },
+];
+
+/**
+ * Canonical meta-tool names, derived from META_TOOL_DEFINITIONS (single source
+ * of truth for the 8-name list). Shared by activate_tools (meta-tools are
+ * always registered, never part of the domain catalog), call_tool (meta-tool
+ * dispatch) and ToolCallContextGuard (repeat-guard excludes).
+ */
+export const META_TOOL_NAMES: ReadonlySet<string> = new Set(
+  META_TOOL_DEFINITIONS.map((def) => def.name),
+);
+
+/** Resolve a meta-tool handler by name (single source: META_TOOL_DEFINITIONS). */
+export function getMetaToolHandler(name: string): MetaToolHandler | undefined {
+  return META_TOOL_DEFINITIONS.find((def) => def.name === name)?.handler;
+}
+
+/** A meta-tool definition whose lazy description has been resolved to text. */
+interface ResolvedMetaToolDef extends Omit<MetaToolDef, 'description'> {
+  description: string;
+}
+
+/** Resolve lazy descriptions against a concrete context. */
+function buildMetaToolDefinitions(ctx: MCPServerContext): ResolvedMetaToolDef[] {
+  return META_TOOL_DEFINITIONS.map((def) => ({
+    ...def,
+    description: typeof def.description === 'function' ? def.description(ctx) : def.description,
+  }));
 }
 
 // ── registration ──

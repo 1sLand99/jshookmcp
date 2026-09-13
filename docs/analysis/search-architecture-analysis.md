@@ -63,7 +63,7 @@ Step 4: LLM calls business tool (e.g., page_navigate)
 
 **Symptom**: Under default search-tier, LLM wants to call business tools directly but they're not in the list.
 
-**Root Cause**: Default profile=search, initial registered tools set is extremely small. Requires discovery/activation/boost_profile chain.
+**Root Cause**: Default profile=search, initial registered tools set is extremely small. Requires a discovery/activation chain (search_tools → activate_tools / activate_domain).
 
 **Evidence**: `src/server/MCPServer.registration.ts:10`
 
