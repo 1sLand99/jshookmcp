@@ -7,10 +7,21 @@
  * MCP session open.
  *
  * Contract:
- * - Each bus event is written as exactly one frame: `data: {json}\n\n` where
- *   the JSON is `{ event, payload }` (single line — JSON escapes newlines).
+ * - Each bus event is written as exactly one frame: `id: <seq>\ndata: {json}\n\n`
+ *   where the JSON is `{ event, payload }` (single line — JSON escapes
+ *   newlines). `<seq>` comes from a server-level monotonic counter starting at
+ *   1 and shared across connections and replays, so clients can deduplicate,
+ *   order, and resume. The sequence travels ONLY in the `id:` line — the JSON
+ *   payload is never polluted with it.
+ * - Clients may resume with the standard `Last-Event-ID` header (or an
+ *   equivalent `?since=<seq>` query parameter): buffered events with
+ *   `seq > since` are replayed in order before live events. Without either,
+ *   the whole bounded buffer is flushed (legacy behavior).
+ * - If the resume point predates the oldest buffered frame, an `event: gap`
+ *   frame is written before the replay: the intermediate events are gone
+ *   (bounded buffer) and are honestly NOT re-sent — the client must resync.
  * - Heartbeat comment frames (`:ping\n\n`) every SSE_EVENTS_HEARTBEAT_MS to
- *   defeat idle proxy timeouts.
+ *   defeat idle proxy timeouts. Heartbeats never carry an `id:` line.
  * - Only the metadata-only allowlisted events are mirrored. Payloads are
  *   additionally scrubbed of sensitive keys as defense in depth — tool
  *   arguments and results must never reach this stream.
@@ -78,15 +89,54 @@ export function sanitizeEventPayload(payload: unknown): unknown {
 }
 
 /**
- * Pure SSE frame builder: one bus event → one `data:` line + blank line.
- * JSON.stringify escapes embedded newlines, so the payload can never split
- * the frame across multiple lines.
+ * Pure SSE frame builder: one bus event → one `id:` line + one `data:` line +
+ * blank line. JSON.stringify escapes embedded newlines, so the payload can
+ * never split the frame across multiple lines. The sequence number travels
+ * ONLY in the `id:` line (SSE resume protocol) — the JSON payload stays pure.
  */
-export function formatBusEventFrame(event: string, payload: unknown): string {
-  return `data: ${JSON.stringify({ event, payload: sanitizeEventPayload(payload) })}\n\n`;
+export function formatBusEventFrame(event: string, payload: unknown, seq: number): string {
+  return `id: ${seq}\ndata: ${JSON.stringify({ event, payload: sanitizeEventPayload(payload) })}\n\n`;
+}
+
+/**
+ * Gap notice frame, written before a partial replay when the client's resume
+ * point predates the oldest still-buffered event. Standard SSE clients observe
+ * it via `addEventListener('gap', …)`; the data line names the requested
+ * sequence and the oldest available one. Missing events are not re-sent.
+ */
+export function formatGapFrame(since: number, oldestAvailable: number): string {
+  return `event: gap\ndata: ${JSON.stringify({ since, oldestAvailable })}\n\n`;
+}
+
+/** Resume points must be plain non-negative integers (`"3"`, `"0"`). */
+const RESUME_SEQUENCE_PATTERN = /^\d+$/;
+
+/**
+ * Extract the client resume point: standard `Last-Event-ID` header first,
+ * `?since=<seq>` query parameter as fallback. Returns null when neither is
+ * present, or when the value is not a non-negative integer — an unusable
+ * resume point degrades to the legacy full replay instead of guessing.
+ */
+export function parseResumeSequence(req: Pick<IncomingMessage, 'headers' | 'url'>): number | null {
+  const rawHeader = req.headers['last-event-id'];
+  const headerValue = (Array.isArray(rawHeader) ? rawHeader[0] : rawHeader)?.trim() ?? '';
+  let raw: string | null = RESUME_SEQUENCE_PATTERN.test(headerValue) ? headerValue : null;
+  if (raw === null && req.url !== undefined) {
+    try {
+      const queryValue = new URL(req.url, 'http://localhost').searchParams.get('since');
+      if (queryValue !== null && RESUME_SEQUENCE_PATTERN.test(queryValue.trim())) {
+        raw = queryValue.trim();
+      }
+    } catch {
+      raw = null;
+    }
+  }
+  return raw === null ? null : Number(raw);
 }
 
 interface RecordedEvent {
+  /** Server-level monotonic sequence (also carried in the SSE `id:` line). */
+  seq: number;
   event: string;
   payload: unknown;
 }
@@ -94,6 +144,8 @@ interface RecordedEvent {
 export interface EventsEndpointStats {
   activeClients: number;
   buffered: number;
+  /** Highest sequence handed out so far; 0 until the first mirrored event. */
+  lastSeq: number;
 }
 
 export interface EventsEndpoint {
@@ -127,17 +179,38 @@ export function createEventsEndpoint(
   let activeClients = 0;
   let recorderAttached = false;
   let detachRecorder: (() => void) | null = null;
+  let lastSeq = 0;
   const replayBuffer: RecordedEvent[] = [];
+  const clientSinks = new Set<(frame: string) => void>();
+
+  /**
+   * Single dispatch point for mirrored bus events: assigns the server-level
+   * sequence number, appends to the replay buffer, and fans the prebuilt frame
+   * out to every connected sink. Assigning the seq exactly once here (not once
+   * per subscriber) guarantees that the live frame and the replay frame for
+   * the same event carry one identical sequence number.
+   */
+  const dispatchMirroredEvent = (event: string, rawPayload: unknown): void => {
+    if (!SSE_EVENT_ALLOWLIST.has(event)) return;
+    const recorded: RecordedEvent = {
+      seq: lastSeq + 1,
+      event,
+      payload: sanitizeEventPayload(rawPayload),
+    };
+    lastSeq = recorded.seq;
+    replayBuffer.push(recorded);
+    if (replayBuffer.length > replayLimit) {
+      replayBuffer.splice(0, replayBuffer.length - replayLimit);
+    }
+    const frame = formatBusEventFrame(recorded.event, recorded.payload, recorded.seq);
+    for (const sink of clientSinks) sink(frame);
+  };
 
   const ensureRecorder = (): void => {
     if (recorderAttached || !eventBus || typeof eventBus.onAny !== 'function') return;
     recorderAttached = true;
     detachRecorder = eventBus.onAny(({ event, payload }) => {
-      if (!SSE_EVENT_ALLOWLIST.has(event)) return;
-      replayBuffer.push({ event, payload: sanitizeEventPayload(payload) });
-      if (replayBuffer.length > replayLimit) {
-        replayBuffer.splice(0, replayBuffer.length - replayLimit);
-      }
+      dispatchMirroredEvent(event, payload);
     });
   };
 
@@ -168,7 +241,7 @@ export function createEventsEndpoint(
     activeClients += 1;
     // Attach the recorder BEFORE reading the buffer inside this synchronous
     // setup: events emitted before this call are already buffered, events
-    // after it reach the live subscription — no gap, no duplicates.
+    // after it reach the live sink — no gap, no duplicates.
     ensureRecorder();
 
     res.writeHead(200, {
@@ -185,9 +258,9 @@ export function createEventsEndpoint(
       ': auth mirrors POST /mcp (Bearer MCP_AUTH_TOKEN when configured); ' +
         'payloads are metadata-only\n\n',
     );
-    for (const recorded of replayBuffer) {
-      res.write(formatBusEventFrame(recorded.event, recorded.payload));
-    }
+
+    // Resume point: Last-Event-ID header or ?since=<seq>; null → legacy full replay.
+    const since = parseResumeSequence(req);
 
     // Per-connection teardown state. A holder object keeps the hoisted
     // cleanup/write helpers free of use-before-declaration ordering hazards.
@@ -197,8 +270,8 @@ export function createEventsEndpoint(
       unsubscribe?: () => void;
     } = { cleanedUp: false };
 
-    // Hoisted function declarations: the live subscription, heartbeat, and
-    // disconnect handlers all close over these.
+    // Hoisted function declarations: the live sink, heartbeat, and disconnect
+    // handlers all close over these.
     function cleanupClient(): void {
       if (stream.cleanedUp) return;
       stream.cleanedUp = true;
@@ -222,10 +295,36 @@ export function createEventsEndpoint(
       }
     }
 
-    stream.unsubscribe = eventBus.onAny(({ event, payload }) => {
-      if (!SSE_EVENT_ALLOWLIST.has(event)) return;
-      writeFrame(formatBusEventFrame(event, payload));
-    });
+    // Register the live sink BEFORE flushing the replay buffer. This whole
+    // setup block is synchronous (the bus cannot emit mid-setup), so an event
+    // is either fully in the buffer or reaches the live sink — never both.
+    const sink = (frame: string): void => {
+      writeFrame(frame);
+    };
+    clientSinks.add(sink);
+    stream.unsubscribe = () => {
+      clientSinks.delete(sink);
+    };
+
+    if (since === null) {
+      // Legacy behavior: flush the whole bounded buffer.
+      for (const recorded of replayBuffer) {
+        writeFrame(formatBusEventFrame(recorded.event, recorded.payload, recorded.seq));
+      }
+    } else {
+      // Resume: replay only events newer than the client's last seen seq. If
+      // that point predates the oldest buffered frame the intermediate events
+      // are gone — send an honest gap notice instead of faking continuity.
+      const oldest = replayBuffer[0];
+      if (oldest !== undefined && since + 1 < oldest.seq) {
+        writeFrame(formatGapFrame(since, oldest.seq));
+      }
+      for (const recorded of replayBuffer) {
+        if (recorded.seq > since) {
+          writeFrame(formatBusEventFrame(recorded.event, recorded.payload, recorded.seq));
+        }
+      }
+    }
 
     stream.heartbeat = setInterval(() => {
       // Colon-prefixed comment frames are ignored by SSE clients but keep the
@@ -247,7 +346,7 @@ export function createEventsEndpoint(
   return {
     handleRequest,
     getStats(): EventsEndpointStats {
-      return { activeClients, buffered: replayBuffer.length };
+      return { activeClients, buffered: replayBuffer.length, lastSeq };
     },
   };
 }
