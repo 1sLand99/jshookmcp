@@ -9,7 +9,11 @@ import type { MCPServerContext } from '@server/MCPServer.context';
 import type { ToolResponse } from '@server/types';
 import { registerExtensionToolRecord } from '@server/extensions/ExtensionManager.tools';
 import { getAllKnownDomains, ensureDomainLoaded } from '@server/registry/index';
-import { getActiveToolNames } from '@server/MCPServer.search.helpers';
+import {
+  createActivationBudgetTracker,
+  getActiveToolNames,
+  summarizeActivationBudget,
+} from '@server/MCPServer.search.helpers';
 import { startDomainTtl } from '@server/MCPServer.activation.ttl';
 import { getRuntimeState } from '@server/runtime/ServerRuntimeState';
 import { ACTIVATION_TTL_MINUTES } from '@src/constants';
@@ -51,6 +55,8 @@ export async function handleActivateDomain(
   ];
   const activeNames = getActiveToolNames(ctx);
   const activated: string[] = [];
+  const budgetExceeded: string[] = [];
+  const budget = await createActivationBudgetTracker(ctx);
 
   ctx.enabledDomains.add(domain);
 
@@ -59,8 +65,16 @@ export async function handleActivateDomain(
 
     const extensionRecord = ctx.extensionToolsByName.get(toolDef.name);
     if (extensionRecord) {
+      if (!budget.admit(extensionRecord.tool)) {
+        budgetExceeded.push(toolDef.name);
+        continue;
+      }
       registerExtensionToolRecord(ctx, extensionRecord, 'activate_domain');
     } else {
+      if (!budget.admit(toolDef)) {
+        budgetExceeded.push(toolDef.name);
+        continue;
+      }
       const registeredTool = ctx.registerSingleTool(toolDef);
       ctx.activatedToolNames.add(toolDef.name);
       ctx.activatedRegisteredTools.set(toolDef.name, registeredTool);
@@ -96,13 +110,17 @@ export async function handleActivateDomain(
   }
 
   logger.info(
-    `activate_domain: domain="${domain}", activated ${activated.length} tools, ttl=${ttlMinutes}min`,
+    `activate_domain: domain="${domain}", activated ${activated.length} tools, ` +
+      `budget_exceeded ${budgetExceeded.length}, ttl=${ttlMinutes}min`,
   );
   ctx.mcpLog.info('jshookmcp', {
     event: 'domain_activated',
     domain,
     toolCount: activated.length,
+    budgetExcluded: budgetExceeded.length,
   });
+
+  const budgetSummary = summarizeActivationBudget(budget);
 
   return asTextResponse(
     JSON.stringify({
@@ -110,13 +128,21 @@ export async function handleActivateDomain(
       domain,
       activated: activated.length,
       activatedTools: activated,
+      budgetExceeded,
+      budget: budgetSummary,
       totalDomainTools: domainTools.length,
       ttlMinutes: ttlMinutes > 0 ? ttlMinutes : 'no expiry',
       hint:
-        activated.length > 0
-          ? 'Tools activated. If they do not appear in your tool list, use call_tool({ name: "<tool>", args: {...} ' +
-            '}) to invoke them.'
-          : undefined,
+        budgetExceeded.length > 0
+          ? `Skipped ${budgetExceeded.length} tool(s) over the activation budget ` +
+            `(used ${budgetSummary.usedTokens}/${budgetSummary.maxTokens} tokens, ` +
+            `${budgetSummary.activeTools}/${budgetSummary.maxTools} tools): ` +
+            `${budgetExceeded.join(', ')}. Deactivate unused tools first or raise ` +
+            `MCP_TOOL_ACTIVATION_BUDGET_TOKENS / MCP_TOOL_MAX_ACTIVE_TOOLS.`
+          : activated.length > 0
+            ? 'Tools activated. If they do not appear in your tool list, use call_tool({ name: "<tool>", args: {...} ' +
+              '}) to invoke them.'
+            : undefined,
     }),
   );
 }

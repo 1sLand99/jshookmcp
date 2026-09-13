@@ -65,6 +65,8 @@ const CONFIG_DEFAULTS = {
     browserFleetVirtualNodes: 128,
     browserFleetLeaseTtlMs: 600_000,
     browserFleetMaxLocalLeases: 4096,
+    toolActivationBudgetTokens: 30_000,
+    toolActivationMaxTools: 50,
   },
   cache: {
     enabled: false,
@@ -339,6 +341,8 @@ const ConfigSchema = z.object({
   MCP_BROWSER_FLEET_MAX_LOCAL_LEASES: envInt(CONFIG_DEFAULTS.mcp.browserFleetMaxLocalLeases).pipe(
     z.number().min(1).max(1_000_000),
   ),
+  MCP_TOOL_ACTIVATION_BUDGET_TOKENS: positiveEnvInt(CONFIG_DEFAULTS.mcp.toolActivationBudgetTokens),
+  MCP_TOOL_MAX_ACTIVE_TOOLS: positiveEnvInt(CONFIG_DEFAULTS.mcp.toolActivationMaxTools),
 
   // Cache
   ENABLE_CACHE: envBool(CONFIG_DEFAULTS.cache.enabled),
@@ -981,6 +985,8 @@ export function getConfig(): Config {
       browserFleetVirtualNodes: env.MCP_BROWSER_FLEET_VIRTUAL_NODES,
       browserFleetLeaseTtlMs: env.MCP_BROWSER_FLEET_LEASE_TTL_MS,
       browserFleetMaxLocalLeases: env.MCP_BROWSER_FLEET_MAX_LOCAL_LEASES,
+      toolActivationBudgetTokens: env.MCP_TOOL_ACTIVATION_BUDGET_TOKENS,
+      toolActivationMaxTools: env.MCP_TOOL_MAX_ACTIVE_TOOLS,
     },
     cache: {
       enabled: env.ENABLE_CACHE,
@@ -1155,6 +1161,13 @@ export function validateConfig(config: Config): { valid: boolean; errors: string
     errors.push('mcp.browserFleetMaxLocalLeases must be at least 1');
   } else if (config.mcp.browserFleetMaxLocalLeases > 1_000_000) {
     errors.push('mcp.browserFleetMaxLocalLeases must be at most 1000000');
+  }
+
+  if (config.mcp.toolActivationBudgetTokens < 1) {
+    errors.push('mcp.toolActivationBudgetTokens must be at least 1');
+  }
+  if (config.mcp.toolActivationMaxTools < 1) {
+    errors.push('mcp.toolActivationMaxTools must be at least 1');
   }
 
   if (config.performance.maxConcurrentAnalysis < 1) {

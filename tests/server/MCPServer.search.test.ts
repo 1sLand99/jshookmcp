@@ -3,6 +3,8 @@ import type { Tool } from '@modelcontextprotocol/server';
 import { DEFAULT_SEARCH_CONFIG } from '@src/config/search-defaults';
 import { createToolHandlerMap } from '@server/ToolHandlerMap';
 import type { MCPServerContext } from '@server/MCPServer.context';
+import { estimateToolTokens } from '@server/MCPServer.search.helpers';
+import { MCP_TOOL_ACTIVATION_BUDGET_TOKENS, MCP_TOOL_MAX_ACTIVE_TOOLS } from '@src/constants';
 
 function tool(name: string, description = `desc_${name}`): Tool {
   // Cast: the v2 Tool inputSchema type is a deep Zod-derived union; a minimal
@@ -341,6 +343,8 @@ interface CommonSuccessResponse {
   totalKnownTools?: number;
   uncalled?: string[];
   uncalledCount?: number;
+  budgetExceeded?: string[];
+  budget?: Record<string, number>;
 }
 
 function parseResponse<T>(response: McpResponse): T {
@@ -629,7 +633,16 @@ describe('MCPServer.search', () => {
       activated: ['network_get_requests', 'custom_tool'],
       alreadyActive: [],
       notFound: [],
+      budgetExceeded: [],
       totalActive: 3,
+      budget: {
+        usedTokens:
+          estimateToolTokens(tool('network_get_requests', 'Inspect network requests')) +
+          estimateToolTokens(tool('custom_tool', 'Custom workflow tool')),
+        maxTokens: MCP_TOOL_ACTIVATION_BUDGET_TOKENS,
+        activeTools: 2,
+        maxTools: MCP_TOOL_MAX_ACTIVE_TOOLS,
+      },
       hint: 'Tools activated. If they do not appear in your tool list, use call_tool({ name: "<tool>", args: {...} }) to invoke them.',
     });
     expect(ctx.activatedToolNames.has('network_get_requests')).toBe(true);
@@ -937,7 +950,17 @@ describe('MCPServer.search', () => {
       activated: ['network_get_requests', 'custom_tool'],
       alreadyActive: ['page_navigate'],
       notFound: ['missing_tool'],
+      budgetExceeded: [],
       totalActive: 4,
+      budget: {
+        usedTokens:
+          estimateToolTokens(tool('page_navigate', 'Navigate a page')) +
+          estimateToolTokens(tool('network_get_requests', 'Inspect network requests')) +
+          estimateToolTokens(tool('custom_tool', 'Custom workflow tool')),
+        maxTokens: MCP_TOOL_ACTIVATION_BUDGET_TOKENS,
+        activeTools: 3,
+        maxTools: MCP_TOOL_MAX_ACTIVE_TOOLS,
+      },
       hint: 'Tools activated. If they do not appear in your tool list, use call_tool({ name: "<tool>", args: {...} }) to invoke them.',
     });
     expect(ctx.enabledDomains).toEqual(new Set(['browser', 'network', 'workflow']));
@@ -1044,6 +1067,15 @@ describe('MCPServer.search', () => {
       domain: 'browser',
       activated: 2,
       activatedTools: ['page_navigate', 'custom_tool'],
+      budgetExceeded: [],
+      budget: {
+        usedTokens:
+          estimateToolTokens(tool('page_navigate', 'Navigate a page')) +
+          estimateToolTokens(tool('custom_tool', 'Custom browser tool')),
+        maxTokens: MCP_TOOL_ACTIVATION_BUDGET_TOKENS,
+        activeTools: 2,
+        maxTools: MCP_TOOL_MAX_ACTIVE_TOOLS,
+      },
       totalDomainTools: 3,
       ttlMinutes: 30,
       hint: 'Tools activated. If they do not appear in your tool list, use call_tool({ name: "<tool>", args: {...} }) to invoke them.',
@@ -1053,6 +1085,15 @@ describe('MCPServer.search', () => {
       domain: 'browser',
       activated: 0,
       activatedTools: [],
+      budgetExceeded: [],
+      budget: {
+        usedTokens:
+          estimateToolTokens(tool('page_navigate', 'Navigate a page')) +
+          estimateToolTokens(tool('custom_tool', 'Custom browser tool')),
+        maxTokens: MCP_TOOL_ACTIVATION_BUDGET_TOKENS,
+        activeTools: 2,
+        maxTools: MCP_TOOL_MAX_ACTIVE_TOOLS,
+      },
       totalDomainTools: 3,
       ttlMinutes: 30,
     });
@@ -1095,6 +1136,13 @@ describe('MCPServer.search', () => {
       domain: 'custom',
       activated: 1,
       activatedTools: ['custom_tool'],
+      budgetExceeded: [],
+      budget: {
+        usedTokens: estimateToolTokens(tool('custom_tool', 'Custom extension tool')),
+        maxTokens: MCP_TOOL_ACTIVATION_BUDGET_TOKENS,
+        activeTools: 1,
+        maxTools: MCP_TOOL_MAX_ACTIVE_TOOLS,
+      },
       totalDomainTools: 1,
       ttlMinutes: 30,
       hint: 'Tools activated. If they do not appear in your tool list, use call_tool({ name: "<tool>", args: {...} }) to invoke them.',
@@ -1239,6 +1287,13 @@ describe('MCPServer.search', () => {
       getDomainInstance: vi.fn((key: string) =>
         key === 'serverRuntimeState' ? runtimeState : undefined,
       ),
+      config: {
+        search: structuredClone(DEFAULT_SEARCH_CONFIG),
+        mcp: {
+          toolActivationBudgetTokens: MCP_TOOL_ACTIVATION_BUDGET_TOKENS,
+          toolActivationMaxTools: MCP_TOOL_MAX_ACTIVE_TOOLS,
+        },
+      },
     });
     registerSearchMetaTools(ctx);
 
@@ -1260,8 +1315,38 @@ describe('MCPServer.search', () => {
       totalKnownTools: 8,
       uncalled: ['page_navigate'],
       uncalledCount: 1,
+      budget: {
+        activeTools: 0,
+        estimatedTokens: 0,
+        budget: MCP_TOOL_ACTIVATION_BUDGET_TOKENS,
+        maxTools: MCP_TOOL_MAX_ACTIVE_TOOLS,
+        headroom: MCP_TOOL_ACTIVATION_BUDGET_TOKENS,
+      },
     });
     expect(recordToolCall).toHaveBeenCalledWith('coverage_report', {});
+  });
+
+  it('coverage_report reports the activation budget snapshot for activated tools', async () => {
+    const ctx = createCtx({
+      activatedToolNames: new Set(['page_navigate']),
+      config: {
+        search: structuredClone(DEFAULT_SEARCH_CONFIG),
+        mcp: { toolActivationBudgetTokens: 1000, toolActivationMaxTools: 5 },
+      },
+    });
+    registerSearchMetaTools(ctx);
+
+    const handler = ctx.registeredToolsForTest.get('coverage_report')!.handler;
+    const response = parseResponse<CommonSuccessResponse>(await handler({}));
+
+    const pageTokens = estimateToolTokens(tool('page_navigate', 'Navigate a page'));
+    expect(response.budget).toEqual({
+      activeTools: 1,
+      estimatedTokens: pageTokens,
+      budget: 1000,
+      maxTools: 5,
+      headroom: 1000 - pageTokens,
+    });
   });
 
   it('registerSearchMetaTools registers all 8 meta-tools regardless of profile', () => {

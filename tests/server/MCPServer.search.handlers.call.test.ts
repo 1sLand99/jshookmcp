@@ -53,6 +53,15 @@ vi.mock('@server/MCPServer.search.validation', () => ({
 vi.mock('@server/MCPServer.search.helpers', () => ({
   getToolByName: state.getToolByName,
   getSearchEngine: state.getSearchEngine,
+  // coverage_report dispatch calls the real handler, which resolves the budget
+  // snapshot through this module.
+  getActivationBudgetSnapshot: vi.fn(async () => ({
+    activeTools: 0,
+    estimatedTokens: 0,
+    budget: 30_000,
+    maxTools: 50,
+    headroom: 30_000,
+  })),
 }));
 
 vi.mock('@server/MCPServer.search.handlers.activate', () => ({

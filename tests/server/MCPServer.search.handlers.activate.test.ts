@@ -28,16 +28,23 @@ const state = vi.hoisted(() => ({
   searchCatalog: null as any,
 }));
 
+const catalogTools = ['browser_launch', 'page_navigate', 'network_get_requests'].map((name) =>
+  tool(name),
+);
+
 state.searchCatalog = {
-  entries: [],
-  tools: [],
+  entries: catalogTools.map((candidate) => ({
+    tool: candidate,
+    domain: candidate.name.startsWith('network_') ? 'network' : 'browser',
+  })),
+  tools: catalogTools,
   entryByName: new Map(
-    ['browser_launch', 'page_navigate', 'network_get_requests'].map((name) => [
-      name,
-      { tool: tool(name), domain: name.startsWith('network_') ? 'network' : 'browser' },
+    catalogTools.map((candidate) => [
+      candidate.name,
+      { tool: candidate, domain: candidate.name.startsWith('network_') ? 'network' : 'browser' },
     ]),
   ),
-  toolByName: new Map(),
+  toolByName: new Map(catalogTools.map((candidate) => [candidate.name, candidate])),
   domainByToolName: new Map(),
   sceneKeywordsByToolName: new Map(),
 };
@@ -84,6 +91,8 @@ import {
   handleActivateTools,
   handleDeactivateTools,
 } from '@server/MCPServer.search.handlers.activate';
+import { estimateToolTokens } from '@server/MCPServer.search.helpers';
+import { MCP_TOOL_ACTIVATION_BUDGET_TOKENS, MCP_TOOL_MAX_ACTIVE_TOOLS } from '@src/constants';
 
 function createCtx(overrides: Record<string, unknown> = {}) {
   return {
@@ -123,7 +132,14 @@ describe('MCPServer.search.handlers.activate', () => {
       activated: ['page_navigate'],
       alreadyActive: [],
       notFound: [],
+      budgetExceeded: [],
       totalActive: 2,
+      budget: {
+        usedTokens: estimateToolTokens(tool('page_navigate')),
+        maxTokens: MCP_TOOL_ACTIVATION_BUDGET_TOKENS,
+        activeTools: 1,
+        maxTools: MCP_TOOL_MAX_ACTIVE_TOOLS,
+      },
     });
     expect(ctx.registerSingleTool).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'page_navigate' }),
@@ -179,7 +195,14 @@ describe('MCPServer.search.handlers.activate', () => {
       activated: [],
       alreadyActive: ['page_navigate'],
       notFound: ['missing_tool'],
+      budgetExceeded: [],
       totalActive: 2,
+      budget: {
+        usedTokens: estimateToolTokens(tool('page_navigate')),
+        maxTokens: MCP_TOOL_ACTIVATION_BUDGET_TOKENS,
+        activeTools: 1,
+        maxTools: MCP_TOOL_MAX_ACTIVE_TOOLS,
+      },
     });
     expect(ctx.server.sendToolListChanged).not.toHaveBeenCalled();
   });
@@ -194,7 +217,15 @@ describe('MCPServer.search.handlers.activate', () => {
       activated: [],
       alreadyActive: ['deactivate_tools', 'coverage_report'],
       notFound: [],
+      budgetExceeded: [],
       totalActive: 1,
+      budget: {
+        // browser_launch sits in selectedTools (base profile) and never counts.
+        usedTokens: 0,
+        maxTokens: MCP_TOOL_ACTIVATION_BUDGET_TOKENS,
+        activeTools: 0,
+        maxTools: MCP_TOOL_MAX_ACTIVE_TOOLS,
+      },
     });
     expect(ctx.registerSingleTool).not.toHaveBeenCalled();
     expect(ctx.router.addHandlers).not.toHaveBeenCalled();
@@ -249,7 +280,14 @@ describe('MCPServer.search.handlers.activate', () => {
       activated: ['page_navigate'],
       alreadyActive: [],
       notFound: [],
+      budgetExceeded: [],
       totalActive: 2,
+      budget: {
+        usedTokens: estimateToolTokens(tool('page_navigate')),
+        maxTokens: MCP_TOOL_ACTIVATION_BUDGET_TOKENS,
+        activeTools: 1,
+        maxTools: MCP_TOOL_MAX_ACTIVE_TOOLS,
+      },
       hint: 'Tools activated. If they do not appear in your tool list, use call_tool({ name: "<tool>", args: {...} }) to invoke them.',
     });
   });
@@ -371,6 +409,112 @@ describe('MCPServer.search.handlers.activate', () => {
         success: true,
         activated: ['page_navigate'],
       });
+    });
+  });
+
+  describe('activation budget', () => {
+    function budgetCtx(overrides: Record<string, unknown> = {}) {
+      return createCtx({
+        baseTier: 'search',
+        config: {
+          mcp: {
+            toolActivationBudgetTokens: MCP_TOOL_ACTIVATION_BUDGET_TOKENS,
+            toolActivationMaxTools: MCP_TOOL_MAX_ACTIVE_TOOLS,
+          },
+        },
+        ...overrides,
+      });
+    }
+
+    it('skips tools that exceed the token budget and reports them in budgetExceeded', async () => {
+      const pageTokens = estimateToolTokens(tool('page_navigate'));
+      const ctx = budgetCtx({
+        config: { mcp: { toolActivationBudgetTokens: pageTokens, toolActivationMaxTools: 50 } },
+      });
+
+      const result = await activateToolNames(ctx, ['page_navigate', 'network_get_requests']);
+
+      expect(result.activated).toEqual(['page_navigate']);
+      expect(result.budgetExceeded).toEqual(['network_get_requests']);
+      expect(result.budget).toEqual({
+        usedTokens: pageTokens,
+        maxTokens: pageTokens,
+        activeTools: 1,
+        maxTools: 50,
+      });
+      expect(ctx.activatedToolNames.has('network_get_requests')).toBe(false);
+      expect(ctx.registerSingleTool).toHaveBeenCalledTimes(1);
+    });
+
+    it('surfaces budget rejections and summary through handleActivateTools', async () => {
+      const pageTokens = estimateToolTokens(tool('page_navigate'));
+      const ctx = budgetCtx({
+        config: { mcp: { toolActivationBudgetTokens: pageTokens, toolActivationMaxTools: 50 } },
+      });
+
+      const response = parseResponse(
+        await handleActivateTools(ctx, { names: ['page_navigate', 'network_get_requests'] }),
+      );
+
+      expect(response.success).toBe(true);
+      expect(response.budgetExceeded).toEqual(['network_get_requests']);
+      expect(response.budget).toEqual({
+        usedTokens: pageTokens,
+        maxTokens: pageTokens,
+        activeTools: 1,
+        maxTools: 50,
+      });
+      expect(response.hint).toContain('over the activation budget');
+    });
+
+    it('skips tools beyond maxTools', async () => {
+      const ctx = budgetCtx({
+        config: {
+          mcp: {
+            toolActivationBudgetTokens: MCP_TOOL_ACTIVATION_BUDGET_TOKENS,
+            toolActivationMaxTools: 1,
+          },
+        },
+      });
+
+      const result = await activateToolNames(ctx, ['page_navigate', 'network_get_requests']);
+
+      expect(result.activated).toEqual(['page_navigate']);
+      expect(result.budgetExceeded).toEqual(['network_get_requests']);
+      expect(result.budget).toMatchObject({ activeTools: 1, maxTools: 1 });
+    });
+
+    it('counts pre-activated tools toward the budget', async () => {
+      const pageTokens = estimateToolTokens(tool('page_navigate'));
+      const networkTokens = estimateToolTokens(tool('network_get_requests'));
+      const ctx = budgetCtx({
+        activatedToolNames: new Set(['page_navigate']),
+        config: {
+          mcp: {
+            toolActivationBudgetTokens: pageTokens + networkTokens - 1,
+            toolActivationMaxTools: 10,
+          },
+        },
+      });
+
+      const result = await activateToolNames(ctx, ['network_get_requests']);
+
+      expect(result.budgetExceeded).toEqual(['network_get_requests']);
+      expect(result.budget.usedTokens).toBe(pageTokens);
+      expect(result.activated).toEqual([]);
+    });
+
+    it('does not enforce the budget outside the search profile', async () => {
+      const ctx = budgetCtx({
+        baseTier: 'full',
+        config: { mcp: { toolActivationBudgetTokens: 1, toolActivationMaxTools: 1 } },
+      });
+
+      const result = await activateToolNames(ctx, ['page_navigate', 'network_get_requests']);
+
+      expect(result.budgetExceeded).toEqual([]);
+      expect(result.activated).toEqual(['page_navigate', 'network_get_requests']);
+      expect(result.totalActive).toBe(3);
     });
   });
 });

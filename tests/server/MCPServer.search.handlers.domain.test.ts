@@ -28,7 +28,28 @@ const state = vi.hoisted(() => ({
     debug: vi.fn(),
     error: vi.fn(),
   },
+  searchCatalog: null as any,
 }));
+
+// Budget measurement resolves activated tool definitions through the catalog.
+state.searchCatalog = {
+  tools: [
+    tool('page_navigate', 'Navigate page'),
+    tool('network_get_requests', 'Get requests'),
+    tool('browser_custom', 'Browser custom'),
+  ],
+  entries: [],
+  entryByName: new Map(),
+  toolByName: new Map(
+    [
+      tool('page_navigate', 'Navigate page'),
+      tool('network_get_requests', 'Get requests'),
+      tool('browser_custom', 'Browser custom'),
+    ].map((candidate) => [candidate.name, candidate]),
+  ),
+  domainByToolName: new Map(),
+  sceneKeywordsByToolName: new Map(),
+};
 
 vi.mock('@server/domains/shared/response', () => ({
   asTextResponse: (text: string) => ({
@@ -50,6 +71,10 @@ vi.mock('@server/registry/index', () => ({
   ensureDomainLoaded: vi.fn().mockResolvedValue(null),
 }));
 
+vi.mock('@server/registry/SearchCatalog', () => ({
+  loadSearchCatalog: vi.fn(async () => state.searchCatalog),
+}));
+
 vi.mock('@server/MCPServer.activation.ttl', () => ({
   startDomainTtl: state.startDomainTtl,
 }));
@@ -64,6 +89,8 @@ vi.mock('@utils/logger', () => ({
 }));
 
 import { handleActivateDomain } from '@server/MCPServer.search.handlers.domain';
+import { estimateToolTokens } from '@server/MCPServer.search.helpers';
+import { MCP_TOOL_ACTIVATION_BUDGET_TOKENS, MCP_TOOL_MAX_ACTIVE_TOOLS } from '@src/constants';
 
 function createCtx(overrides: Record<string, unknown> = {}) {
   return {
@@ -144,6 +171,15 @@ describe('MCPServer.search.handlers.domain', () => {
       domain: 'browser',
       activated: 2,
       activatedTools: ['page_navigate', 'browser_custom'],
+      budgetExceeded: [],
+      budget: {
+        usedTokens:
+          estimateToolTokens(tool('page_navigate', 'Navigate page')) +
+          estimateToolTokens(tool('browser_custom', 'Browser custom')),
+        maxTokens: MCP_TOOL_ACTIVATION_BUDGET_TOKENS,
+        activeTools: 2,
+        maxTools: MCP_TOOL_MAX_ACTIVE_TOOLS,
+      },
       totalDomainTools: 2,
       ttlMinutes: 45,
       hint: 'Tools activated. If they do not appear in your tool list, use call_tool({ name: "<tool>", args: {...} }) to invoke them.',
@@ -187,6 +223,13 @@ describe('MCPServer.search.handlers.domain', () => {
       domain: 'custom',
       activated: 1,
       activatedTools: ['custom_tool'],
+      budgetExceeded: [],
+      budget: {
+        usedTokens: estimateToolTokens(tool('custom_tool', 'Custom workflow')),
+        maxTokens: MCP_TOOL_ACTIVATION_BUDGET_TOKENS,
+        activeTools: 1,
+        maxTools: MCP_TOOL_MAX_ACTIVE_TOOLS,
+      },
       totalDomainTools: 1,
       ttlMinutes: 45,
       hint: 'Tools activated. If they do not appear in your tool list, use call_tool({ name: "<tool>", args: {...} }) to invoke them.',
@@ -218,6 +261,13 @@ describe('MCPServer.search.handlers.domain', () => {
       domain: 'browser',
       activated: 0,
       activatedTools: [],
+      budgetExceeded: [],
+      budget: {
+        usedTokens: estimateToolTokens(tool('browser_custom', 'Browser custom')),
+        maxTokens: MCP_TOOL_ACTIVATION_BUDGET_TOKENS,
+        activeTools: 1,
+        maxTools: MCP_TOOL_MAX_ACTIVE_TOOLS,
+      },
       totalDomainTools: 2,
       ttlMinutes: 45,
     });
@@ -247,5 +297,41 @@ describe('MCPServer.search.handlers.domain', () => {
       'sendToolListChanged failed:',
       expect.any(Error),
     );
+  });
+
+  it('registers only the tools that fit the budget and reports the rejected ones', async () => {
+    const pageTokens = estimateToolTokens(tool('page_navigate', 'Navigate page'));
+    const networkTokens = estimateToolTokens(tool('network_get_requests', 'Get requests'));
+    state.getToolsByDomains.mockReturnValueOnce([
+      tool('page_navigate', 'Navigate page'),
+      tool('network_get_requests', 'Get requests'),
+    ]);
+    const ctx = createCtx({
+      baseTier: 'search',
+      config: {
+        mcp: { toolActivationBudgetTokens: pageTokens, toolActivationMaxTools: 10 },
+      },
+    });
+
+    const response = parseResponse(await handleActivateDomain(ctx, { domain: 'browser' }));
+
+    expect(response).toMatchObject({
+      success: true,
+      domain: 'browser',
+      activated: 1,
+      activatedTools: ['page_navigate'],
+      budgetExceeded: ['network_get_requests'],
+      budget: {
+        usedTokens: pageTokens,
+        maxTokens: pageTokens,
+        activeTools: 1,
+        maxTools: 10,
+      },
+    });
+    expect(ctx.activatedToolNames.has('network_get_requests')).toBe(false);
+    expect(ctx.registerSingleTool).toHaveBeenCalledTimes(1);
+    // TTL tracks only the tools that were actually registered.
+    expect(state.startDomainTtl).toHaveBeenCalledWith(ctx, 'browser', 45, ['page_navigate']);
+    expect(networkTokens).toBeGreaterThan(0);
   });
 });

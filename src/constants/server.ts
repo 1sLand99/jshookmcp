@@ -86,6 +86,21 @@ export const TOKEN_BUDGET_MAX_TOKENS = int('TOKEN_BUDGET_MAX_TOKENS', 200_000);
 export const ACTIVATION_TTL_MINUTES = int('ACTIVATION_TTL_MINUTES', 30);
 
 /**
+ * Token budget for dynamically activated tools in search-tier sessions
+ * (activate_tools / activate_domain). The summed estimate of activated tool
+ * definitions may not exceed this limit; further activations are rejected.
+ * Only the activatedToolNames increment counts — base profile tools are free.
+ * Default: 30000.
+ */
+export const MCP_TOOL_ACTIVATION_BUDGET_TOKENS = int('MCP_TOOL_ACTIVATION_BUDGET_TOKENS', 30_000);
+
+/**
+ * Max number of dynamically activated tools in search-tier sessions.
+ * Default: 50.
+ */
+export const MCP_TOOL_MAX_ACTIVE_TOOLS = int('MCP_TOOL_MAX_ACTIVE_TOOLS', 50);
+
+/**
  * AutoPruner inactivity thresholds. Previously hardcoded as 5 / 15 / 60s which
  * conflicted with ACTIVATION_TTL_MINUTES (30 min) — auto-activated domains
  * were being pruned long before their declared TTL. Defaults now align with

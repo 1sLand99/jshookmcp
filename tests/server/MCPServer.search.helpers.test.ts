@@ -101,6 +101,10 @@ vi.mock('@server/ToolSearch', () => ({
 import {
   buildDomainDescription,
   buildSearchSignature,
+  createActivationBudgetTracker,
+  estimateToolTokens,
+  getActivationBudgetLimits,
+  getActivationBudgetSnapshot,
   getActiveToolNames,
   getCombinedTools,
   getExtensionDomainMap,
@@ -272,5 +276,103 @@ describe('MCPServer.search.helpers', () => {
     expect(description).toContain('browser (3)');
     expect(description).toContain('network (1)');
     expect(description).toContain('workflow (1)');
+  });
+});
+
+describe('MCPServer.search.helpers — tool activation budget', () => {
+  it('ceil-divides the concatenated definition length by 4', () => {
+    // 'abcd' + '' + '{}' = 6 chars -> 2 tokens
+    expect(estimateToolTokens({ name: 'abcd', description: '', inputSchema: {} })).toBe(2);
+    // 'ab' + '' + '{}' = 4 chars -> 1 token (exact division, no rounding up)
+    expect(estimateToolTokens({ name: 'ab', description: '', inputSchema: {} })).toBe(1);
+  });
+
+  it('rounds up partial token blocks', () => {
+    // 'abc' + '' + '{}' = 5 chars -> 2 tokens
+    expect(estimateToolTokens({ name: 'abc', description: '', inputSchema: {} })).toBe(2);
+    // 'a' + '' + '{}' = 3 chars -> 1 token
+    expect(estimateToolTokens({ name: 'a', description: '', inputSchema: {} })).toBe(1);
+  });
+
+  it('includes the description and the serialized input schema', () => {
+    const def = { name: 'tool', description: 'abcd', inputSchema: { type: 'object' } };
+    // 'tool' + 'abcd' + '{"type":"object"}' = 25 chars -> 7 tokens
+    expect(estimateToolTokens(def)).toBe(7);
+  });
+
+  it('treats a missing description and schema as empty strings', () => {
+    expect(estimateToolTokens({ name: 'abcd' })).toBe(1);
+    expect(estimateToolTokens({ name: 'abc' })).toBe(1);
+    expect(estimateToolTokens({ name: '' })).toBe(0);
+  });
+
+  it('resolves budget limits from config with constant fallback', () => {
+    const configured = createCtx({
+      config: { mcp: { toolActivationBudgetTokens: 1234, toolActivationMaxTools: 7 } },
+    });
+    expect(getActivationBudgetLimits(configured)).toEqual({ maxTokens: 1234, maxTools: 7 });
+
+    const bare = createCtx();
+    const fallback = getActivationBudgetLimits(bare);
+    expect(fallback.maxTokens).toBeGreaterThan(0);
+    expect(fallback.maxTools).toBeGreaterThan(0);
+  });
+
+  it('tracker measures activated tools and admits while within budget', async () => {
+    // The catalog fixture uses the 'Inspect requests' description.
+    const base = estimateToolTokens(tool('network_get_requests', 'Inspect requests'));
+    const tinyTokens = estimateToolTokens(tool('tiny'));
+    const ctx = createCtx({
+      config: { mcp: { toolActivationBudgetTokens: base + tinyTokens, toolActivationMaxTools: 5 } },
+    });
+
+    const tracker = await createActivationBudgetTracker(ctx);
+    expect(tracker.usedTokens).toBe(base);
+    expect(tracker.activeTools).toBe(1);
+    expect(tracker.admit(tool('tiny'))).toBe(true);
+    expect(tracker.usedTokens).toBe(base + tinyTokens);
+    // Would exceed maxTokens -> rejected and not reserved.
+    expect(tracker.admit(tool('tiny2'))).toBe(false);
+    expect(tracker.usedTokens).toBe(base + tinyTokens);
+  });
+
+  it('tracker rejects activations beyond maxTools', async () => {
+    const ctx = createCtx({
+      config: { mcp: { toolActivationBudgetTokens: 100_000, toolActivationMaxTools: 2 } },
+    });
+
+    const tracker = await createActivationBudgetTracker(ctx);
+    expect(tracker.admit(tool('a'))).toBe(true);
+    expect(tracker.admit(tool('b'))).toBe(false);
+    expect(tracker.activeTools).toBe(2);
+  });
+
+  it('tracker never rejects outside the search profile but still accounts usage', async () => {
+    const ctx = createCtx({
+      baseTier: 'full',
+      config: { mcp: { toolActivationBudgetTokens: 1, toolActivationMaxTools: 1 } },
+    });
+
+    const tracker = await createActivationBudgetTracker(ctx);
+    expect(tracker.enforced).toBe(false);
+    expect(tracker.admit(tool('a'))).toBe(true);
+    expect(tracker.admit(tool('b'))).toBe(true);
+    expect(tracker.activeTools).toBe(3);
+  });
+
+  it('snapshot reports coverage_report budget fields with headroom floored at zero', async () => {
+    // The catalog fixture uses the 'Inspect requests' description.
+    const base = estimateToolTokens(tool('network_get_requests', 'Inspect requests'));
+    const ctx = createCtx({
+      config: { mcp: { toolActivationBudgetTokens: base - 1, toolActivationMaxTools: 7 } },
+    });
+
+    expect(await getActivationBudgetSnapshot(ctx)).toEqual({
+      activeTools: 1,
+      estimatedTokens: base,
+      budget: base - 1,
+      maxTools: 7,
+      headroom: 0,
+    });
   });
 });

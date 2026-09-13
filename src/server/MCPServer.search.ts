@@ -34,7 +34,10 @@ export { buildDomainDescription } from '@server/MCPServer.search.helpers';
 
 // ── handler imports ──
 
-import { buildDomainDescription } from '@server/MCPServer.search.helpers';
+import {
+  buildDomainDescription,
+  getActivationBudgetSnapshot,
+} from '@server/MCPServer.search.helpers';
 import { handleSearchTools } from '@server/MCPServer.search.handlers.search';
 import {
   handleActivateTools,
@@ -88,6 +91,7 @@ async function handleCoverageReport(
     uncalled: [],
     uncalledCount: 0,
   };
+  const budget = await getActivationBudgetSnapshot(ctx);
   return {
     content: [
       {
@@ -96,6 +100,7 @@ async function handleCoverageReport(
           {
             success: true,
             ...summary,
+            budget,
           },
           null,
           2,

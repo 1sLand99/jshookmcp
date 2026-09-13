@@ -12,6 +12,8 @@ import { ToolSearchEngine } from '@server/ToolSearch';
 import { DOMAIN_TOOL_COUNT_MAP } from '@server/registry/generated-domains';
 import { loadSearchCatalog } from '@server/registry/SearchCatalog';
 import {
+  MCP_TOOL_ACTIVATION_BUDGET_TOKENS,
+  MCP_TOOL_MAX_ACTIVE_TOOLS,
   SEARCH_EXTENSION_TOOL_BOOST_MULTIPLIER,
   SEARCH_WORKFLOW_DOMAIN_BOOST_MULTIPLIER,
   SEARCH_WORKFLOW_LIST_TOOL_BOOST_MULTIPLIER,
@@ -146,6 +148,144 @@ export async function getSearchEngine(ctx: MCPServerContext): Promise<ToolSearch
   engine.extensionEtag = signature;
   searchEngineCache.set(ctx, { signature, engine });
   return engine;
+}
+
+// ── tool activation budget ──
+
+/** Minimal definition shape needed for token estimation (structural subset of Tool). */
+export type ToolTokenEstimateInput = {
+  name: string;
+  description?: string;
+  inputSchema?: unknown;
+};
+
+/**
+ * Rough token estimate of a tool definition as it would appear in a
+ * tools/list payload: ceil((name + description + JSON input schema) / 4).
+ */
+export function estimateToolTokens(def: ToolTokenEstimateInput): number {
+  const schemaJson = def.inputSchema === undefined ? '' : JSON.stringify(def.inputSchema);
+  return Math.ceil(`${def.name}${def.description ?? ''}${schemaJson}`.length / 4);
+}
+
+export interface ActivationBudgetLimits {
+  maxTokens: number;
+  maxTools: number;
+}
+
+/** Resolve the budget limits from config; constants remain the fallback for bare test contexts. */
+export function getActivationBudgetLimits(ctx: MCPServerContext): ActivationBudgetLimits {
+  return {
+    maxTokens: ctx.config?.mcp?.toolActivationBudgetTokens ?? MCP_TOOL_ACTIVATION_BUDGET_TOKENS,
+    maxTools: ctx.config?.mcp?.toolActivationMaxTools ?? MCP_TOOL_MAX_ACTIVE_TOOLS,
+  };
+}
+
+export interface ActivationBudgetTracker extends ActivationBudgetLimits {
+  /** Budget only gates dynamic activation in search-tier sessions (base profile tools are never limited). */
+  readonly enforced: boolean;
+  usedTokens: number;
+  activeTools: number;
+  /**
+   * Reserve the tool when it fits the remaining budget; returns false without
+   * reserving when the budget would be exceeded. Usage accumulates even when
+   * enforcement is off so summaries stay accurate.
+   */
+  admit(def: ToolTokenEstimateInput): boolean;
+}
+
+/** Sum estimated tokens of the dynamically activated tools (never base profile tools). */
+async function measureActivatedToolUsage(ctx: MCPServerContext): Promise<{
+  usedTokens: number;
+  activeTools: number;
+}> {
+  const catalog = await loadSearchCatalog();
+  let usedTokens = 0;
+  for (const name of ctx.activatedToolNames) {
+    const def = ctx.extensionToolsByName.get(name)?.tool ?? catalog.toolByName.get(name);
+    if (def) {
+      usedTokens += estimateToolTokens(def);
+    }
+  }
+  return { usedTokens, activeTools: ctx.activatedToolNames.size };
+}
+
+export async function createActivationBudgetTracker(
+  ctx: MCPServerContext,
+): Promise<ActivationBudgetTracker> {
+  const initial = await measureActivatedToolUsage(ctx);
+  const limits = getActivationBudgetLimits(ctx);
+  const enforced = ctx.baseTier === 'search';
+  let usedTokens = initial.usedTokens;
+  let activeTools = initial.activeTools;
+
+  return {
+    enforced,
+    maxTokens: limits.maxTokens,
+    maxTools: limits.maxTools,
+    get usedTokens() {
+      return usedTokens;
+    },
+    get activeTools() {
+      return activeTools;
+    },
+    admit(def: ToolTokenEstimateInput): boolean {
+      const tokens = estimateToolTokens(def);
+      if (enforced) {
+        if (activeTools + 1 > limits.maxTools) {
+          return false;
+        }
+        if (usedTokens + tokens > limits.maxTokens) {
+          return false;
+        }
+      }
+      activeTools += 1;
+      usedTokens += tokens;
+      return true;
+    },
+  };
+}
+
+/** Budget summary embedded in activate_tools / activate_domain responses. */
+export interface ActivationBudgetSummary {
+  usedTokens: number;
+  maxTokens: number;
+  activeTools: number;
+  maxTools: number;
+}
+
+export function summarizeActivationBudget(
+  tracker: ActivationBudgetTracker,
+): ActivationBudgetSummary {
+  return {
+    usedTokens: tracker.usedTokens,
+    maxTokens: tracker.maxTokens,
+    activeTools: tracker.activeTools,
+    maxTools: tracker.maxTools,
+  };
+}
+
+/** Budget section appended to coverage_report responses. */
+export interface ToolBudgetSnapshot {
+  activeTools: number;
+  estimatedTokens: number;
+  budget: number;
+  maxTools: number;
+  headroom: number;
+}
+
+export async function getActivationBudgetSnapshot(
+  ctx: MCPServerContext,
+): Promise<ToolBudgetSnapshot> {
+  const { usedTokens, activeTools } = await measureActivatedToolUsage(ctx);
+  const { maxTokens, maxTools } = getActivationBudgetLimits(ctx);
+  return {
+    activeTools,
+    estimatedTokens: usedTokens,
+    budget: maxTokens,
+    maxTools,
+    headroom: Math.max(0, maxTokens - usedTokens),
+  };
 }
 
 // ── domain description ──

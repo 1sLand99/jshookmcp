@@ -11,7 +11,12 @@ import { createToolHandlerMap } from '@server/ToolHandlerMap';
 import type { MCPServerContext } from '@server/MCPServer.context';
 import type { ToolResponse } from '@server/types';
 import { normalizeToolName, validateToolNameArray } from '@server/MCPServer.search.validation';
-import { getActiveToolNames } from '@server/MCPServer.search.helpers';
+import {
+  createActivationBudgetTracker,
+  getActiveToolNames,
+  summarizeActivationBudget,
+  type ActivationBudgetSummary,
+} from '@server/MCPServer.search.helpers';
 import { loadSearchCatalog } from '@server/registry/SearchCatalog';
 import { ensureDomainLoaded, getRegistrationByName } from '@server/registry/index';
 import { deactivateToolCore } from '@server/tool-lifecycle';
@@ -20,7 +25,10 @@ interface ActivationSummary {
   activated: string[];
   alreadyActive: string[];
   notFound: string[];
+  /** Tools skipped because they did not fit the activation budget. */
+  budgetExceeded: string[];
   totalActive: number;
+  budget: ActivationBudgetSummary;
 }
 
 async function notifyToolListChanged(ctx: MCPServerContext, changed: boolean): Promise<void> {
@@ -46,6 +54,8 @@ export async function activateToolNames(
   const activated: string[] = [];
   const alreadyActive: string[] = [];
   const notFound: string[] = [];
+  const budgetExceeded: string[] = [];
+  const budget = await createActivationBudgetTracker(ctx);
 
   for (const rawName of names) {
     const name = normalizeToolName(rawName);
@@ -64,12 +74,22 @@ export async function activateToolNames(
 
     const extensionRecord = ctx.extensionToolsByName.get(name);
     if (extensionRecord) {
+      if (!budget.admit(extensionRecord.tool)) {
+        budgetExceeded.push(name);
+        continue;
+      }
       registerExtensionToolRecord(ctx, extensionRecord, 'activate_tools');
     } else {
       const catalog = await loadSearchCatalog();
       const catalogEntry = catalog.entryByName.get(name);
       if (!catalogEntry) {
         notFound.push(name);
+        continue;
+      }
+      // Budget is checked against the catalog definition before loading the
+      // domain, so rejected tools never trigger a domain load.
+      if (!budget.admit(catalogEntry.tool)) {
+        budgetExceeded.push(name);
         continue;
       }
       await ensureDomainLoaded(catalogEntry.domain);
@@ -95,14 +115,16 @@ export async function activateToolNames(
 
   logger.info(
     `activate_tools: activated ${activated.length}, already_active ${alreadyActive.length}, not_found ` +
-      `${notFound.length}`,
+      `${notFound.length}, budget_exceeded ${budgetExceeded.length}`,
   );
 
   return {
     activated,
     alreadyActive,
     notFound,
+    budgetExceeded,
     totalActive: activeNames.size,
+    budget: summarizeActivationBudget(budget),
   };
 }
 
@@ -130,15 +152,23 @@ export async function handleActivateTools(
 
   const result = await activateToolNames(ctx, names);
 
+  const hint =
+    result.budgetExceeded.length > 0
+      ? `Skipped ${result.budgetExceeded.length} tool(s) over the activation budget ` +
+        `(used ${result.budget.usedTokens}/${result.budget.maxTokens} tokens, ` +
+        `${result.budget.activeTools}/${result.budget.maxTools} tools): ` +
+        `${result.budgetExceeded.join(', ')}. Deactivate unused tools first or raise ` +
+        `MCP_TOOL_ACTIVATION_BUDGET_TOKENS / MCP_TOOL_MAX_ACTIVE_TOOLS.`
+      : result.activated.length > 0
+        ? 'Tools activated. If they do not appear in your tool list, use call_tool({ name: "<tool>", args: {...} ' +
+          '}) to invoke them.'
+        : undefined;
+
   return asTextResponse(
     JSON.stringify({
       success: true,
       ...result,
-      hint:
-        result.activated.length > 0
-          ? 'Tools activated. If they do not appear in your tool list, use call_tool({ name: "<tool>", args: {...} ' +
-            '}) to invoke them.'
-          : undefined,
+      hint,
     }),
   );
 }

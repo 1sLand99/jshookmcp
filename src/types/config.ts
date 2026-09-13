@@ -111,6 +111,10 @@ export interface MCPConfig {
   browserFleetVirtualNodes: number;
   browserFleetLeaseTtlMs: number;
   browserFleetMaxLocalLeases: number;
+  /** Token budget for dynamically activated tools (search profile only). */
+  toolActivationBudgetTokens: number;
+  /** Max count of dynamically activated tools (search profile only). */
+  toolActivationMaxTools: number;
 }
 
 export interface BrowserFleetWorkerConfig {
