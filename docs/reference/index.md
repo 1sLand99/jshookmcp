@@ -37,6 +37,7 @@
 | `process` | 进程 | full | 进程、模块、内存诊断与受控注入域，适合宿主级分析、故障排查与 Windows 进程实验场景。 |
 | `protocol-analysis` | 协议分析 | full | 自定义协议分析域，支持协议模式定义、自动字段检测、状态机推断和可视化。 |
 | `proxy` | 代理 | full | 全栈 HTTP/HTTPS 中间人代理域，提供系统级的流量拦截、篡改与应用级挂载配置。 |
+| `session` | 会话进度 | workflow, full | 会话级逆向进度台账域：记录已 Hook 的进程、Hook 点与已解析协议字段，量化覆盖度并暴露覆盖缺口（服务端内存态，随服务器重启清空）。 |
 | `sourcemap` | 源映射 | full | SourceMap 发现、抓取、解析与源码树重建。 |
 | `streaming` | 流式 | workflow, full | WebSocket 与 SSE 监控域。 |
 | `syscall-hook` | 系统调用挂钩 | full | 系统调用挂钩域，提供系统调用监控和映射能力。 |

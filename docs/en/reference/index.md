@@ -37,6 +37,7 @@ The following tool domains are available:
 | `process` | Process | full | Process, module, memory diagnostics, and controlled injection domain for host-level inspection, troubleshooting, and Windows process experimentation workflows. |
 | `protocol-analysis` | Protocol Analysis | full | Custom protocol analysis domain supporting protocol pattern definition, automatic field detection from hex payloads, state machine inference from captured messages, and Mermaid diagram visualization. |
 | `proxy` | Proxy | full | Full-stack HTTP/HTTPS MITM proxy domain for system-level traffic interception, modification, and application configuration. |
+| `session` | Session Progress | workflow, full | Session-scoped reverse-engineering coverage ledger: record hooked processes, hook points, and decoded protocol fields, then audit coverage and surface gaps. In-memory, server-lifetime state. |
 | `sourcemap` | SourceMap | full | Source map discovery, fetching, parsing, and source tree reconstruction. |
 | `streaming` | Streaming | workflow, full | WebSocket and SSE monitoring domain. |
 | `syscall-hook` | Syscall Hook | full | System call hooking domain providing system call monitoring and mapping capabilities. |

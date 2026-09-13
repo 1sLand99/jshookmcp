@@ -23022,6 +23022,107 @@ export const GENERATED_TOOL_CATALOG = [
   },
   {
     tool: {
+      name: 'session_progress_clear',
+      description:
+        'Clear session progress entries. With no `kind`, the entire session bucket is reset to an empty ledger; with `kind`, only that evidence category is cleared. Returns the number of removed entries. State is per-server in-memory only (tied to the MCP server process lifetime): it is NOT persisted and is lost when the server restarts.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          sessionId: {
+            type: 'string',
+            description:
+              "Logical engagement bucket for this progress entry. Defaults to `'default'` when omitted; use one sessionId per reverse-engineering target to keep coverage ledgers isolated",
+          },
+          kind: {
+            type: 'string',
+            enum: ['process', 'hook-point', 'protocol-field'],
+            description: 'Restrict the clear to this evidence category',
+          },
+        },
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    domain: 'session',
+  },
+  {
+    tool: {
+      name: 'session_progress_coverage',
+      description:
+        'Query the session progress ledger: per-kind entry counts plus the matching entries sorted newest-first (by first-recorded time). Use it to audit reverse-engineering coverage and surface uncovered areas. Pass `kind` to inspect a single evidence category. State is per-server in-memory only (tied to the MCP server process lifetime): it is NOT persisted and is lost when the server restarts.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          sessionId: {
+            type: 'string',
+            description:
+              "Logical engagement bucket for this progress entry. Defaults to `'default'` when omitted; use one sessionId per reverse-engineering target to keep coverage ledgers isolated",
+          },
+          kind: {
+            type: 'string',
+            enum: ['process', 'hook-point', 'protocol-field'],
+            description: 'Restrict returned entries to this evidence category',
+          },
+        },
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    domain: 'session',
+  },
+  {
+    tool: {
+      name: 'session_progress_record',
+      description:
+        'Record a piece of reverse-engineering progress evidence for the current session (a hooked process, a hook point, or a decoded protocol field). Recording the same (kind, key) pair again is idempotent: it updates `metadata` in place without creating a duplicate entry. Use session_progress_coverage to audit what has been recorded and find coverage gaps. State is per-server in-memory only (tied to the MCP server process lifetime): it is NOT persisted and is lost when the server restarts. Each (sessionId, kind) bucket holds at most 500 entries; a record that would exceed the cap is rejected.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          kind: {
+            type: 'string',
+            enum: ['process', 'hook-point', 'protocol-field'],
+            description:
+              'Evidence category: `process` (a target process/binary), `hook-point` (a specific function/address hook location), `protocol-field` (a decoded protocol message field)',
+          },
+          key: {
+            type: 'string',
+            description:
+              'Stable identifier of the evidence item, e.g. `pid:4210`, `libfoo.so!0x12345`, or `TLS.handshake.client_random`',
+            pattern: '.+',
+          },
+          sessionId: {
+            type: 'string',
+            description:
+              "Logical engagement bucket for this progress entry. Defaults to `'default'` when omitted; use one sessionId per reverse-engineering target to keep coverage ledgers isolated",
+          },
+          metadata: {
+            type: 'object',
+            description:
+              'Optional structured details for this entry (e.g. { module, offset, notes }); replaced wholesale when the same (kind, key) is re-recorded',
+            additionalProperties: true,
+          },
+        },
+        required: ['kind', 'key'],
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    domain: 'session',
+  },
+  {
+    tool: {
       name: 'skia_correlate_objects',
       description: 'Correlate requested Skia node identifiers with the extracted scene tree.',
       inputSchema: {

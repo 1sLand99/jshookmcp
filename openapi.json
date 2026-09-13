@@ -16123,6 +16123,59 @@
         "properties": {},
         "type": "object"
       },
+      "session_session_progress_clear": {
+        "properties": {
+          "kind": {
+            "description": "Restrict the clear to this evidence category",
+            "enum": ["process", "hook-point", "protocol-field"],
+            "type": "string"
+          },
+          "sessionId": {
+            "description": "Logical engagement bucket for this progress entry. Defaults to `'default'` when omitted; use one sessionId per reverse-engineering target to keep coverage ledgers isolated",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "session_session_progress_coverage": {
+        "properties": {
+          "kind": {
+            "description": "Restrict returned entries to this evidence category",
+            "enum": ["process", "hook-point", "protocol-field"],
+            "type": "string"
+          },
+          "sessionId": {
+            "description": "Logical engagement bucket for this progress entry. Defaults to `'default'` when omitted; use one sessionId per reverse-engineering target to keep coverage ledgers isolated",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "session_session_progress_record": {
+        "properties": {
+          "key": {
+            "description": "Stable identifier of the evidence item, e.g. `pid:4210`, `libfoo.so!0x12345`, or `TLS.handshake.client_random`",
+            "pattern": ".+",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Evidence category: `process` (a target process/binary), `hook-point` (a specific function/address hook location), `protocol-field` (a decoded protocol message field)",
+            "enum": ["process", "hook-point", "protocol-field"],
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "description": "Optional structured details for this entry (e.g. { module, offset, notes }); replaced wholesale when the same (kind, key) is re-recorded",
+            "type": "object"
+          },
+          "sessionId": {
+            "description": "Logical engagement bucket for this progress entry. Defaults to `'default'` when omitted; use one sessionId per reverse-engineering target to keep coverage ledgers isolated",
+            "type": "string"
+          }
+        },
+        "required": ["kind", "key"],
+        "type": "object"
+      },
       "sourcemap_sourcemap_coverage": {
         "properties": {
           "scriptUrl": {
@@ -32004,7 +32057,7 @@
     },
     "/meta/activate_domain": {
       "post": {
-        "description": "Activate all tools in a domain at once. Domains: adb-bridge, core, binary-instrument, boringssl-inspector, browser, canvas, coordination, cross-domain, dart-inspector, debugger, encoding, exploit-dev, extension-registry, graphql, instrumentation, maintenance, memory, mojo-ipc, native-bridge, native-emulator, network, platform, process, protocol-analysis, proxy, sourcemap, streaming, syscall-hook, tasks, trace, transform, v8-inspector, wasm, webgpu, workflow. Use reload_extensions first to include external plugin/workflow domains.",
+        "description": "Activate all tools in a domain at once. Domains: adb-bridge, core, binary-instrument, boringssl-inspector, browser, canvas, coordination, cross-domain, dart-inspector, debugger, encoding, exploit-dev, extension-registry, graphql, instrumentation, maintenance, memory, mojo-ipc, native-bridge, native-emulator, network, platform, process, protocol-analysis, proxy, session, sourcemap, streaming, syscall-hook, tasks, trace, transform, v8-inspector, wasm, webgpu, workflow. Use reload_extensions first to include external plugin/workflow domains.",
         "operationId": "activate_domain",
         "requestBody": {
           "content": {
@@ -32214,7 +32267,7 @@
     },
     "/meta/search_tools": {
       "post": {
-        "description": "Search 727 tools across 35 capability domains. This includes built-in tools plus any loaded plugin/workflow tools (0 currently loaded). In search-tier sessions, call this before assuming a capability is unavailable. Use activate_tools for exact matches, activate_domain for an entire domain. Domains: browser (85) | memory (74) | native-emulator (56) | binary-instrument (44) | network (38) | boringssl-inspector (29) | process (28) | adb-bridge (26) | core (25) | debugger (21) | exploit-dev (21) | v8-inspector (21) | protocol-analysis (20) | platform (18) | maintenance (17) | streaming (17) | wasm (17) | dart-inspector (16) | syscall-hook (15) | instrumentation (13) | workflow (13) | coordination (12) | canvas (11) | proxy (11) | trace (10) | webgpu (10) | cross-domain (8) | mojo-ipc (8) | extension-registry (7) | graphql (7) | sourcemap (7) | transform (7) | native-bridge (6) | encoding (5) | tasks (4). Query tip: before searching, distill your intent into key concepts (action verb + target + domain). The engine combines token matching, fuzzy names, profile context, and optional static embeddings.",
+        "description": "Search 730 tools across 36 capability domains. This includes built-in tools plus any loaded plugin/workflow tools (0 currently loaded). In search-tier sessions, call this before assuming a capability is unavailable. Use activate_tools for exact matches, activate_domain for an entire domain. Domains: browser (85) | memory (74) | native-emulator (56) | binary-instrument (44) | network (38) | boringssl-inspector (29) | process (28) | adb-bridge (26) | core (25) | debugger (21) | exploit-dev (21) | v8-inspector (21) | protocol-analysis (20) | platform (18) | maintenance (17) | streaming (17) | wasm (17) | dart-inspector (16) | syscall-hook (15) | instrumentation (13) | workflow (13) | coordination (12) | canvas (11) | proxy (11) | trace (10) | webgpu (10) | cross-domain (8) | mojo-ipc (8) | extension-registry (7) | graphql (7) | sourcemap (7) | transform (7) | native-bridge (6) | encoding (5) | tasks (4) | session (3). Query tip: before searching, distill your intent into key concepts (action verb + target + domain). The engine combines token matching, fuzzy names, profile context, and optional static embeddings.",
         "operationId": "search_tools",
         "requestBody": {
           "content": {
@@ -32238,7 +32291,7 @@
             "description": "Tool execution result returned as MCP tool result text content."
           }
         },
-        "summary": "Search 727 tools across 35 capability domains.",
+        "summary": "Search 730 tools across 36 capability domains.",
         "tags": ["meta"]
       }
     },
@@ -37977,6 +38030,99 @@
         "x-domain": "proxy"
       }
     },
+    "/session/session_progress_clear": {
+      "post": {
+        "description": "Clear session progress entries. With no `kind`, the entire session bucket is reset to an empty ledger; with `kind`, only that evidence category is cleared. Returns the number of removed entries. State is per-server in-memory only (tied to the MCP server process lifetime): it is NOT persisted and is lost when the server restarts.",
+        "operationId": "session_progress_clear",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/session_session_progress_clear"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Clear session progress entries.",
+        "tags": ["session"],
+        "x-domain": "session"
+      }
+    },
+    "/session/session_progress_coverage": {
+      "post": {
+        "description": "Query the session progress ledger: per-kind entry counts plus the matching entries sorted newest-first (by first-recorded time). Use it to audit reverse-engineering coverage and surface uncovered areas. Pass `kind` to inspect a single evidence category. State is per-server in-memory only (tied to the MCP server process lifetime): it is NOT persisted and is lost when the server restarts.",
+        "operationId": "session_progress_coverage",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/session_session_progress_coverage"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Query the session progress ledger: per-kind entry counts plus the matching entries sorted newest-first (by first-reco...",
+        "tags": ["session"],
+        "x-domain": "session"
+      }
+    },
+    "/session/session_progress_record": {
+      "post": {
+        "description": "Record a piece of reverse-engineering progress evidence for the current session (a hooked process, a hook point, or a decoded protocol field). Recording the same (kind, key) pair again is idempotent: it updates `metadata` in place without creating a duplicate entry. Use session_progress_coverage to audit what has been recorded and find coverage gaps. State is per-server in-memory only (tied to the MCP server process lifetime): it is NOT persisted and is lost when the server restarts. Each (sessionId, kind) bucket holds at most 500 entries; a record that would exceed the cap is rejected.",
+        "operationId": "session_progress_record",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/session_session_progress_record"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Record a piece of reverse-engineering progress evidence for the current session (a hooked process, a hook point, or a...",
+        "tags": ["session"],
+        "x-domain": "session"
+      }
+    },
     "/sourcemap/sourcemap_coverage": {
       "post": {
         "description": "Summarize mapped and unmapped source coverage.",
@@ -41823,6 +41969,9 @@
     },
     {
       "name": "proxy"
+    },
+    {
+      "name": "session"
     },
     {
       "name": "sourcemap"

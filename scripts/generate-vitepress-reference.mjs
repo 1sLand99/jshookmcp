@@ -584,6 +584,30 @@ const META = {
     enScenarios: ['Task status polling', 'Background task results', 'Task cancellation'],
     enCombos: ['tasks + binary-instrument', 'tasks + protocol-analysis'],
   },
+  session: {
+    zhTitle: '会话进度',
+    zhSummary:
+      '会话级逆向进度台账域：记录已 Hook 的进程、Hook 点与已解析协议字段，量化覆盖度并暴露覆盖缺口（服务端内存态，随服务器重启清空）。',
+    zhScenarios: ['记录逆向进度证据', '审计覆盖度并发现缺口', '切换/清理会话台账'],
+    zhCombos: [
+      'session + coordination',
+      'session + instrumentation',
+      'session + protocol-analysis',
+    ],
+    enTitle: 'Session Progress',
+    enSummary:
+      'Session-scoped reverse-engineering coverage ledger: record hooked processes, hook points, and decoded protocol fields, then audit coverage and surface gaps. In-memory, server-lifetime state.',
+    enScenarios: [
+      'Record progress evidence',
+      'Audit coverage and surface gaps',
+      'Switch or reset session ledgers',
+    ],
+    enCombos: [
+      'session + coordination',
+      'session + instrumentation',
+      'session + protocol-analysis',
+    ],
+  },
 };
 
 async function main() {

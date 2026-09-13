@@ -28,6 +28,7 @@ export const referenceSidebarItems = [
   { text: '进程', link: '/reference/domains/process' },
   { text: '协议分析', link: '/reference/domains/protocol-analysis' },
   { text: '代理', link: '/reference/domains/proxy' },
+  { text: '会话进度', link: '/reference/domains/session' },
   { text: '源映射', link: '/reference/domains/sourcemap' },
   { text: '流式', link: '/reference/domains/streaming' },
   { text: '系统调用挂钩', link: '/reference/domains/syscall-hook' },

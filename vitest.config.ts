@@ -28,6 +28,7 @@ const coverageExclude = [
   'src/**/manifest.ts',
   'src/**/*.types.ts',
   // Pure re-export handler files (zero logic, just re-export from impl)
+  'src/server/domains/session/handlers.ts',
   'src/server/domains/analysis/handlers.ts',
   'src/server/domains/analysis/handlers/**',
   'src/server/domains/browser/handlers.ts',

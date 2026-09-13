@@ -53,3 +53,4 @@ export * from './process.js';
 export * from './syscall-hook.js';
 export * from './hypervisor.js';
 export * from './byovd.js';
+export * from './session.js';

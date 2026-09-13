@@ -28,6 +28,7 @@ export const referenceSidebarItems = [
   { text: 'Process', link: '/en/reference/domains/process' },
   { text: 'Protocol Analysis', link: '/en/reference/domains/protocol-analysis' },
   { text: 'Proxy', link: '/en/reference/domains/proxy' },
+  { text: 'Session Progress', link: '/en/reference/domains/session' },
   { text: 'SourceMap', link: '/en/reference/domains/sourcemap' },
   { text: 'Streaming', link: '/en/reference/domains/streaming' },
   { text: 'Syscall Hook', link: '/en/reference/domains/syscall-hook' },
