@@ -5,6 +5,8 @@ import {
   jsonResponse,
   errorResponse,
   type ExtensionToolHandler,
+  type ToolExecuteAfterHook,
+  type ToolExecuteBeforeHook,
 } from '@extension-sdk/plugin';
 import type { WorkflowContract } from '@extension-sdk/workflow';
 import { TEST_HOSTS } from '@tests/shared/test-urls';
@@ -228,6 +230,80 @@ describe('ExtensionBuilder', () => {
       const result = builder.onDeactivate(asyncNoopHandler);
       expect(result).toBe(builder);
       expect(builder.onDeactivateHandler).toBe(asyncNoopHandler);
+    });
+  });
+
+  describe('tool execute hooks', () => {
+    it('starts with empty hook lists for backward compatibility', () => {
+      const builder = new ExtensionBuilder('test', '1.0.0');
+      expect(builder.toolExecuteBeforeHooks).toEqual([]);
+      expect(builder.toolExecuteAfterHooks).toEqual([]);
+    });
+
+    it('onToolExecuteBefore accumulates hooks in registration order and returns this', () => {
+      const builder = new ExtensionBuilder('test', '1.0.0');
+      const beforeHook: ToolExecuteBeforeHook = async (toolName, args) => {
+        if (toolName === 'p_tool' && (args as { n?: number }).n === 1) {
+          return { action: 'deny', reason: 'not allowed' };
+        }
+        return undefined;
+      };
+      const voidHook: ToolExecuteBeforeHook = async () => undefined;
+      const result = builder.onToolExecuteBefore(beforeHook).onToolExecuteBefore(voidHook);
+      expect(result).toBe(builder);
+      expect(builder.toolExecuteBeforeHooks).toEqual([beforeHook, voidHook]);
+    });
+
+    it('onToolExecuteAfter accumulates hooks in registration order and returns this', () => {
+      const builder = new ExtensionBuilder('test', '1.0.0');
+      const redactHook: ToolExecuteAfterHook = async (_toolName, _args, result) => {
+        if ((result as { secret?: string }).secret) {
+          return { action: 'redact', reason: 'contains secret' };
+        }
+        return undefined;
+      };
+      const rewriteHook: ToolExecuteAfterHook = async () => ({
+        action: 'allow' as const,
+        result: { rewritten: true },
+      });
+      const result = builder.onToolExecuteAfter(redactHook).onToolExecuteAfter(rewriteHook);
+      expect(result).toBe(builder);
+      expect(builder.toolExecuteAfterHooks).toEqual([redactHook, rewriteHook]);
+    });
+
+    it('accepts the full contract surface: allow with rewrite, deny with reason, redact with reason', async () => {
+      // Compile-surface test: these assignments only typecheck when the SDK
+      // hook result unions match the documented contract.
+      const deny: Awaited<ReturnType<ToolExecuteBeforeHook>> = {
+        action: 'deny',
+        reason: 'blocked by policy',
+      };
+      const allowArgs: Awaited<ReturnType<ToolExecuteBeforeHook>> = {
+        action: 'allow',
+        args: { rewritten: true },
+      };
+      const redact: Awaited<ReturnType<ToolExecuteAfterHook>> = {
+        action: 'redact',
+        reason: 'sensitive payload',
+      };
+      const allowResult: Awaited<ReturnType<ToolExecuteAfterHook>> = {
+        action: 'allow',
+        result: { ok: 1 },
+      };
+      expect(deny).toMatchObject({ action: 'deny' });
+      expect(allowArgs).toMatchObject({ action: 'allow' });
+      expect(redact).toMatchObject({ action: 'redact' });
+      expect(allowResult).toMatchObject({ action: 'allow' });
+    });
+
+    it('supports fluent chaining with the rest of the builder', () => {
+      const builder = createExtension('hook-chain', '1.0.0')
+        .allowTool('built_in')
+        .onToolExecuteBefore(async () => undefined)
+        .onToolExecuteAfter(async () => undefined);
+      expect(builder.id).toBe('hook-chain');
+      expect(builder.toolExecuteBeforeHooks).toHaveLength(1);
+      expect(builder.toolExecuteAfterHooks).toHaveLength(1);
     });
   });
 

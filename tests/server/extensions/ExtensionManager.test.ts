@@ -1028,4 +1028,360 @@ describe('ExtensionManager', () => {
       'Skip plugin "plugin-valid-workflow" from /plugins/plugin-valid-workflow.js: duplicate plugin id',
     );
   });
+
+  // ── Tool-execution hooks (ExtensionManager.hooks wiring) ──
+
+  function getRegisteredHandler(
+    ctx: ReturnType<typeof createCtx>,
+    toolName: string,
+  ): ((args: Record<string, unknown>) => Promise<any>) | undefined {
+    for (const call of ctx.router.addHandlers.mock.calls) {
+      const handlers = call[0] as Record<string, unknown>;
+      if (handlers && typeof handlers[toolName] === 'function') {
+        return handlers[toolName] as (args: Record<string, unknown>) => Promise<any>;
+      }
+    }
+    return undefined;
+  }
+
+  it('denies tool execution via a before hook without running the tool', async () => {
+    (globalThis as Record<string, unknown>).hookEvents = [] as unknown[];
+    state.discoverPluginFiles.mockResolvedValue(['/plugins/plugin-hook-deny/dist/index.js']);
+    state.createFreshImportUrl.mockImplementationOnce(() =>
+      makeDataModule(`
+        export default {
+          id: 'plugin-hook-deny',
+          version: '1.0.0',
+          compatibleCoreRange: '^1.0.0',
+          allowedTools: [],
+          profiles: ['workflow'],
+          tools: [
+            {
+              name: 'hook_denied_tool',
+              description: 'Guarded tool',
+              schema: { type: 'object', properties: {} },
+              profiles: ['workflow'],
+              async handler() {
+                globalThis.hookEvents.push('executed');
+                return { content: [{ type: 'text', text: JSON.stringify({ success: true }) }] };
+              },
+            },
+          ],
+          workflows: [],
+          toolExecuteBeforeHooks: [async () => ({ action: 'deny', reason: 'policy says no' })],
+          toolExecuteAfterHooks: [],
+        };
+      `),
+    );
+    const ctx = createCtx();
+    const { reloadExtensions } = await import('@server/extensions/ExtensionManager');
+    await reloadExtensions(ctx);
+
+    const handler = getRegisteredHandler(ctx, 'hook_denied_tool');
+    expect(handler).toBeDefined();
+
+    const response = await handler!({ q: 1 });
+
+    expect(response.isError).toBe(true);
+    const payload = JSON.parse(response.content[0].text) as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      success: false,
+      tool: 'hook_denied_tool',
+      deniedBy: 'plugin-hook-deny',
+      reason: 'policy says no',
+    });
+    expect((globalThis as Record<string, unknown>).hookEvents).toEqual([]);
+  });
+
+  it('chains rewritten args across multiple before hooks and runs the tool with the final args', async () => {
+    (globalThis as Record<string, unknown>).hookEvents = [] as unknown[];
+    state.discoverPluginFiles.mockResolvedValue(['/plugins/plugin-hook-chain/dist/index.js']);
+    state.createFreshImportUrl.mockImplementationOnce(() =>
+      makeDataModule(`
+        export default {
+          id: 'plugin-hook-chain',
+          version: '1.0.0',
+          compatibleCoreRange: '^1.0.0',
+          allowedTools: [],
+          profiles: ['workflow'],
+          tools: [
+            {
+              name: 'hook_chain_tool',
+              description: 'Rewritten tool',
+              schema: { type: 'object', properties: {} },
+              profiles: ['workflow'],
+              async handler(args) {
+                globalThis.hookEvents.push(['executed', args]);
+                return { content: [{ type: 'text', text: JSON.stringify({ success: true, args }) }] };
+              },
+            },
+          ],
+          workflows: [],
+          toolExecuteBeforeHooks: [
+            async (_toolName, args) => {
+              globalThis.hookEvents.push(['before-1', args]);
+              return { action: 'allow', args: { n: (args.n || 0) + 1 } };
+            },
+            async (_toolName, args) => {
+              globalThis.hookEvents.push(['before-2', args]);
+              return { action: 'allow', args: { n: (args.n || 0) + 1 } };
+            },
+          ],
+          toolExecuteAfterHooks: [],
+        };
+      `),
+    );
+    const ctx = createCtx();
+    const { reloadExtensions } = await import('@server/extensions/ExtensionManager');
+    await reloadExtensions(ctx);
+
+    const handler = getRegisteredHandler(ctx, 'hook_chain_tool');
+    expect(handler).toBeDefined();
+    await handler!({ n: 0 });
+
+    expect((globalThis as Record<string, unknown>).hookEvents).toEqual([
+      ['before-1', { n: 0 }],
+      ['before-2', { n: 1 }],
+      ['executed', { n: 2 }],
+    ]);
+  });
+
+  it('redacts the tool result via an after hook', async () => {
+    state.discoverPluginFiles.mockResolvedValue(['/plugins/plugin-hook-redact/dist/index.js']);
+    state.createFreshImportUrl.mockImplementationOnce(() =>
+      makeDataModule(`
+        export default {
+          id: 'plugin-hook-redact',
+          version: '1.0.0',
+          compatibleCoreRange: '^1.0.0',
+          allowedTools: [],
+          profiles: ['workflow'],
+          tools: [
+            {
+              name: 'hook_redact_tool',
+              description: 'Sensitive tool',
+              schema: { type: 'object', properties: {} },
+              profiles: ['workflow'],
+              async handler() {
+                return {
+                  content: [
+                    { type: 'text', text: JSON.stringify({ success: true, secret: 'hunter2' }) },
+                  ],
+                };
+              },
+            },
+          ],
+          workflows: [],
+          toolExecuteBeforeHooks: [],
+          toolExecuteAfterHooks: [async () => ({ action: 'redact', reason: 'contains pii' })],
+        };
+      `),
+    );
+    const ctx = createCtx();
+    const { reloadExtensions } = await import('@server/extensions/ExtensionManager');
+    await reloadExtensions(ctx);
+
+    const handler = getRegisteredHandler(ctx, 'hook_redact_tool');
+    expect(handler).toBeDefined();
+
+    const response = await handler!({});
+    const raw = JSON.stringify(response);
+    expect(raw).not.toContain('hunter2');
+    expect(response.isError).toBeUndefined();
+    const payload = JSON.parse(response.content[0].text) as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      success: true,
+      tool: 'hook_redact_tool',
+      redacted: true,
+      redactedBy: 'plugin-hook-redact',
+      reason: 'contains pii',
+    });
+  });
+
+  it('treats a throwing hook as fail-open and still executes the tool', async () => {
+    state.discoverPluginFiles.mockResolvedValue(['/plugins/plugin-hook-throw/dist/index.js']);
+    state.createFreshImportUrl.mockImplementationOnce(() =>
+      makeDataModule(`
+        export default {
+          id: 'plugin-hook-throw',
+          version: '1.0.0',
+          compatibleCoreRange: '^1.0.0',
+          allowedTools: [],
+          profiles: ['workflow'],
+          tools: [
+            {
+              name: 'hook_throw_tool',
+              description: 'Buggy hook tool',
+              schema: { type: 'object', properties: {} },
+              profiles: ['workflow'],
+              async handler(args) {
+                return {
+                  content: [{ type: 'text', text: JSON.stringify({ success: true, args }) }],
+                };
+              },
+            },
+          ],
+          workflows: [],
+          toolExecuteBeforeHooks: [
+            async () => {
+              throw new Error('hook exploded');
+            },
+          ],
+          toolExecuteAfterHooks: [],
+        };
+      `),
+    );
+    const ctx = createCtx();
+    const { reloadExtensions } = await import('@server/extensions/ExtensionManager');
+    await reloadExtensions(ctx);
+
+    const handler = getRegisteredHandler(ctx, 'hook_throw_tool');
+    expect(handler).toBeDefined();
+
+    const response = await handler!({ original: true });
+    expect(response.isError).toBeUndefined();
+    const payload = JSON.parse(response.content[0].text) as Record<string, unknown>;
+    expect(payload).toEqual({ success: true, args: { original: true } });
+    expect(state.logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('fail-open'),
+      expect.any(Error),
+    );
+  });
+
+  it('runs each plugin hooks only for its own tools (multi-plugin scope and order)', async () => {
+    (globalThis as Record<string, unknown>).hookEvents = [] as unknown[];
+    state.discoverPluginFiles.mockResolvedValue([
+      '/plugins/plugin-alpha/dist/index.js',
+      '/plugins/plugin-beta/dist/index.js',
+    ]);
+    state.createFreshImportUrl.mockImplementation((modulePath: string) => {
+      if (modulePath.includes('plugin-alpha')) {
+        return makeDataModule(`
+          export default {
+            id: 'plugin-alpha',
+            version: '1.0.0',
+            compatibleCoreRange: '^1.0.0',
+            allowedTools: [],
+            profiles: ['workflow'],
+            tools: [
+              {
+                name: 'alpha_tool',
+                description: 'Alpha tool',
+                schema: { type: 'object', properties: {} },
+                profiles: ['workflow'],
+                async handler() {
+                  globalThis.hookEvents.push('alpha:executed');
+                  return { content: [{ type: 'text', text: JSON.stringify({ success: true }) }] };
+                },
+              },
+            ],
+            workflows: [],
+            toolExecuteBeforeHooks: [
+              async () => {
+                globalThis.hookEvents.push('alpha:before');
+                return { action: 'allow' };
+              },
+            ],
+            toolExecuteAfterHooks: [],
+          };
+        `);
+      }
+      return makeDataModule(`
+        export default {
+          id: 'plugin-beta',
+          version: '1.0.0',
+          compatibleCoreRange: '^1.0.0',
+          allowedTools: [],
+          profiles: ['workflow'],
+          tools: [
+            {
+              name: 'beta_tool',
+              description: 'Beta tool',
+              schema: { type: 'object', properties: {} },
+              profiles: ['workflow'],
+              async handler() {
+                globalThis.hookEvents.push('beta:executed');
+                return { content: [{ type: 'text', text: JSON.stringify({ success: true }) }] };
+              },
+            },
+          ],
+          workflows: [],
+          toolExecuteBeforeHooks: [
+            async () => {
+              globalThis.hookEvents.push('beta:before');
+              return { action: 'allow' };
+            },
+          ],
+          toolExecuteAfterHooks: [],
+        };
+      `);
+    });
+    const ctx = createCtx();
+    const { reloadExtensions } = await import('@server/extensions/ExtensionManager');
+    const result = await reloadExtensions(ctx);
+
+    expect(result.pluginCount).toBe(2);
+
+    const alphaHandler = getRegisteredHandler(ctx, 'alpha_tool');
+    const betaHandler = getRegisteredHandler(ctx, 'beta_tool');
+    expect(alphaHandler).toBeDefined();
+    expect(betaHandler).toBeDefined();
+
+    (globalThis as Record<string, unknown>).hookEvents = [] as unknown[];
+    await alphaHandler!({});
+    expect((globalThis as Record<string, unknown>).hookEvents).toEqual([
+      'alpha:before',
+      'alpha:executed',
+    ]);
+
+    (globalThis as Record<string, unknown>).hookEvents = [] as unknown[];
+    await betaHandler!({});
+    expect((globalThis as Record<string, unknown>).hookEvents).toEqual([
+      'beta:before',
+      'beta:executed',
+    ]);
+  });
+
+  it('leaves plugins without hook properties completely unchanged', async () => {
+    state.discoverPluginFiles.mockResolvedValue(['/plugins/plugin-no-hooks/dist/index.js']);
+    state.createFreshImportUrl.mockImplementationOnce(() =>
+      makeDataModule(`
+        export default {
+          id: 'plugin-no-hooks',
+          version: '1.0.0',
+          compatibleCoreRange: '^1.0.0',
+          allowedTools: [],
+          profiles: ['workflow'],
+          tools: [
+            {
+              name: 'no_hooks_tool',
+              description: 'Legacy tool',
+              schema: { type: 'object', properties: {} },
+              profiles: ['workflow'],
+              async handler(args) {
+                return {
+                  content: [{ type: 'text', text: JSON.stringify({ success: true, args }) }],
+                };
+              },
+            },
+          ],
+          workflows: [],
+        };
+      `),
+    );
+    const ctx = createCtx();
+    const { reloadExtensions } = await import('@server/extensions/ExtensionManager');
+    await reloadExtensions(ctx);
+
+    const handler = getRegisteredHandler(ctx, 'no_hooks_tool');
+    expect(handler).toBeDefined();
+
+    const response = await handler!({ legacy: 1 });
+    const payload = JSON.parse(response.content[0].text) as Record<string, unknown>;
+    expect(payload).toEqual({ success: true, args: { legacy: 1 } });
+    expect(state.logger.warn).not.toHaveBeenCalledWith(
+      expect.stringContaining('fail-open'),
+      expect.anything(),
+    );
+  });
 });

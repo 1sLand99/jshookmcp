@@ -52,6 +52,68 @@ export interface ExtensionToolDefinition {
 
 export type ExtensionWorkflowDefinition = WorkflowContract;
 
+// ── Tool-execution interception hooks ──
+//
+// Hooks let a plugin observe — and programmatically gate or rewrite — calls to
+// the tools it declared in its own manifest. They are intentionally scoped to
+// the plugin's own tools (least privilege); platform-wide interception of
+// unrelated tools is left to a future opt-in config switch.
+
+/**
+ * Decision returned by a `ToolExecuteBeforeHook`.
+ *
+ * - `allow`  → execution proceeds; `args` (when provided and not `undefined`)
+ *              replaces the arguments passed to the tool. Omitting `args` (or
+ *              returning plain `void`) leaves the incoming arguments unchanged.
+ * - `deny`   → the tool is NOT executed; the caller receives an error response
+ *              carrying `reason` and the denying plugin's id.
+ */
+export type ToolExecuteBeforeResult =
+  | { action: 'allow'; args?: unknown }
+  | { action: 'deny'; reason: string };
+
+/**
+ * Decision returned by a `ToolExecuteAfterHook`.
+ *
+ * - `allow`  → the tool result is kept; `result` (when provided and not
+ *              `undefined`) replaces the result. Omitting `result` (or
+ *              returning plain `void`) leaves the result unchanged.
+ * - `redact` → the tool result is replaced with a placeholder that surfaces
+ *              `reason` (and the redacting plugin's id) to the caller; the
+ *              original result is discarded and only the `reason` is logged.
+ *
+ * The `result` a hook receives — and any value it rewrites with — is the tool's
+ * full response value (an MCP `CallToolResult`-shaped object), not a bare
+ * payload.
+ */
+export type ToolExecuteAfterResult =
+  | { action: 'allow'; result?: unknown }
+  | { action: 'redact'; reason: string };
+
+/**
+ * Runs before the plugin's tool executes. Multiple hooks chain: the args
+ * rewritten by one hook are the input of the next.
+ *
+ * Returning `undefined` (or nothing) means "allow, no rewrite".
+ */
+export type ToolExecuteBeforeHook = (
+  toolName: string,
+  args: unknown,
+) => Promise<ToolExecuteBeforeResult | void>;
+
+/**
+ * Runs after the plugin's tool executed successfully (a thrown handler error
+ * skips after hooks). Multiple hooks chain: the result rewritten by one hook is
+ * the input of the next.
+ *
+ * Returning `undefined` (or nothing) means "allow, no rewrite".
+ */
+export type ToolExecuteAfterHook = (
+  toolName: string,
+  args: unknown,
+  result: unknown,
+) => Promise<ToolExecuteAfterResult | void>;
+
 // ── Response helpers (delegates to bridge) ──
 
 /** Build a success JSON response for an MCP tool. Alias of `toTextResponse`. */
@@ -85,6 +147,8 @@ export class ExtensionBuilder {
   ) => Promise<{ valid: boolean; errors: string[] }> | { valid: boolean; errors: string[] };
   private onActivateHandlerValue?: (ctx: PluginLifecycleContext) => Promise<void> | void;
   private onDeactivateHandlerValue?: (ctx: PluginLifecycleContext) => Promise<void> | void;
+  private toolExecuteBeforeHooksValue: ToolExecuteBeforeHook[] = [];
+  private toolExecuteAfterHooksValue: ToolExecuteAfterHook[] = [];
 
   constructor(id: string, version: string) {
     this.idValue = id;
@@ -141,6 +205,14 @@ export class ExtensionBuilder {
   }
   get onDeactivateHandler(): ((ctx: PluginLifecycleContext) => Promise<void> | void) | undefined {
     return this.onDeactivateHandlerValue;
+  }
+  /** Registered before-execution hooks, in registration order. */
+  get toolExecuteBeforeHooks(): ToolExecuteBeforeHook[] {
+    return this.toolExecuteBeforeHooksValue;
+  }
+  /** Registered after-execution hooks, in registration order. */
+  get toolExecuteAfterHooks(): ToolExecuteAfterHook[] {
+    return this.toolExecuteAfterHooksValue;
   }
 
   // ── setters ──
@@ -232,6 +304,27 @@ export class ExtensionBuilder {
   }
   onDeactivate(h: (ctx: PluginLifecycleContext) => Promise<void> | void): this {
     this.onDeactivateHandlerValue = h;
+    return this;
+  }
+
+  /**
+   * Register a hook that runs before this plugin's tools execute. May be called
+   * multiple times; hooks run in registration order and chain their `args`
+   * rewrites. A hook that throws is ignored (fail-open) by the runtime.
+   */
+  onToolExecuteBefore(h: ToolExecuteBeforeHook): this {
+    this.toolExecuteBeforeHooksValue.push(h);
+    return this;
+  }
+
+  /**
+   * Register a hook that runs after this plugin's tools execute successfully.
+   * May be called multiple times; hooks run in registration order and chain
+   * their `result` rewrites. A hook that throws is ignored (fail-open) by the
+   * runtime.
+   */
+  onToolExecuteAfter(h: ToolExecuteAfterHook): this {
+    this.toolExecuteAfterHooksValue.push(h);
     return this;
   }
 }

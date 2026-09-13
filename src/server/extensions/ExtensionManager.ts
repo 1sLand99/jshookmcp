@@ -61,6 +61,7 @@ import {
   shouldAutoRegisterExtensionTool,
   unregisterExtensionToolRecord,
 } from './ExtensionManager.tools';
+import { normalizeHookList, wrapExtensionToolHandler } from './ExtensionManager.hooks';
 
 export function listExtensions(ctx: MCPServerContext): ExtensionListResult {
   const pluginRoots = resolveRoots(
@@ -610,14 +611,23 @@ async function reloadExtensionsInner(ctx: MCPServerContext): Promise<ExtensionRe
             inputSchema: toolDef.schema,
           },
           profiles: toolDef.profiles ?? plugin.profiles,
-          handler: async (args: Record<string, unknown>) => {
-            try {
-              return await toolDef.handler(args, lifecycleContext);
-            } catch (error) {
-              logger.error(`[extension:${plugin.id}] Tool "${toolDef.name}" failed:`, error);
-              throw error;
-            }
-          },
+          // Tool-execution hooks: the plugin's before/after hooks gate and can
+          // rewrite calls to ITS OWN tools only (least privilege). Plugins
+          // without hooks get the original handler back unchanged.
+          handler: wrapExtensionToolHandler({
+            pluginId: plugin.id,
+            toolName: toolDef.name,
+            beforeHooks: normalizeHookList(plugin.toolExecuteBeforeHooks),
+            afterHooks: normalizeHookList(plugin.toolExecuteAfterHooks),
+            handler: async (args: Record<string, unknown>) => {
+              try {
+                return await toolDef.handler(args, lifecycleContext);
+              } catch (error) {
+                logger.error(`[extension:${plugin.id}] Tool "${toolDef.name}" failed:`, error);
+                throw error;
+              }
+            },
+          }),
         };
         ctx.extensionToolsByName.set(toolDef.name, toolRecord);
         loadedTools.push(toolDef.name);
