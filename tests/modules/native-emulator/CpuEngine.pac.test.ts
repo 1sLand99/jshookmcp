@@ -15,6 +15,10 @@
  * - HINT form (0xD5032xxxF): CRm=3 op2 0..7 = paciaz/paciasp/pacibz/pacibsp/
  *     autiaz/autiasp/autibz/autibsp (LR + XZR/SP modifier); CRm=1 even op2 =
  *     pacia1716/pacib1716/autia1716/autib1716 (X17 + X16); CRm=0 op2=7 = xpaclri.
+ * - XPACI/XPACD (Data Processing -- 1-source window): 0xDAC143E0|Xd /
+ *     0xDAC147E0|Xd (mask 0xFFFFFFE0; bits[15:10] = 01000D, bits[9:5] fixed
+ *     11111, Rd = bits[4:0]) — unverified in-place strip of Rd.
+ *     e.g. 0xDAC143E5 `xpaci x5`, 0xDAC147E0 `xpacd x0`, 0xDAC143FE `xpaci x30`.
  *
  * Covers:
  * - QARMA5 cipher vectors (known-answer test from dkales/qarma64-python)
@@ -23,7 +27,13 @@
  * - A/B and IA/DA key-slot divergence
  * - PACGA full 64-bit cipher output (Rm and SP modifier forms)
  * - HINT-space PACIASP / AUTIASP / paciaz / autiaz prologue/epilogue on LR
- * - HINT-space 1716 variants signing X17
+ * - HINT-space 1716 variants signing X17 (A and B key)
+ * - HINT-space key-B family: pacibz/pacibsp/autibz/autibsp diverge from the
+ *   A-key forms
+ * - XPACI/XPACD register strip (incl. idempotency, the refuted 0xD5032xxx
+ *   candidate encoding staying a NOP, and z-register paciza-family forms
+ *   keeping their safe-NOP degradation)
+ * - HINT-space CRm=0 gate: WFE/SEV-range hints never touch LR or X17
  * - setPacKeys / nemu_set_pac_key slot update
  */
 
@@ -35,6 +45,12 @@ const BASE = 0x10000;
 const MASK64 = (1n << 64n) - 1n;
 const PAC_MASK = 0x00ff000000000000n;
 const stripPac = (p: bigint) => p & ~PAC_MASK & MASK64;
+// Dirty 64-bit test vector, built by shifts instead of a hex literal: a
+// literal's leading zero bytes are silently dropped (a "dirty top byte" vector
+// written as 0x7faa00abc000 is really a 48-bit value — caught by review
+// round 2). Layout: top byte bits[63:56]=0x7f, PAC field bits[55:48]=0xaa,
+// plaintext bits[47:0]=0x7f0000abc000.
+const DIRTY = (0x7fn << 56n) | (0xaan << 48n) | 0x7f0000abc000n;
 
 // ── QARMA5 cipher vector ────────────────────────────────────────────────────
 
@@ -62,7 +78,7 @@ function pacgaReg(modifierRm: number, pointerRn: number, rd: number): number {
 }
 
 /** Write a 4-byte instruction and execute it. Engine map + PC = BASE → BASE+4. */
-function exec1(insn: number, regs?: Record<string, number>): CpuEngine {
+function exec1(insn: number, regs?: Record<string, number | bigint>): CpuEngine {
   const e = new CpuEngine();
   e.mapMemory(BASE, 0x1000);
   e.writeRegister('sp', BASE + 0x800);
@@ -75,7 +91,7 @@ function exec1(insn: number, regs?: Record<string, number>): CpuEngine {
 }
 
 /** Execute two 4-byte instructions back-to-back. */
-function exec2(insn1: number, insn2: number, regs?: Record<string, number>): CpuEngine {
+function exec2(insn1: number, insn2: number, regs?: Record<string, number | bigint>): CpuEngine {
   const e = new CpuEngine();
   e.mapMemory(BASE, 0x1000);
   e.writeRegister('sp', BASE + 0x800);
@@ -85,6 +101,25 @@ function exec2(insn1: number, insn2: number, regs?: Record<string, number>): Cpu
   new DataView(buf.buffer).setUint32(4, insn2, true);
   e.writeCode(BASE, buf);
   e.start(BASE, BASE + 8);
+  return e;
+}
+
+/** Execute three 4-byte instructions back-to-back. */
+function exec3(
+  insn1: number,
+  insn2: number,
+  insn3: number,
+  regs?: Record<string, number | bigint>,
+): CpuEngine {
+  const e = new CpuEngine();
+  e.mapMemory(BASE, 0x1000);
+  e.writeRegister('sp', BASE + 0x800);
+  if (regs) for (const [k, v] of Object.entries(regs)) e.writeRegister(k, v);
+  const buf = new Uint8Array(12);
+  const dv = new DataView(buf.buffer);
+  [insn1, insn2, insn3].forEach((w, i) => dv.setUint32(i * 4, w, true));
+  e.writeCode(BASE, buf);
+  e.start(BASE, BASE + 12);
   return e;
 }
 
@@ -143,6 +178,70 @@ describe('PAC register-form instruction execution', () => {
     const e = exec2(pacReg(1, 2, 1), pacReg(5, 2, 1), { x1: Number(orig), x2: 0x11223344 });
     expect(e.pacDiagSnapshot()).toEqual([]);
     expect(e.readGpr(1)).toBe(orig);
+  });
+});
+
+// ── XPACI/XPACD (register strip, 1-source window) ───────────────────────────
+
+describe('XPACI/XPACD register strip', () => {
+  // The vector is DIRTY (top byte 0x7f + PAC field 0xaa): a strip that
+  // under-clears leaves the signed field behind, one that over-clears wipes
+  // the top byte — both observable. See DIRTY for why it is shift-built.
+  const orig = DIRTY;
+  const base = stripPac(orig);
+
+  it('test vector sanity: top byte and PAC field are both dirty', () => {
+    // Guards the guard: if the vector ever loses a dirty plane, the
+    // over-clear/residue assertions below go blind while staying green.
+    expect(orig >> 56n).toBe(0x7fn);
+    expect(orig & PAC_MASK).toBe(0xaan << 48n);
+    expect(base).not.toBe(orig);
+  });
+
+  it('xpaci x5 (0xDAC143E5) strips the PAC field from a signed x5', () => {
+    // pacia x5, x2 (0xDAC10045) then xpaci x5 (0xDAC143E5): unverified strip,
+    // PAC field at bits[55:48] cleared, everything above and below preserved.
+    const e = exec2(pacReg(0, 2, 5), 0xdac143e5, { x5: orig, x2: 0x11223344 });
+    expect(e.readGpr(5) & PAC_MASK).toBe(0n);
+    expect(e.readGpr(5)).toBe(base);
+  });
+
+  it('xpacd x0 (0xDAC147E0) strips a signed x0 (D variant)', () => {
+    const e = exec2(pacReg(0, 2, 0), 0xdac147e0, { x0: orig, x2: 0x11223344 });
+    expect(e.readGpr(0) & PAC_MASK).toBe(0n);
+    expect(e.readGpr(0)).toBe(base);
+  });
+
+  it('xpaci is idempotent across signing: xpaci → pacia → xpaci recovers the base', () => {
+    const e = exec3(0xdac143e5, pacReg(0, 2, 5), 0xdac143e5, {
+      x5: orig,
+      x2: 0x11223344,
+    });
+    expect(e.readGpr(5) & PAC_MASK).toBe(0n);
+    expect(e.readGpr(5)).toBe(base);
+  });
+
+  it('xpaci x30 (0xDAC143FE) strips a PAC-signed LR in place', () => {
+    const e = exec2(0xd503231f /* paciaz */, 0xdac143fe /* xpaci x30 */, { x30: orig });
+    expect(e.readGpr(30)).toBe(base);
+  });
+
+  it('the refuted XPACI candidate encoding (0xD5032045) stays a NOP', () => {
+    // 0xD5032040|Xd was refuted against WFE (HINT space) — it must not strip.
+    // Seed x5 with a signed value (non-zero PAC field) so a mutant that
+    // implements the candidate as a strip is observably different from a NOP.
+    const signed = exec1(pacReg(0, 2, 5), { x5: orig, x2: 0x11223344 }).readGpr(5);
+    expect(signed & PAC_MASK).not.toBe(0n);
+    const e = exec2(pacReg(0, 2, 5), 0xd5032045, { x5: orig, x2: 0x11223344 });
+    expect(e.readGpr(5)).toBe(signed);
+  });
+
+  it('z-register forms (paciza family) keep their safe-NOP degradation', () => {
+    // paciza x5 (0xDAC123E5): 1-source opcode 001000 with Rn fixed 11111 —
+    // outside both XPACI guards by construction; a guard-widening mutant that
+    // absorbs this word as a strip would clear the seeded dirty field.
+    const e = exec1(0xdac123e5, { x5: orig });
+    expect(e.readGpr(5)).toBe(orig);
   });
 });
 
@@ -263,6 +362,69 @@ describe('HINT PAC (PACIASP / AUTIASP)', () => {
   });
 });
 
+// ── HINT PAC key-B branch (B-key downgrade regression guard) ────────────────
+
+describe('HINT-space key-B family (pacibz / autibz / 1716-B)', () => {
+  // DEFAULT_PAC_KEYS has ia === ib, which would mask a B→A key downgrade; every
+  // test here must setPacKeys first so the ib slot is observably distinct.
+  const keys = {
+    ia: '11111111111111111111111111111111',
+    ib: '22222222222222222222222222222222',
+    da: '33333333333333333333333333333333',
+    db: '44444444444444444444444444444444',
+    ga: '55555555555555555555555555555555',
+  };
+  const runWithKeys = (insns: number[], regs: Record<string, number | bigint>): CpuEngine => {
+    const e = new CpuEngine();
+    e.setPacKeys(keys);
+    e.mapMemory(BASE, 0x1000);
+    e.writeRegister('sp', BASE + 0x800);
+    for (const [k, v] of Object.entries(regs)) e.writeRegister(k, v);
+    const buf = new Uint8Array(insns.length * 4);
+    const dv = new DataView(buf.buffer);
+    insns.forEach((w, i) => dv.setUint32(i * 4, w, true));
+    e.writeCode(BASE, buf);
+    e.start(BASE, BASE + insns.length * 4);
+    return e;
+  };
+
+  it('pacibz (0xD503235F) signs LR with the ib key — PAC field differs from paciaz', () => {
+    const orig = 0x7f0000abc000n;
+    const viaB = runWithKeys([0xd503235f], { x30: Number(orig) }).readGpr(30);
+    const viaA = runWithKeys([0xd503231f], { x30: Number(orig) }).readGpr(30);
+    expect(stripPac(viaB)).toBe(orig);
+    expect(viaB & PAC_MASK).not.toBe(0n);
+    // ib ≠ ia → the 8-bit PAC fields must diverge.
+    expect(viaB & PAC_MASK).not.toBe(viaA & PAC_MASK);
+  });
+
+  it('autibz (0xD50323DF) round-trips an LR signed by pacibz with no mismatch', () => {
+    const orig = 0x7f0000abc000n;
+    const e = runWithKeys([0xd503235f, 0xd50323df], { x30: Number(orig) });
+    expect(e.pacDiagSnapshot()).toEqual([]);
+    expect(e.readGpr(30)).toBe(orig);
+  });
+
+  it('pacibsp (0xD503237F) / autibsp (0xD50323FF) round-trip the SP-modifier slot with the ib key', () => {
+    const orig = 0x7f0000abc000n;
+    const viaB = runWithKeys([0xd503237f], { x30: Number(orig) }).readGpr(30);
+    const viaA = runWithKeys([0xd503233f], { x30: Number(orig) }).readGpr(30);
+    expect(viaB & PAC_MASK).not.toBe(0n);
+    // ib ≠ ia at the same SP modifier → the 8-bit PAC fields must diverge.
+    expect(viaB & PAC_MASK).not.toBe(viaA & PAC_MASK);
+    const e = runWithKeys([0xd503237f, 0xd50323ff], { x30: Number(orig) });
+    expect(e.pacDiagSnapshot()).toEqual([]);
+    expect(e.readGpr(30)).toBe(orig);
+  });
+
+  it('pacib1716 (0xD503215F) / autib1716 (0xD50321DF) round-trip X17 with the ib key', () => {
+    const orig = 0x7f0000abc000n;
+    const e = runWithKeys([0xd503215f, 0xd50321df], { x17: Number(orig), x16: 0x11223344 });
+    expect(e.pacDiagSnapshot()).toEqual([]);
+    expect(e.readGpr(17)).toBe(orig);
+  });
+});
+
 // ── Key management ──────────────────────────────────────────────────────────
 
 describe('PAC key management', () => {
@@ -367,6 +529,20 @@ describe('HINT-space CRm gate', () => {
     for (const hint of [0xd503203f, 0xd503207f]) {
       const e = exec1(hint, { x30: Number(orig) });
       expect(e.readGpr(30)).toBe(orig);
+    }
+  });
+
+  it('WFE and the SEV-range slot leave LR and X17 untouched (blanket NOP)', () => {
+    // CRm=0, even op2: WFE (0xD503205F, op2=2) and 0xD503209F (op2=4; capstone
+    // 5.0.7 labels it `sev`). Seeded with the dirty vector: if the CRm gate
+    // were removed, 0xD503209F would fall into the 1716 AUT path (stripping
+    // the dirty field + logging a mismatch diag) and WFE into the sign path
+    // (overwriting X17) — both observable. Neither may touch LR or X17.
+    for (const hint of [0xd503205f, 0xd503209f]) {
+      const e = exec1(hint, { x30: DIRTY, x17: DIRTY });
+      expect(e.pacDiagSnapshot()).toEqual([]);
+      expect(e.readGpr(30)).toBe(DIRTY);
+      expect(e.readGpr(17)).toBe(DIRTY);
     }
   });
 });

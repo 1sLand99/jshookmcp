@@ -11,6 +11,7 @@
  * - Data-processing (3 source): MADD / MSUB / SMULH / UMULH / SMADDL / SMSUBL / UMADDL / UMSUBL
  * - Pointer Authentication register form (PACIA/PACIB/PACDA/PACDB/AUTIA/AUTIB/AUTDA/AUTDB)
  * - PACGA (3-source, full 64-bit QARMA output)
+ * - XPACI/XPACD (unverified register strip, 1-source window)
  * - Data-processing (2 source): UDIV / SDIV / LSLV / LSRV / ASRV / RORV
  * - Conditional select (CSEL / CSINC / CSINV / CSNEG)
  * - Conditional compare (CCMP / CCMN, register and immediate)
@@ -20,7 +21,7 @@
 import type { ExecutionContext } from '../cpu/ExecutionContext';
 import { reverseBits, reverseBytes, countLeadingZeros } from '../utils/BitOperations';
 import { computeArmCrc32 } from '../crc32';
-import { execPointerAuth3Source, execPacga } from './PointerAuth';
+import { execPointerAuth3Source, execPacga, execXpac } from './PointerAuth';
 
 const MASK64 = (1n << 64n) - 1n;
 const MASK32 = (1n << 32n) - 1n;
@@ -225,6 +226,11 @@ export function execDataProcessingRegister(ctx: ExecutionContext, insn: number):
   // opcode bits[15:10] = 001100 disambiguates (the 2-source opcodes handled
   // there are UDIV/SDIV/LSLV/LSRV/ASRV/RORV — none is 001100).
   if (execPacga(ctx, insn)) return true;
+
+  // XPACI/XPACD (register strip): 0xDAC143E0|Xd / 0xDAC147E0|Xd. These also
+  // sit in the 1-source window (bits[15:10] = 010000/010001) and would fall to
+  // that block's switch default → NOP, so they must be intercepted first.
+  if (execXpac(ctx, insn)) return true;
 
   // Data-processing (3 source): sf | 00 | 11011 | op31(3) | Rm | o0 | Ra | Rn | Rd
   //   MADD/MSUB (Rd = Ra ± Rn*Rm), SMULH/UMULH (high 64 bits of 64×64).

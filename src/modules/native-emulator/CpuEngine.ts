@@ -766,7 +766,7 @@ export class CpuEngine implements ExecutionContext {
   }
 
   /** Write a 64-bit value into a named register (x0..x30, sp, pc). */
-  writeRegister(name: string, value: number): void {
+  writeRegister(name: string, value: number | bigint): void {
     this.registerFile.writeNamed(name, BigInt(value) & MASK64);
   }
 

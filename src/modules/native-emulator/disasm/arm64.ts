@@ -68,8 +68,15 @@ function tryDisassemble(insn: number, pc: bigint): DisasmResult | null {
   if (m(insn, 0x1fe00000, 0x1a800000)) return decodeCondSelect(insn);
 
   // ── Pointer Authentication: register family 0xDAC1 + PACGA 0x9AC03000 ──
+  // (XPACI/XPACD register strip also lives in the 0xDAC1 prefix — see the
+  // xpaci/xpacd lines below; the z-register forms paciza..autdzb stay <unknown>
+  // safe-NOP words.)
   if (m(insn, 0xffffe000, 0xdac10000)) return decodePacRegisterForm(insn);
   if (m(insn, 0xffe0fc00, 0x9ac03000)) return decodePacga(insn);
+  // XPACI/XPACD: unverified PAC strip of Xd. Capstone-verified:
+  // 0xDAC143E5 `xpaci x5`, 0xDAC147E0 `xpacd x0`, 0xDAC143FE `xpaci x30`.
+  if (m(insn, 0xffffffe0, 0xdac143e0)) return { mnemonic: 'xpaci', operands: `x${insn & 0x1f}` };
+  if (m(insn, 0xffffffe0, 0xdac147e0)) return { mnemonic: 'xpacd', operands: `x${insn & 0x1f}` };
 
   // ── FP / SIMD (scalar) ───────────────────────────────────────────
   if (m(insn, 0x1f200000, 0x0e200000)) return decodeFpSimdScalar(insn);
@@ -672,7 +679,9 @@ function decodeFpSimdScalar(insn: number): DisasmResult | null {
  *  Real CRm/op2 map (capstone 5.0.7 verified): CRm=3, op2 0..7 = paciaz/paciasp/
  *  pacibz/pacibsp/autiaz/autiasp/autibz/autibsp; CRm=1, even op2 = the 1716
  *  family (pointer X17, modifier X16 — implicit operands); CRm=0, op2=7 =
- *  xpaclri. Everything else is not PAC (blanket NOP territory). */
+ *  xpaclri. Everything else is not PAC (blanket NOP territory). XPACI/XPACD are
+ *  NOT on the HINT page — they use the 1-source register window (0xDAC143E0 /
+ *  0xDAC147E0 | Xd) and are decoded in the 0xDAC1 section above. */
 function decodePacHint(insn: number): DisasmResult | null {
   if ((insn & 0xfffff01f) >>> 0 !== 0xd503201f) return null;
   const crm = (insn >>> 8) & 0xf;

@@ -1,7 +1,7 @@
 /**
  * PointerAuth — ARMv8.3-A Pointer Authentication (PAC) instruction family.
  *
- * Three entry encodings arrive here:
+ * Four entry encodings arrive here:
  *
  * - PAC/AUT register form (via the Data Processing -- Register dispatch; the
  *   encoding sits in the 1-source window, bits[30:21] = 1x11010110, with the
@@ -27,13 +27,22 @@
  *     CRm=1, even op2: pacia1716/pacib1716/autia1716/autib1716 — X17 pointer,
  *     X16 modifier. CRm=0, op2=7: xpaclri.
  *
- * - XPACI/XPACD (register-strip variants, System class sharing the HINT page)
- *   are INTENTIONALLY NOT IMPLEMENTED: the authoritative encoding cannot be
- *   verified in this environment (capstone 5.0.7 does not model them, and the
- *   one WebSearch candidate's XPACLRI row was refuted by capstone). Real
- *   XPACI/XPACD words fall outside the 0xDAC1 register window and reach the
- *   mapped-region NOP catch-all — safe degradation (no corruption, no strip).
- *   Owner: main agent. Requires ARM ARM DDI 0487 C6.2 ground truth first.
+ * - XPACI/XPACD (register-strip variants, Data Processing -- 1-source window;
+ *   implemented in execXpac, dispatched ahead of the generic 1-source block):
+ *     XPACI <Xd> = 0xDAC143E0 | Xd, XPACD <Xd> = 0xDAC147E0 | Xd
+ *     (mask 0xFFFFFFE0 each; bits[15:10] = 01000D, bits[9:5] fixed 11111,
+ *     Rd = bits[4:0]). Verified against capstone 5.0.7: 0xDAC143E5 `xpaci x5`,
+ *     0xDAC147E0 `xpacd x0`. Unverified in-place strip of Rd — no modifier, no
+ *     key, no diag (Rd=31 writes XZR, discarded).
+ *
+ * - Still intentionally safe-NOP: the 8 zero-modifier register forms
+ *   paciza/pacizb/pacdza/pacdzb/autiza/autizb/autdza/autdzb (1-source opcode
+ *   bits[15:10] = 001000..001111, Rn=11111 fixed, 32 words each — capstone
+ *   5.0.7 verified, e.g. 0xDAC123E5 `paciza x5`). They fall past both the
+ *   0xDAC1 register-form guard and the XPACI masks into the 1-source switch
+ *   default → NOP. Mainstream toolchains rarely emit them; the commonly used
+ *   zero-modifier forms are covered by the HINT-page paciaz/autiaz (CRm=3)
+ *   family.
  *
  * The PAC value is the QARMA5 cipher (ARM DDI 0487 C5.1.1) — a tweakable
  * 4-round-reflector Feistel over a 64-bit block (16 4-bit cells), keyed by a
@@ -398,6 +407,25 @@ export function execPacga(ctx: ExecutionContext, insn: number): boolean {
   const modifier = rm === 31 ? ctx.readGprSp(31) : ctx.readGpr(rm);
   const pointer = ctx.readGpr(rn);
   ctx.writeGpr(rd, pacgaDigest(pointer, modifier, (ctx as CpuEnginePacContext).pacKeys.ga));
+  return true;
+}
+
+/**
+ * Try to execute XPACI/XPACD (unverified PAC strip on an arbitrary register).
+ * Returns true if handled. Encoding (capstone 5.0.7 verified):
+ *     XPACI <Xd> = 0xDAC143E0 | Xd   (mask 0xFFFFFFE0)
+ *     XPACD <Xd> = 0xDAC147E0 | Xd   (mask 0xFFFFFFE0)
+ * both in the Data Processing -- 1-source window with bits[15:10] = 01000D
+ * (D = bit10), bits[9:5] fixed 11111, Rd = bits[4:0]. Same strip-anywhere
+ * semantics as XPACLRI (PointerAuth HINT page) but the target is Rd instead of
+ * the fixed x30: no modifier, no key, no verification, no diag. Rd=31 writes
+ * XZR (discarded — harmless). e.g. 0xDAC143E5 `xpaci x5`, 0xDAC147E0 `xpacd x0`.
+ */
+export function execXpac(ctx: ExecutionContext, insn: number): boolean {
+  const word = (insn & 0xffffffe0) >>> 0;
+  if (word !== 0xdac143e0 && word !== 0xdac147e0) return false;
+  const rd = insn & 0b11111;
+  ctx.writeGpr(rd, stripPac(ctx.readGpr(rd)));
   return true;
 }
 
