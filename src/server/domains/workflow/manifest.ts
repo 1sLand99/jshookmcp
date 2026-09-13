@@ -37,6 +37,7 @@ const registrations = defineMethodRegistrations<
     { tool: 'workflow_run_inspect', method: 'handleWorkflowRunInspectTool' },
     { tool: 'workflow_conditional_step', method: 'handleWorkflowConditionalStepTool' },
     { tool: 'workflow_retry_policy', method: 'handleWorkflowRetryPolicyTool' },
+    { tool: 'workflow_suggest', method: 'handleWorkflowSuggestTool' },
   ],
 });
 const macroRegistrations = defineMethodRegistrations<M, (typeof macroTools)[number]['name']>({

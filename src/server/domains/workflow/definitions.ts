@@ -326,4 +326,23 @@ export const workflowToolDefinitions: Tool[] = [
       )
       .required('maxAttempts', 'backoffMs'),
   ),
+  tool('workflow_suggest', (t) =>
+    t
+      .desc(
+        'Suggest the next extension workflow to run from the chainsWith / prerequisites chain ' +
+          'metadata declared by loaded workflows. Pass the workflow ids already executed in this ' +
+          'session; the server stays stateless. Candidates chained from an executed workflow rank ' +
+          'first (the reason names the chain), workflows with all prerequisites satisfied rank ' +
+          'before those with missing ones, already-executed workflows are never suggested, and ' +
+          'executed ids that match no loaded workflow are returned in unmatched. Workflows without ' +
+          'chain metadata are never suggested, so an empty catalog of metadata yields empty suggestions.',
+      )
+      .array(
+        'executed',
+        { type: 'string' },
+        'Workflow ids already executed in this session (client-side history; may be empty).',
+      )
+      .requiredOpenWorld('executed')
+      .query(),
+  ),
 ];

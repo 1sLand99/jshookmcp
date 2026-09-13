@@ -130,6 +130,14 @@ export class ScriptHandlers {
       tags: record.tags,
       timeoutMs: record.timeoutMs,
       defaultMaxConcurrency: record.defaultMaxConcurrency,
+      // Chain metadata is only emitted when declared so listing output stays
+      // stable for workflows that opt out of the chaining graph.
+      ...(record.chainsWith && record.chainsWith.length > 0
+        ? { chainsWith: record.chainsWith }
+        : {}),
+      ...(record.prerequisites && record.prerequisites.length > 0
+        ? { prerequisites: record.prerequisites }
+        : {}),
       source: record.source,
       route: record.route
         ? {
@@ -147,6 +155,127 @@ export class ScriptHandlers {
       count: serializedWorkflows.length,
       workflows: serializedWorkflows,
     });
+  }
+
+  /**
+   * Recommend next workflows from the chainsWith / prerequisites metadata
+   * declared by loaded extension workflows, based on the client-supplied list
+   * of already-executed workflow ids (the server keeps no execution history).
+   *
+   * chainsWith edges are outgoing ("after this workflow, run these"), so a
+   * candidate is chain-recommended when an executed workflow's chainsWith
+   * lists it. Ranking: chain hits first (the reason names which executed
+   * workflow recommended the candidate), then fewer missing prerequisites,
+   * then id. Candidates without any chain metadata are never suggested —
+   * with an empty metadata graph the result is honestly empty.
+   */
+  async handleWorkflowSuggest(args: Record<string, unknown>) {
+    const ctx = this.state.deps.serverContext;
+    if (!ctx) {
+      return jsonTextResult({
+        success: false,
+        error: 'Extension workflow runtime is unavailable in this handler context',
+      });
+    }
+
+    const executedArg = args.executed;
+    if (!Array.isArray(executedArg)) {
+      return jsonTextResult({
+        success: false,
+        error: 'executed is required and must be an array of workflow ids',
+      });
+    }
+    const executed: string[] = [];
+    for (const entry of executedArg) {
+      if (typeof entry !== 'string') {
+        return jsonTextResult({
+          success: false,
+          error: 'executed must contain workflow id strings only',
+        });
+      }
+      if (entry.length > 0 && !executed.includes(entry)) {
+        executed.push(entry);
+      }
+    }
+
+    const { ensureWorkflowsLoaded } = await import('@server/extensions/ExtensionManager');
+    await ensureWorkflowsLoaded(ctx);
+    const records = [...ctx.extensionWorkflowsById.values()].filter(
+      (record) => record.route?.kind !== 'preset',
+    );
+    const knownIds = new Set(records.map((record) => record.id));
+    const executedSet = new Set(executed);
+    const unmatched = executed.filter((id) => !knownIds.has(id));
+
+    // chainsWith edges are declared on the upstream workflow ("after me, run
+    // these"), so reverse-index them: target id -> sources that chain to it.
+    // A candidate is chain-recommended when an executed workflow lists it.
+    const chainSources = new Map<string, string[]>();
+    for (const record of records) {
+      for (const target of record.chainsWith ?? []) {
+        const sources = chainSources.get(target);
+        if (sources) {
+          if (!sources.includes(record.id)) {
+            sources.push(record.id);
+          }
+        } else {
+          chainSources.set(target, [record.id]);
+        }
+      }
+    }
+
+    const candidates = [];
+    for (const record of records) {
+      if (executedSet.has(record.id)) {
+        continue;
+      }
+      const prerequisites = record.prerequisites ?? [];
+      const chainHits = (chainSources.get(record.id) ?? []).filter((id) => executedSet.has(id));
+      const missingPrerequisites = prerequisites.filter((id) => !executedSet.has(id));
+
+      // Grounded recommendations only: a candidate must either chain from an
+      // executed workflow or declare prerequisites. No metadata → no suggestion.
+      if (chainHits.length === 0 && prerequisites.length === 0) {
+        continue;
+      }
+
+      const reasons: string[] = [];
+      if (chainHits.length > 0) {
+        reasons.push(`Chained from "${chainHits.join('", "')}" via chainsWith`);
+      }
+      if (prerequisites.length > 0) {
+        reasons.push(
+          missingPrerequisites.length === 0
+            ? `All prerequisites satisfied: ${prerequisites.join(', ')}`
+            : `Missing prerequisites: ${missingPrerequisites.join(', ')}`,
+        );
+      }
+
+      candidates.push({
+        id: record.id,
+        chainHit: chainHits.length > 0,
+        missingPrerequisites,
+        reason: reasons.join('; '),
+      });
+    }
+
+    candidates.sort((a, b) => {
+      if (a.chainHit !== b.chainHit) {
+        return a.chainHit ? -1 : 1;
+      }
+      if (a.missingPrerequisites.length !== b.missingPrerequisites.length) {
+        return a.missingPrerequisites.length - b.missingPrerequisites.length;
+      }
+      return a.id.localeCompare(b.id);
+    });
+
+    const suggestions = candidates.map((candidate) => ({
+      name: candidate.id,
+      reason: candidate.reason,
+      missingPrerequisites: candidate.missingPrerequisites,
+    }));
+
+    return jsonTextResult({ success: true, suggestions, unmatched });
   }
 
   async handleRunExtensionWorkflow(args: Record<string, unknown>, retryPolicy?: RetryPolicy) {

@@ -99,6 +99,17 @@ export interface WorkflowContract {
   readonly tags?: string[];
   readonly timeoutMs?: number;
   readonly defaultMaxConcurrency?: number;
+  /**
+   * Workflow ids that naturally follow this workflow after it completes
+   * successfully. Consumed by the workflow_suggest tool to recommend next
+   * steps from the client-supplied executed list.
+   */
+  readonly chainsWith?: string[];
+  /**
+   * Workflow ids that should complete before this workflow runs. Consumed by
+   * the workflow_suggest tool to surface missing prerequisites per suggestion.
+   */
+  readonly prerequisites?: string[];
   readonly route?: WorkflowRouteMetadata;
   build(ctx: WorkflowExecutionContext): WorkflowNode;
   onStart?(ctx: WorkflowExecutionContext): Promise<void> | void;
@@ -143,6 +154,10 @@ export interface WorkflowSpec {
   tags(tags: string[]): this;
   timeoutMs(timeout: number): this;
   defaultMaxConcurrency(max: number): this;
+  /** Declare workflows that naturally follow this one (chaining metadata). */
+  chainsWith(next: string[]): this;
+  /** Declare workflows that must complete before this one (prerequisite metadata). */
+  prerequisites(previous: string[]): this;
   route(route: WorkflowRouteMetadata): this;
   buildGraph(fn: (ctx: WorkflowExecutionContext) => WorkflowNode): this;
   onStart(fn: (ctx: WorkflowExecutionContext) => Promise<void> | void): this;
@@ -365,6 +380,8 @@ function createWorkflowBuilder(id: string, displayName: string): WorkflowBuilder
   let tags: string[] | undefined;
   let timeoutMs: number | undefined;
   let defaultMaxConcurrency: number | undefined;
+  let chainsWith: string[] | undefined;
+  let prerequisites: string[] | undefined;
   let route: WorkflowRouteMetadata | undefined;
   let buildGraph: ((ctx: WorkflowExecutionContext) => WorkflowNode) | undefined;
   let onStart: ((ctx: WorkflowExecutionContext) => Promise<void> | void) | undefined;
@@ -387,6 +404,14 @@ function createWorkflowBuilder(id: string, displayName: string): WorkflowBuilder
   };
   workflow.defaultMaxConcurrency = (value) => {
     defaultMaxConcurrency = value;
+    return workflow;
+  };
+  workflow.chainsWith = (value) => {
+    chainsWith = value;
+    return workflow;
+  };
+  workflow.prerequisites = (value) => {
+    prerequisites = value;
     return workflow;
   };
   workflow.route = (value) => {
@@ -423,6 +448,8 @@ function createWorkflowBuilder(id: string, displayName: string): WorkflowBuilder
       tags,
       timeoutMs,
       defaultMaxConcurrency,
+      chainsWith,
+      prerequisites,
       route,
       build: buildGraph,
       onStart,

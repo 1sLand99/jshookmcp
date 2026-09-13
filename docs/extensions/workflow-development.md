@@ -90,6 +90,36 @@ import {
 - **安全并行读池**：`page_local_storage(action=get)`, `page_cookies(action=get)`, `network_get_requests`, `page_get_all_links`, `console_get_logs`。
 - **并发锁屏黑名单**：页面导航请求、坐标重定向、表单投毒注入以及一切涉及 Shared State 的关联副作用。必须回归由 `sequenceStep` 挂接的同步等待闭包中。
 
+## 链式组合元数据
+
+逆向工作流天然成链（frida hook → SSL pinning bypass → traffic decode）。`WorkflowContract` 支持两个可选字段，由 `defineWorkflow` 构建器声明：
+
+- **`chainsWith(next: string[])`**：本工作流成功完成后自然衔接的后续 workflow id（出边方向：声明方 → 后继方）。
+- **`prerequisites(previous: string[])`**：执行本工作流前应当完成的 workflow id。
+
+```ts
+export default defineWorkflow('workflow.ssl_bypass.v1', 'SSL Pinning Bypass', (w) =>
+  w
+    .description('Disable certificate pinning on a hooked runtime.')
+    .prerequisites(['workflow.frida_hook.v1'])
+    .chainsWith(['workflow.traffic_decode.v1'])
+    .buildGraph(() =>
+      sequenceStep('bypass', (s) =>
+        s.tool('bypass', 'frida_bridge', { input: { action: 'template' } })),
+    ),
+);
+```
+
+运行时通过 `workflow_suggest` 工具按当前会话已执行的 workflow 列表推荐下一步：
+
+- 输入 `{ executed: string[] }` 由客户端传入（服务端无状态）。
+- 已执行 workflow 的 `chainsWith` 命中的候选优先，`reason` 说明由哪条链推荐。
+- `prerequisites` 全满足的排前；缺失项列在 `missingPrerequisites`。
+- 已执行的 workflow 不再推荐；未知名进 `unmatched`。
+- 无任何链元数据时返回空 `suggestions`（不做无依据推荐）。
+
+`list_extension_workflows` / `list_extensions` 输出会在声明了元数据的 workflow 上附带 `chainsWith` / `prerequisites` 字段。
+
 ## 重新加载机制
 
 更新编译后，进入主程序管控环境发起注册探针：

@@ -71,6 +71,16 @@ export interface ExtensionWorkflowRecord {
   tags?: string[];
   timeoutMs?: number;
   defaultMaxConcurrency?: number;
+  /**
+   * Workflow ids that naturally follow this workflow after it completes
+   * (chaining metadata surfaced by workflow_suggest / list_extension_workflows).
+   */
+  chainsWith?: string[];
+  /**
+   * Workflow ids that should complete before this workflow runs
+   * (prerequisite metadata surfaced by workflow_suggest / list_extension_workflows).
+   */
+  prerequisites?: string[];
   route?: WorkflowContract['route'];
 }
 

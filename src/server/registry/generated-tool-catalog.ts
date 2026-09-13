@@ -27925,6 +27925,34 @@ export const GENERATED_TOOL_CATALOG = [
   },
   {
     tool: {
+      name: 'workflow_suggest',
+      description:
+        'Suggest the next extension workflow to run from the chainsWith / prerequisites chain metadata declared by loaded workflows. Pass the workflow ids already executed in this session; the server stays stateless. Candidates chained from an executed workflow rank first (the reason names the chain), workflows with all prerequisites satisfied rank before those with missing ones, already-executed workflows are never suggested, and executed ids that match no loaded workflow are returned in unmatched. Workflows without chain metadata are never suggested, so an empty catalog of metadata yields empty suggestions.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          executed: {
+            type: 'array',
+            items: {
+              type: 'string',
+            },
+            description:
+              'Workflow ids already executed in this session (client-side history; may be empty).',
+          },
+        },
+        required: ['executed'],
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    domain: 'workflow',
+  },
+  {
+    tool: {
       name: 'ws_export_capture',
       description: 'Export captured WebSocket frames to artifacts/captures as JSON or NDJSON.',
       inputSchema: {

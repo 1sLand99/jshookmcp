@@ -80,6 +80,37 @@ import {
 - `tags`
 - `timeoutMs`
 - `defaultMaxConcurrency`
+- `chainsWith` (optional — successor workflow ids declared by this workflow)
+- `prerequisites` (optional — workflow ids that should complete before this one)
+
+### Chain Composition Metadata
+
+Reverse-engineering workflows form natural chains (frida hook → SSL pinning bypass → traffic decode). Declare them through the `defineWorkflow` builder:
+
+- **`chainsWith(next: string[])`**: workflow ids that naturally follow this workflow after it completes (outgoing edges: declarer → successors).
+- **`prerequisites(previous: string[])`**: workflow ids that should complete before this workflow runs.
+
+```ts
+export default defineWorkflow('workflow.ssl_bypass.v1', 'SSL Pinning Bypass', (w) =>
+  w
+    .description('Disable certificate pinning on a hooked runtime.')
+    .prerequisites(['workflow.frida_hook.v1'])
+    .chainsWith(['workflow.traffic_decode.v1'])
+    .buildGraph(() =>
+      sequenceStep('bypass', (s) =>
+        s.tool('bypass', 'frida_bridge', { input: { action: 'template' } })),
+    ),
+);
+```
+
+The `workflow_suggest` tool recommends next steps from the client-supplied list of already-executed workflow ids (`{ executed: string[] }` — the server stays stateless):
+
+- Candidates chained from an executed workflow rank first; the `reason` names the chain.
+- Workflows with all prerequisites satisfied rank before those with missing ones; gaps are listed in `missingPrerequisites`.
+- Already-executed workflows are never suggested; unknown ids are returned in `unmatched`.
+- With no chain metadata declared anywhere, `suggestions` is honestly empty.
+
+`list_extension_workflows` / `list_extensions` attach `chainsWith` / `prerequisites` on workflows that declare them.
 
 ### `build(ctx)` Execution Pipeline
 

@@ -18858,6 +18858,19 @@
           }
         },
         "type": "object"
+      },
+      "workflow_workflow_suggest": {
+        "properties": {
+          "executed": {
+            "description": "Workflow ids already executed in this session (client-side history; may be empty).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": ["executed"],
+        "type": "object"
       }
     }
   },
@@ -32070,7 +32083,7 @@
     },
     "/meta/search_tools": {
       "post": {
-        "description": "Search 723 tools across 35 capability domains. This includes built-in tools plus any loaded plugin/workflow tools (0 currently loaded). In search-tier sessions, call this before assuming a capability is unavailable. Use activate_tools for exact matches, activate_domain for an entire domain. Domains: browser (85) | memory (74) | native-emulator (56) | binary-instrument (44) | network (38) | boringssl-inspector (29) | process (28) | adb-bridge (26) | core (25) | debugger (21) | exploit-dev (21) | v8-inspector (21) | protocol-analysis (20) | platform (18) | streaming (17) | wasm (17) | dart-inspector (16) | syscall-hook (15) | maintenance (14) | instrumentation (13) | coordination (12) | workflow (12) | canvas (11) | proxy (11) | trace (10) | webgpu (10) | cross-domain (8) | mojo-ipc (8) | extension-registry (7) | graphql (7) | sourcemap (7) | transform (7) | native-bridge (6) | encoding (5) | tasks (4). Query tip: before searching, distill your intent into key concepts (action verb + target + domain). The engine combines token matching, fuzzy names, profile context, and optional static embeddings.",
+        "description": "Search 724 tools across 35 capability domains. This includes built-in tools plus any loaded plugin/workflow tools (0 currently loaded). In search-tier sessions, call this before assuming a capability is unavailable. Use activate_tools for exact matches, activate_domain for an entire domain. Domains: browser (85) | memory (74) | native-emulator (56) | binary-instrument (44) | network (38) | boringssl-inspector (29) | process (28) | adb-bridge (26) | core (25) | debugger (21) | exploit-dev (21) | v8-inspector (21) | protocol-analysis (20) | platform (18) | streaming (17) | wasm (17) | dart-inspector (16) | syscall-hook (15) | maintenance (14) | instrumentation (13) | workflow (13) | coordination (12) | canvas (11) | proxy (11) | trace (10) | webgpu (10) | cross-domain (8) | mojo-ipc (8) | extension-registry (7) | graphql (7) | sourcemap (7) | transform (7) | native-bridge (6) | encoding (5) | tasks (4). Query tip: before searching, distill your intent into key concepts (action verb + target + domain). The engine combines token matching, fuzzy names, profile context, and optional static embeddings.",
         "operationId": "search_tools",
         "requestBody": {
           "content": {
@@ -32094,7 +32107,7 @@
             "description": "Tool execution result returned as MCP tool result text content."
           }
         },
-        "summary": "Search 723 tools across 35 capability domains.",
+        "summary": "Search 724 tools across 35 capability domains.",
         "tags": ["meta"]
       }
     },
@@ -41552,6 +41565,37 @@
           }
         },
         "summary": "Inspect the global workflow run store: list recent run_extension_workflow / run_macro runs, get a run entry by runId,...",
+        "tags": ["workflow"],
+        "x-domain": "workflow"
+      }
+    },
+    "/workflow/workflow_suggest": {
+      "post": {
+        "description": "Suggest the next extension workflow to run from the chainsWith / prerequisites chain metadata declared by loaded workflows. Pass the workflow ids already executed in this session; the server stays stateless. Candidates chained from an executed workflow rank first (the reason names the chain), workflows with all prerequisites satisfied rank before those with missing ones, already-executed workflows are never suggested, and executed ids that match no loaded workflow are returned in unmatched. Workflows without chain metadata are never suggested, so an empty catalog of metadata yields empty suggestions.",
+        "operationId": "workflow_suggest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/workflow_workflow_suggest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Suggest the next extension workflow to run from the chainsWith / prerequisites chain metadata declared by loaded work...",
         "tags": ["workflow"],
         "x-domain": "workflow"
       }

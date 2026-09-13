@@ -98,6 +98,10 @@ export class WorkflowHandlers {
     return handleSafe(async () => await this.handleWorkflowRetryPolicy(args));
   }
 
+  async handleWorkflowSuggestTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleWorkflowSuggest(args));
+  }
+
   handlePageScriptRegister(args: Record<string, unknown>) {
     return this.scripts.handlePageScriptRegister(args);
   }
@@ -118,6 +122,10 @@ export class WorkflowHandlers {
   }
   handleReverseSession(args: Record<string, unknown>) {
     return this.reverseSession.handleReverseSession(args);
+  }
+
+  handleWorkflowSuggest(args: Record<string, unknown>) {
+    return this.scripts.handleWorkflowSuggest(args);
   }
 
   /**

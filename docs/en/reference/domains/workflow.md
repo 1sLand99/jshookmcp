@@ -20,7 +20,7 @@ Composite workflow, script-library, and macro-orchestration domain; the main bui
 
 - workflow + browser + network
 
-## Full tool list (12)
+## Full tool list (13)
 
 | Tool | Description |
 | --- | --- |
@@ -34,5 +34,6 @@ Composite workflow, script-library, and macro-orchestration domain; the main bui
 | `workflow_run_inspect` | Inspect the global workflow run store: list recent run_extension_workflow / run_macro runs, get a run entry by runId, or fetch the last successful run summary (runId, status, durationMs, stepResultKeys) for a workflow or macro id. |
 | `workflow_conditional_step` | Evaluate a condition against the stepResults argument and execute one of two tool branches. Supports built-in predicates: always_true, always_false, any_step_failed, success_rate_gte_N (N=0-100), variable_equals_KEY_VALUE, variable_contains_KEY_VALUE, variable_matches_KEY_REGEX. When stepResults is omitted, an empty set is used, so value-based predicates (variable_*, success_rate_gte_N, any_step_failed) will not match. |
 | `workflow_retry_policy` | Configure a global retry policy with exponential backoff for workflow steps. The stored policy is applied by run_extension_workflow / run_macro when individual nodes lack an explicit retry config. Returns the normalised policy. |
+| `workflow_suggest` | Suggest the next extension workflow to run from the chainsWith / prerequisites chain metadata declared by loaded workflows. Pass the workflow ids already executed in this session; the server stays stateless. Candidates chained from an executed workflow rank first (the reason names the chain), workflows with all prerequisites satisfied rank before those with missing ones, already-executed workflows are never suggested, and executed ids that match no loaded workflow are returned in unmatched. Workflows without chain metadata are never suggested, so an empty catalog of metadata yields empty suggestions. |
 | `run_macro` | Execute a registered macro with sequence, parallel, branch, fallback, and retry orchestration. |
 | `list_macros` | List all available macros. |

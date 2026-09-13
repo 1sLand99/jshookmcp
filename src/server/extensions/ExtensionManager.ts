@@ -267,6 +267,8 @@ function registerWorkflowContract(
     tags: workflow.tags,
     timeoutMs: workflow.timeoutMs,
     defaultMaxConcurrency: workflow.defaultMaxConcurrency,
+    chainsWith: workflow.chainsWith,
+    prerequisites: workflow.prerequisites,
     route: workflow.route,
   };
   ctx.extensionWorkflowsById.set(record.id, record);
