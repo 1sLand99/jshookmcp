@@ -111,6 +111,7 @@ tests/fixtures/apk-packer/*.zip
 CLAUDE.md
 **/CLAUDE.md
 DESIGN.md
+**/CONTEXT.md
 
 # Other AI/tool local configs
 .augment/
@@ -127,3 +128,8 @@ docs/.vitepress/cache/
 
 # Codacy CLI local cache and config
 .codacy/
+
+
+#Ignore vscode AI rules
+CONTEXT-MAP.md
+docs/agents
