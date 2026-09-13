@@ -1,12 +1,37 @@
-import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { access } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
 import { UNIDBG_TIMEOUT_MS } from '@src/constants';
 import { ToolError } from '@errors/ToolError';
 import { PrerequisiteError } from '@errors/PrerequisiteError';
 import { readEnvNullableString } from '@src/config/environment';
+import {
+  SubprocessWorker,
+  SubprocessWorkerError,
+  type SubprocessWorkerRequestOptions,
+} from '@utils/subprocess-worker';
+import type { UnidbgWorkerRequest, UnidbgWorkerResult } from './unidbg-worker';
 
 const UNIDBG_MAX_BUFFER_BYTES = 8 * 1024 * 1024;
+/**
+ * Slack added on top of the per-invocation JVM deadline when guarding the
+ * worker round-trip: the in-worker java `execFile` timeout
+ * (UNIDBG_TIMEOUT_MS) must fire first so the ToolError message still reports
+ * the unidbg timeout, with the worker deadline acting as a backstop against a
+ * wedged worker process.
+ */
+const WORKER_TIMEOUT_SLACK_MS = 15_000;
+
+export interface UnidbgRunnerOptions {
+  /**
+   * Override the worker entry path (tests inject a fixture worker). Defaults
+   * to the compiled `unidbg-worker.mjs` chunk next to the dist bundle, or the
+   * adjacent `.ts` source under tsx dev — the same resolution strategy as the
+   * search EmbeddingWorker.
+   */
+  workerPath?: string;
+}
 
 interface UnidbgSession {
   id: string;
@@ -22,8 +47,33 @@ interface CommandResult {
   exitCode: number | null;
 }
 
+/**
+ * Resolve the unidbg worker entry for the current runtime:
+ * dist → `dist/modules/binary-instrument/unidbg-worker.mjs` (declared as a
+ * dedicated tsdown entry), dev/test → the adjacent `.ts` source executed via
+ * the tsx loader (`@utils/subprocess-worker` forwards execArgv / injects
+ * `--import tsx`).
+ */
+function resolveUnidbgWorkerPath(): string {
+  const bundledWorkerUrl = new URL(
+    './modules/binary-instrument/unidbg-worker.mjs',
+    import.meta.url,
+  );
+  const bundledWorkerPath = fileURLToPath(bundledWorkerUrl);
+  if (existsSync(bundledWorkerPath)) {
+    return bundledWorkerPath;
+  }
+  return fileURLToPath(new URL('./unidbg-worker.ts', import.meta.url));
+}
+
 export class UnidbgRunner {
   private readonly sessions = new Map<string, UnidbgSession>();
+  private readonly workerPath: string;
+  private worker: SubprocessWorker | null = null;
+
+  constructor(options: UnidbgRunnerOptions = {}) {
+    this.workerPath = options.workerPath ?? resolveUnidbgWorkerPath();
+  }
 
   close(): void {
     for (const session of this.sessions.values()) {
@@ -37,16 +87,35 @@ export class UnidbgRunner {
       }
     }
     this.sessions.clear();
+    void this.worker?.dispose();
+    this.worker = null;
+  }
+
+  /**
+   * Lazily create the JSONL worker channel. One supervised subprocess serves
+   * every launch/call/trace operation of this runner; it survives stray
+   * worker-side exceptions (tolerance window) and respawns after a crash.
+   */
+  private ensureWorker(): SubprocessWorker {
+    if (!this.worker) {
+      this.worker = new SubprocessWorker({
+        name: 'unidbg-worker',
+        workerPath: this.workerPath,
+      });
+    }
+    return this.worker;
   }
 
   /**
    * Launch a .so library in the Unidbg emulator via JVM subprocess.
    * Returns a sessionId for subsequent call/trace operations.
+   * The optional `signal` aborts the in-flight JVM invocation.
    */
   async launch(
     soPath: string,
     arch: string = 'arm',
     jarPath?: string,
+    options?: { signal?: AbortSignal },
   ): Promise<{ sessionId: string; soPath: string; arch: string }> {
     const resolvedJar = jarPath ?? readEnvNullableString('UNIDBG_JAR', { trim: true });
     if (!resolvedJar) {
@@ -73,7 +142,7 @@ export class UnidbgRunner {
     const args = ['-jar', resolvedJar, '--so', soPath, '--arch', arch, '--server'];
 
     try {
-      const result = await this.execFileUtf8(command, args, UNIDBG_TIMEOUT_MS);
+      const result = await this.execViaWorker(command, args, UNIDBG_TIMEOUT_MS, options?.signal);
       // Parse session info from JVM output (expected: JSON with {sessionId, pid})
       const sessionInfo = this.parseLaunchOutput(result.stdout, sessionId);
 
@@ -85,9 +154,11 @@ export class UnidbgRunner {
         childProcess: sessionInfo.pid ? { pid: sessionInfo.pid } : undefined,
       };
 
-      this.sessions.set(sessionId, session);
+      // Key by the session id the JVM reported (randomUUID is only the parse
+      // fallback) — call/trace look up sessions by the id launch returned.
+      this.sessions.set(sessionInfo.id, session);
 
-      return { sessionId, soPath, arch };
+      return { sessionId: sessionInfo.id, soPath, arch };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new ToolError('RUNTIME', `Unidbg launch failed: ${message}`);
@@ -98,6 +169,7 @@ export class UnidbgRunner {
     sessionId: string,
     functionName: string,
     args: Record<string, unknown> = {},
+    options?: { signal?: AbortSignal },
   ): Promise<unknown> {
     const session = this.sessions.get(sessionId);
     if (!session) {
@@ -124,7 +196,12 @@ export class UnidbgRunner {
     ];
 
     try {
-      const result = await this.execFileUtf8(command, callArgs, UNIDBG_TIMEOUT_MS);
+      const result = await this.execViaWorker(
+        command,
+        callArgs,
+        UNIDBG_TIMEOUT_MS,
+        options?.signal,
+      );
       return {
         sessionId,
         functionName,
@@ -140,7 +217,7 @@ export class UnidbgRunner {
     }
   }
 
-  async trace(sessionId: string): Promise<unknown> {
+  async trace(sessionId: string, options?: { signal?: AbortSignal }): Promise<unknown> {
     const session = this.sessions.get(sessionId);
     if (!session) {
       throw new ToolError('NOT_FOUND', `No unidbg session found for ${sessionId}`);
@@ -157,7 +234,12 @@ export class UnidbgRunner {
     const traceArgs = ['-jar', jarPath, '--session', sessionId, '--trace'];
 
     try {
-      const result = await this.execFileUtf8(command, traceArgs, UNIDBG_TIMEOUT_MS);
+      const result = await this.execViaWorker(
+        command,
+        traceArgs,
+        UNIDBG_TIMEOUT_MS,
+        options?.signal,
+      );
       return {
         sessionId,
         trace: this.parseTraceOutput(result.stdout),
@@ -245,33 +327,47 @@ export class UnidbgRunner {
       ).length;
   }
 
-  private async execFileUtf8(
+  /**
+   * Execute one JVM invocation through the unidbg worker subprocess.
+   *
+   * Previously this ran `execFile` in the MCP server process with a fixed
+   * timeout and no abort. It now goes through
+   * `@utils/subprocess-worker`: the JVM lifecycle is isolated from the
+   * server, the deadline is enforced by the worker's own `execFile` timeout
+   * (preserving the ToolError timing), and an optional `AbortSignal` kills
+   * the java process tree. Success/failure shapes are unchanged.
+   */
+  private async execViaWorker(
     file: string,
     args: string[],
     timeoutMs: number,
+    signal?: AbortSignal,
   ): Promise<CommandResult> {
-    return new Promise<CommandResult>((resolve, reject) => {
-      execFile(
+    const requestOptions: SubprocessWorkerRequestOptions = {
+      timeoutMs: timeoutMs + WORKER_TIMEOUT_SLACK_MS,
+      signal,
+    };
+    try {
+      const request: UnidbgWorkerRequest = {
         file,
         args,
-        {
-          timeout: timeoutMs,
-          windowsHide: true,
-          maxBuffer: UNIDBG_MAX_BUFFER_BYTES,
-          encoding: 'utf8',
-        },
-        (error, stdout, stderr) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve({
-            stdout: typeof stdout === 'string' ? stdout : '',
-            stderr: typeof stderr === 'string' ? stderr : '',
-            exitCode: 0,
-          });
-        },
+        timeoutMs,
+        maxBuffer: UNIDBG_MAX_BUFFER_BYTES,
+      };
+      return await this.ensureWorker().request<UnidbgWorkerRequest, UnidbgWorkerResult>(
+        request,
+        requestOptions,
       );
-    });
+    } catch (error) {
+      // Normalize worker-protocol failures into the same plain-Error shape
+      // the old execFile path produced; the public methods wrap it into a
+      // ToolError('RUNTIME', 'Unidbg … failed: …') exactly as before.
+      if (error instanceof SubprocessWorkerError && error.code === 'TIMEOUT') {
+        throw new Error(`unidbg command timed out after ${timeoutMs}ms (worker deadline)`, {
+          cause: error,
+        });
+      }
+      throw new Error(error instanceof Error ? error.message : String(error), { cause: error });
+    }
   }
 }

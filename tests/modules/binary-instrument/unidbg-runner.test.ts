@@ -5,6 +5,41 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { UnidbgRunner } from '@modules/binary-instrument/UnidbgRunner';
 
+// Standalone worker fixture (plain .mjs — no TS loader needed): answers every
+// request with a successful JVM-shaped result containing session JSON.
+const ECHO_WORKER_SOURCE = `
+function send(msg) {
+  process.stdout.write(JSON.stringify(msg) + '\\n');
+}
+let buffer = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (chunk) => {
+  buffer += chunk;
+  let index = buffer.indexOf('\\n');
+  while (index !== -1) {
+    const line = buffer.slice(0, index).trim();
+    buffer = buffer.slice(index + 1);
+    if (line.length > 0) handleLine(line);
+    index = buffer.indexOf('\\n');
+  }
+});
+function handleLine(line) {
+  let msg;
+  try {
+    msg = JSON.parse(line);
+  } catch {
+    return;
+  }
+  if (msg.type === 'start') {
+    send({
+      type: 'result',
+      id: msg.id,
+      result: { stdout: '{"id":"fake-session","pid":4321}\\n', stderr: '', exitCode: 0 },
+    });
+  }
+}
+`;
+
 describe('UnidbgRunner', () => {
   const originalUnidbgJar = process.env['UNIDBG_JAR'];
 
@@ -46,6 +81,39 @@ describe('UnidbgRunner', () => {
       expect(runner.listSessions()).toEqual([]);
       runner.close();
       await rm(dir, { recursive: true, force: true });
+    });
+
+    it('drives the JVM invocation through the subprocess worker channel', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'unidbg-runner-e2e-'));
+      const workerPath = join(dir, 'unidbg-fixture-worker.mjs');
+      const soPath = join(dir, 'libtarget.so');
+      const jarPath = join(dir, 'fake-unidbg.jar');
+      await writeFile(workerPath, ECHO_WORKER_SOURCE, 'utf8');
+      await writeFile(soPath, new Uint8Array([0x7f, 0x45, 0x4c, 0x46]));
+      await writeFile(jarPath, 'fake jar', 'utf8');
+
+      const runner = new UnidbgRunner({ workerPath });
+      try {
+        const launch = await runner.launch(soPath, 'arm64', jarPath);
+        expect(launch.sessionId).toBe('fake-session');
+        expect(launch.soPath).toBe(soPath);
+        expect(launch.arch).toBe('arm64');
+
+        const sessions = runner.listSessions();
+        expect(sessions).toHaveLength(1);
+        expect(sessions[0]).toMatchObject({ id: 'fake-session', soPath, arch: 'arm64' });
+        // The parsed JVM pid lands in the session record (private map, same
+        // access pattern as the seedSession helper in this file).
+        const internal = (
+          runner as unknown as {
+            sessions: Map<string, { childProcess?: { pid: number } }>;
+          }
+        ).sessions.get('fake-session');
+        expect(internal?.childProcess?.pid).toBe(4321);
+      } finally {
+        runner.close();
+        await rm(dir, { recursive: true, force: true });
+      }
     });
   });
 
