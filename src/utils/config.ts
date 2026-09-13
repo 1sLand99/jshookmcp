@@ -16,7 +16,8 @@ import type {
   SearchConfig,
   SearchIntentToolBoostRuleConfig,
   SearchQueryCategoryProfileConfig,
-} from '@internal-types/index';
+  ToolExecutionRuleConfig,
+} from '@internal-types/config';
 
 export const projectRoot = runtimeProjectRoot;
 
@@ -90,6 +91,10 @@ const CONFIG_DEFAULTS = {
     fileThreshold: 4 * 1024 * 1024,
     outputDir: 'artifacts/offloaded',
     excludeTools: [],
+  },
+  toolExecution: {
+    allowTools: [] as string[],
+    rules: [] as ToolExecutionRuleConfig[],
   },
   reverseEngineering: {
     transformWorkbench: {
@@ -372,6 +377,10 @@ const ConfigSchema = z.object({
   OFFLOADER_FILE_THRESHOLD: envInt(CONFIG_DEFAULTS.offloader.fileThreshold).pipe(z.number().min(1)),
   OFFLOADER_OUTPUT_DIR: envString(CONFIG_DEFAULTS.offloader.outputDir),
   OFFLOADER_EXCLUDE_TOOLS: z.string().optional().default(''),
+
+  // Tool-execution permission gate
+  MCP_TOOL_ALLOW_TOOLS: z.string().optional().default(''),
+  MCP_TOOL_RULES_JSON: optionalTrimmedString,
 
   // Search runtime overrides
   SEARCH_QUERY_CATEGORY_PROFILES_JSON: optionalTrimmedString,
@@ -764,6 +773,43 @@ function parseCsvList(value: unknown): string[] {
     .filter((item) => item.length > 0);
 }
 
+/**
+ * Parse `MCP_TOOL_RULES_JSON` into ordered tool-execution permission rules.
+ * Invalid entries are dropped individually (with a warning) so one malformed
+ * rule cannot silently disable the whole gate.
+ */
+function parseToolExecutionRules(raw: string | undefined): ToolExecutionRuleConfig[] | undefined {
+  const parsed = parseJsonArrayEnv(raw);
+  if (parsed === undefined) {
+    return undefined;
+  }
+
+  const rules: ToolExecutionRuleConfig[] = [];
+  for (const [index, entry] of parsed.entries()) {
+    if (!isRecord(entry) || typeof entry.tool !== 'string' || entry.tool.trim().length === 0) {
+      logger.warn(
+        `[Config] Ignoring invalid toolExecution rule at index ${index}: ` +
+          '"tool" must be a non-empty string',
+      );
+      continue;
+    }
+    const action = entry.action;
+    if (action !== 'allow' && action !== 'deny') {
+      logger.warn(
+        `[Config] Ignoring invalid toolExecution rule at index ${index}: ` +
+          `"action" must be "allow" or "deny" (got ${String(action)})`,
+      );
+      continue;
+    }
+    const rule: ToolExecutionRuleConfig = { tool: entry.tool.trim(), action };
+    if (typeof entry.pattern === 'string' && entry.pattern.length > 0) {
+      rule.pattern = entry.pattern;
+    }
+    rules.push(rule);
+  }
+  return rules;
+}
+
 function parseBrowserFleetWorkers(
   value: unknown,
   localWorkerId: string,
@@ -1004,6 +1050,10 @@ export function getConfig(): Config {
       outputDir: env.OFFLOADER_OUTPUT_DIR,
       excludeTools: parseCsvList(env.OFFLOADER_EXCLUDE_TOOLS),
     },
+    toolExecution: {
+      allowTools: parseCsvList(env.MCP_TOOL_ALLOW_TOOLS),
+      rules: parseToolExecutionRules(env.MCP_TOOL_RULES_JSON) ?? [],
+    },
     reverseEngineering: buildReverseEngineeringConfig(env),
     search,
     extensions: {
@@ -1186,6 +1236,19 @@ export function validateConfig(config: Config): { valid: boolean; errors: string
     errors.push('puppeteer.timeout must be at least 1000ms');
   } else if (config.puppeteer.timeout > 300_000) {
     errors.push('puppeteer.timeout must be at most 300000ms');
+  }
+
+  for (const [index, rule] of (config.toolExecution?.rules ?? []).entries()) {
+    if (typeof rule.tool !== 'string' || rule.tool.trim().length === 0) {
+      errors.push(`toolExecution.rules[${index}].tool must be a non-empty string`);
+    } else if (rule.tool !== '*' && !rule.tool.endsWith('/*') && rule.tool.includes('*')) {
+      errors.push(
+        `toolExecution.rules[${index}].tool only supports exact names, "domain/*" or "*"`,
+      );
+    }
+    if (rule.action !== 'allow' && rule.action !== 'deny') {
+      errors.push(`toolExecution.rules[${index}].action must be "allow" or "deny"`);
+    }
   }
 
   if (config.cache.ttl < 0) {

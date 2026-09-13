@@ -12,8 +12,11 @@
  */
 
 import { logger } from '@utils/logger';
+import { matchesWildcardPattern } from '@utils/matchesWildcardPattern';
 import { getToolRequestContext } from '@server/runtime/ToolRequestContext';
 import { META_TOOL_NAMES } from '@server/MCPServer.search';
+import { MCP_DOOM_LOOP_THRESHOLD, TOOL_GATE_MAX_LISTED_RULES } from '@src/constants/server';
+import type { ToolExecutionRuleConfig } from '@internal-types/config';
 
 /** Minimal TabRegistry surface needed by the guard. */
 interface TabContextProvider {
@@ -180,6 +183,12 @@ export class ToolCallContextGuard {
     { lastToolName: string | null; consecutiveCount: number }
   >();
 
+  /**
+   * Doom-loop detection (consecutive identical tool+args calls) uses the same
+   * per-session keying and scope cap as repeat detection.
+   */
+  private readonly doomLoopStates = new Map<string, { lastKey: string | null; count: number }>();
+
   constructor(getProvider: () => TabContextProvider | null) {
     this.getProvider = getProvider;
   }
@@ -241,6 +250,49 @@ export class ToolCallContextGuard {
    */
   isRepeatLoop(): boolean {
     return this.getRepeatState().consecutiveCount >= MAX_CONSECUTIVE_REPEATS;
+  }
+
+  /**
+   * Record one tool call in the doom-loop tracker and report whether it
+   * tripped the circuit breaker. Consecutive identical calls (same tool name +
+   * stable args key) within one MCP session accumulate; a call with different
+   * arguments or a different tool resets the counter. A non-positive
+   * threshold disables the breaker entirely. Unlike the repeat guard, meta
+   * tools are NOT excluded here: call_tool-routed invocations carry the inner
+   * tool name and are exactly the degenerate-loop shape this tracks.
+   */
+  recordDoomLoopCall(
+    toolName: string,
+    argsJson: string,
+    threshold: number = MCP_DOOM_LOOP_THRESHOLD,
+  ): DoomLoopTrip | null {
+    if (threshold <= 0) return null;
+
+    const scope = getToolRequestContext()?.sessionId ?? 'default';
+    let state = this.doomLoopStates.get(scope);
+    if (!state) {
+      if (this.doomLoopStates.size >= MAX_REPEAT_SCOPES) {
+        const oldest = this.doomLoopStates.keys().next().value as string | undefined;
+        if (oldest) this.doomLoopStates.delete(oldest);
+      }
+      state = { lastKey: null, count: 0 };
+      this.doomLoopStates.set(scope, state);
+    }
+
+    const key = `${toolName}\u0000${argsJson}`;
+    if (state.lastKey === key) {
+      state.count += 1;
+    } else {
+      state.lastKey = key;
+      state.count = 1;
+    }
+    if (state.count < threshold) return null;
+    return { count: state.count, threshold, fullAdvisory: state.count % threshold === 0 };
+  }
+
+  /** Test hook: clear all doom-loop counters across sessions. */
+  resetDoomLoopStatesForTesting(): void {
+    this.doomLoopStates.clear();
   }
 
   /**
@@ -400,3 +452,227 @@ export class ToolCallContextGuard {
     });
   }
 }
+
+/* ================================================================== */
+/*  Tool-execution permission gate                                     */
+/*                                                                     */
+/*  Ordered rules (last match wins) + legacy allowTools whitelist      */
+/*  + per-session doom-loop circuit breaker. Evaluation is pure; the   */
+/*  doom-loop counter is keyed per MCP session and scoped to the       */
+/*  server context instance via a WeakMap.                             */
+/* ================================================================== */
+
+/**
+ * Runtime form of a tool-execution permission rule. Identical to
+ * ToolExecutionRuleConfig from @internal-types/config but declared locally so
+ * tests and callers can build rules without importing the config types.
+ */
+export interface ToolPermissionRule {
+  /** Exact tool name, `domain/*` wildcard, or `*` (match everything). */
+  tool: string;
+  /** Optional wildcard pattern matched against the stable args JSON. */
+  pattern?: string;
+  action: 'allow' | 'deny';
+  /**
+   * Where the rule came from: the `allowTools` whitelist expansion (including
+   * the implicit whitelist deny-all) or the user-authored `rules` list.
+   */
+  source?: 'allowTools' | 'rules';
+}
+
+/** Result of evaluating the ordered rule list for one tool call. */
+export interface ToolGateDecision {
+  allowed: boolean;
+  /** Rule that decided the outcome; null when no rule matched (default allow). */
+  matchedRule: ToolPermissionRule | null;
+}
+
+/** Doom-loop trip info returned when a repeated identical call crosses the threshold. */
+export interface DoomLoopTrip {
+  /** 1-based count of consecutive identical calls including this one. */
+  count: number;
+  threshold: number;
+  /**
+   * True when the long advisory should be included (every `threshold`-th
+   * consecutive call) so repeated errors do not flood the client.
+   */
+  fullAdvisory: boolean;
+}
+
+/**
+ * Stable JSON serialization of tool arguments used for rule `pattern`
+ * matching and doom-loop keys. The `_meta` envelope is excluded: clients may
+ * attach per-call progress tokens, which would otherwise make identical
+ * logical calls look different and defeat loop detection.
+ */
+export function stableSerializeArgs(args: Record<string, unknown>): string {
+  if (args === null || typeof args !== 'object') {
+    try {
+      return JSON.stringify(args) ?? '';
+    } catch {
+      return '';
+    }
+  }
+  const { _meta: _ignored, ...rest } = args;
+  try {
+    return JSON.stringify(rest) ?? '';
+  } catch {
+    // Cyclic or otherwise unserializable args: fall back to a stable marker so
+    // repeated calls still group together rather than never tripping.
+    return '<unserializable>';
+  }
+}
+
+/**
+ * Compile the legacy flat `allowTools` whitelist plus the ordered user rules
+ * into a single ordered rule list.
+ *
+ * Ordering (findLast semantics — the LAST matching rule decides):
+ *   1. implicit `deny *` base rule — present only when `allowTools` is
+ *      non-empty, so tools outside the whitelist are denied (legacy
+ *      whitelist semantics);
+ *   2. one `allow` rule per `allowTools` entry — later than the base deny,
+ *      so listed tools win over it;
+ *   3. user `rules` last — a matching user rule always takes precedence over
+ *      both the whitelist base and its allow entries.
+ *
+ * When both inputs are empty the compiled list is empty and every call is
+ * allowed — identical to the pre-gate behavior.
+ */
+export function compileToolRules(
+  allowTools: readonly string[],
+  rules: readonly ToolPermissionRule[] | readonly ToolExecutionRuleConfig[],
+): ToolPermissionRule[] {
+  const whitelistBase: ToolPermissionRule[] =
+    allowTools.length > 0 ? [{ tool: '*', action: 'deny', source: 'allowTools' }] : [];
+  const expanded: ToolPermissionRule[] = allowTools.map((tool) => ({
+    tool,
+    action: 'allow' as const,
+    source: 'allowTools' as const,
+  }));
+  const userRules: ToolPermissionRule[] = rules.map((rule) =>
+    rule.pattern === undefined
+      ? { tool: rule.tool, action: rule.action, source: 'rules' as const }
+      : { tool: rule.tool, pattern: rule.pattern, action: rule.action, source: 'rules' as const },
+  );
+  return [...whitelistBase, ...expanded, ...userRules];
+}
+
+/**
+ * Tool selector match: exact name, `domain/*` (matches every tool whose name
+ * starts with `domain_`), or `*` (match everything).
+ */
+export function ruleMatchesTool(ruleTool: string, toolName: string): boolean {
+  if (ruleTool === '*') return true;
+  if (ruleTool.endsWith('/*')) {
+    return toolName.startsWith(`${ruleTool.slice(0, -2)}_`);
+  }
+  return ruleTool === toolName;
+}
+
+/**
+ * Evaluate the ordered rule list. findLast semantics: the LAST matching rule
+ * decides; no matching rule means allow. A rule with a `pattern` only matches
+ * when its wildcard pattern also matches the serialized arguments.
+ */
+export function evaluateToolRules(
+  compiledRules: readonly ToolPermissionRule[],
+  toolName: string,
+  argsJson: string,
+): ToolGateDecision {
+  let matched: ToolPermissionRule | null = null;
+  for (const rule of compiledRules) {
+    if (!ruleMatchesTool(rule.tool, toolName)) continue;
+    if (rule.pattern !== undefined && !matchesWildcardPattern(argsJson, rule.pattern)) continue;
+    matched = rule;
+  }
+  return { allowed: matched === null || matched.action !== 'deny', matchedRule: matched };
+}
+
+/** Human-readable one-line rule description used in deny error responses. */
+export function describeRule(rule: ToolPermissionRule): string {
+  const pattern = rule.pattern === undefined ? '' : ` pattern=${JSON.stringify(rule.pattern)}`;
+  return `tool=${rule.tool}${pattern} action=${rule.action}`;
+}
+
+function buildGateErrorResponse(payload: Record<string, unknown>): {
+  content: Array<{ type: 'text'; text: string }>;
+  isError: true;
+} {
+  return {
+    content: [{ type: 'text', text: JSON.stringify({ success: false, ...payload }, null, 2) }],
+    isError: true,
+  };
+}
+
+/**
+ * Build the actionable deny response: names the matched rule (tool + pattern +
+ * action) and lists the active rules (capped at TOOL_GATE_MAX_LISTED_RULES
+ * entries with a truncation note) so the caller can adjust its plan.
+ */
+export function buildToolGateDenyResponse(
+  toolName: string,
+  matchedRule: ToolPermissionRule,
+  compiledRules: readonly ToolPermissionRule[],
+): { content: Array<{ type: 'text'; text: string }>; isError: true } {
+  const listed = compiledRules.slice(0, TOOL_GATE_MAX_LISTED_RULES).map(describeRule);
+  const remaining = compiledRules.length - listed.length;
+  const activeRules = remaining > 0 ? [...listed, `...and ${remaining} more rules`] : listed;
+  const reason =
+    matchedRule.source === 'allowTools'
+      ? `Tool "${toolName}" is not in the toolExecution.allowTools whitelist ` +
+        `(matched rule: ${describeRule(matchedRule)}).`
+      : `Tool "${toolName}" was denied by a toolExecution permission rule ` +
+        `(${describeRule(matchedRule)}).`;
+
+  return buildGateErrorResponse({
+    error: reason,
+    deniedBy: { tool: matchedRule.tool, pattern: matchedRule.pattern, action: matchedRule.action },
+    activeRules,
+    hint:
+      'Switch to a tool that the active rules allow, adjust the call arguments to avoid the ' +
+      'denied pattern, or update toolExecution.rules (MCP_TOOL_RULES_JSON) if this deny is ' +
+      'not intended.',
+  });
+}
+
+/**
+ * Build the doom-loop error response. Every tripped call returns an error;
+ * the extended advisory is only included on `trip.fullAdvisory` calls
+ * (every `threshold`-th consecutive identical call) to avoid error flooding.
+ */
+export function buildDoomLoopErrorResponse(
+  toolName: string,
+  argsJson: string,
+  trip: DoomLoopTrip,
+): { content: Array<{ type: 'text'; text: string }>; isError: true } {
+  const payload: Record<string, unknown> = {
+    error:
+      `Doom loop detected: tool "${toolName}" has been called ${trip.count} consecutive times ` +
+      `with identical arguments (threshold: ${trip.threshold}). The call was blocked.`,
+    doomLoop: {
+      toolName,
+      consecutiveCount: trip.count,
+      threshold: trip.threshold,
+    },
+    hint:
+      'Do not repeat this call. Change the arguments to make progress, or switch to a ' +
+      'different tool/approach to reach the objective.',
+  };
+  if (trip.fullAdvisory) {
+    payload.advisory =
+      `Repeating "${toolName}" with ${argsJson} will keep failing. Re-evaluate the task ` +
+      'objective: inspect the last successful result, adjust the input, or choose another ' +
+      'method entirely.';
+  }
+  return buildGateErrorResponse(payload);
+}
+
+/* ── Doom-loop per-session state ──
+ *
+ * Carrier: the ToolCallContextGuard instance itself (see recordDoomLoopCall
+ * below), reusing the same per-session Map pattern as `repeatStates`. The
+ * guard instance is per server context, so doom counters are isolated per
+ * context and garbage-collected with it; per-MCP-client-session scoping uses
+ * the same ToolRequestContext sessionId key as repeat detection.
+ */

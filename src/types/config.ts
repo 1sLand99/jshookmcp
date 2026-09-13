@@ -11,6 +11,43 @@ export interface Config {
   captcha: CaptchaRuntimeConfig;
   /** Large-data response offloading (LargeDataOffloader). Optional — omitted in tests. */
   offloader?: OffloaderConfig;
+  /**
+   * Tool-execution permission gate (ordered rules + legacy allowTools
+   * whitelist). Optional — omitted when tests build partial configs; a
+   * missing section behaves exactly as before the gate existed (allow all).
+   */
+  toolExecution?: ToolExecutionConfig;
+}
+
+/** One ordered tool-execution permission rule (the LAST matching rule wins). */
+export interface ToolExecutionRuleConfig {
+  /**
+   * Tool selector: an exact tool name, a `domain/*` wildcard (matches every
+   * tool whose name starts with `domain_`, e.g. `page/*` matches
+   * `page_navigate`), or `*` (matches everything).
+   */
+  tool: string;
+  /**
+   * Optional wildcard pattern (`*` = any run of characters) matched against
+   * the stable JSON serialization of the tool arguments.
+   */
+  pattern?: string;
+  action: 'allow' | 'deny';
+}
+
+/** Tool-execution permission gate configuration. */
+export interface ToolExecutionConfig {
+  /**
+   * Legacy flat tool-name whitelist, kept for backward compatibility. When
+   * non-empty, tools outside the list are denied. Compiled into equivalent
+   * allow rules that precede `rules` in the ordered rule list.
+   */
+  allowTools: string[];
+  /**
+   * Ordered permission rules. Compiled after the `allowTools` expansion, so a
+   * matching user rule always takes precedence over the legacy whitelist.
+   */
+  rules: ToolExecutionRuleConfig[];
 }
 
 export type MCPTransportMode = 'stdio' | 'http';

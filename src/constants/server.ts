@@ -352,6 +352,22 @@ export const COST_HINT_MULTIPLIER = float('COST_HINT_MULTIPLIER', 0.25);
 /** Preview length (chars) for the args payload in hung-tool watchdog logs. */
 export const ARGS_PREVIEW_MAX_CHARS = int('ARGS_PREVIEW_MAX_CHARS', 500);
 
+/**
+ * Doom-loop circuit breaker: block a tool call once the SAME tool has been
+ * invoked this many consecutive times with identical arguments within one MCP
+ * session (a call with different arguments resets the counter). Once the
+ * threshold is reached every further identical call returns an error response,
+ * but the long advisory text is only repeated every `threshold` calls to avoid
+ * flooding the client. 0 disables the breaker.
+ *
+ * @env MCP_DOOM_LOOP_THRESHOLD
+ * @default 5
+ */
+export const MCP_DOOM_LOOP_THRESHOLD = int('MCP_DOOM_LOOP_THRESHOLD', 5);
+
+/** Upper bound on how many rule summaries are listed in a deny error response. */
+export const TOOL_GATE_MAX_LISTED_RULES = 10;
+
 /* ================================================================== */
 /*  Time units                                                         */
 /* ================================================================== */

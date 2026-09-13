@@ -17,6 +17,13 @@ import { asErrorResponse } from '@server/domains/shared/response';
 import { getToolDomain } from '@server/ToolCatalog';
 import { fastValidateToolArgs } from '@server/registry/compiled-validators';
 import { refreshDomainTtlForTool } from '@server/MCPServer.activation.ttl';
+import {
+  buildDoomLoopErrorResponse,
+  buildToolGateDenyResponse,
+  compileToolRules,
+  evaluateToolRules,
+  stableSerializeArgs,
+} from '@server/ToolCallContextGuard';
 import type { MCPServerContext } from '@server/MCPServer.context';
 import type { ToolArgs } from '@server/types';
 import {
@@ -28,6 +35,7 @@ import {
   COST_HINT_SECURITY,
   COST_HINT_WORKFLOW,
   DEFAULT_RETRY_AFTER_SEC,
+  MCP_DOOM_LOOP_THRESHOLD,
   TOOL_EXEC_HANG_WATCHDOG_MS,
 } from '@src/constants';
 import {
@@ -91,6 +99,37 @@ export function estimateBrowserSessionToolCostMs(toolName: string, args: ToolArg
 }
 
 /**
+ * Tool-execution permission gate: ordered rules from ctx.config.toolExecution
+ * (legacy allowTools whitelist compiled as leading allow rules, last matching
+ * rule wins) followed by the doom-loop circuit breaker. Runs BEFORE any
+ * execution machinery so a denied or looped call never touches the circuit
+ * breaker, browser session coordination, or the token budget.
+ *
+ * Returns the immediate error response, or null when the call may proceed.
+ */
+function checkToolExecutionGate(
+  ctx: MCPServerContext,
+  name: string,
+  args: ToolArgs,
+): { content: Array<{ type: 'text'; text: string }>; isError: true } | null {
+  const argsJson = stableSerializeArgs(args);
+  const toolExecution = ctx.config?.toolExecution;
+  const compiledRules = compileToolRules(
+    toolExecution?.allowTools ?? [],
+    toolExecution?.rules ?? [],
+  );
+  const decision = evaluateToolRules(compiledRules, name, argsJson);
+  if (!decision.allowed && decision.matchedRule) {
+    return buildToolGateDenyResponse(name, decision.matchedRule, compiledRules);
+  }
+  const trip = ctx.contextGuard.recordDoomLoopCall(name, argsJson, MCP_DOOM_LOOP_THRESHOLD);
+  if (trip) {
+    return buildDoomLoopErrorResponse(name, argsJson, trip);
+  }
+  return null;
+}
+
+/**
  * Executes a tool with full tracking: circuit breaker, session coordination,
  * offloading, context enrichment, token budget, domain TTL, event emission.
  *
@@ -108,6 +147,9 @@ export async function executeToolWithTracking(ctx: MCPServerContext, name: strin
   const executionCpuStart = collectExecutionMetrics ? process.cpuUsage() : null;
   const executionMemoryBefore = collectExecutionMetrics ? captureExecutionMetricMemory() : null;
   try {
+    const gateResponse = checkToolExecutionGate(ctx, name, args);
+    if (gateResponse) return gateResponse;
+
     if (ctx.circuitBreaker.shouldBlock(name)) {
       const state = ctx.circuitBreaker.getState(name);
       const retryAfter = state

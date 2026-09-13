@@ -55,7 +55,7 @@ import type { MCPServerContext } from '@server/MCPServer.context';
 function createMockCtx(routerExecute: () => Promise<unknown>): MCPServerContext {
   return {
     circuitBreaker: {
-      shouldBlock: () => false,
+      shouldBlock: vi.fn(() => false),
       getState: () => null,
       getRecoveryMs: () => 30_000,
       recordSuccess: vi.fn(),
@@ -64,6 +64,7 @@ function createMockCtx(routerExecute: () => Promise<unknown>): MCPServerContext 
     contextGuard: {
       isContextSensitive: () => false,
       recordCall: vi.fn(),
+      recordDoomLoopCall: vi.fn(() => null),
       enrichResponse: (_name: string, response: unknown) => response,
     },
     router: { execute: routerExecute },
@@ -81,6 +82,14 @@ function createMockCtx(routerExecute: () => Promise<unknown>): MCPServerContext 
     activatedRegisteredTools: new Map(),
     routerImpl: undefined,
   } as unknown as MCPServerContext;
+}
+
+function withToolExecutionConfig(
+  ctx: MCPServerContext,
+  toolExecution: Record<string, unknown>,
+): MCPServerContext {
+  (ctx as unknown as { config: Record<string, unknown> }).config = { toolExecution };
+  return ctx;
 }
 
 describe('executeToolWithTracking — error path', () => {
@@ -144,5 +153,130 @@ describe('executeToolWithTracking — success-flag extraction (a1-02)', () => {
     }));
     await executeToolWithTracking(ctx, 'page_navigate', {});
     expect(ctx.circuitBreaker.recordFailure).toHaveBeenCalledWith('page_navigate');
+  });
+});
+
+describe('executeToolWithTracking — tool-execution permission gate', () => {
+  function gateText(response: unknown): Record<string, unknown> {
+    const content = (response as { content: Array<{ text: string }> }).content;
+    return JSON.parse(content[0]!.text) as Record<string, unknown>;
+  }
+
+  it('blocks a tool denied by an ordered rule before any execution machinery runs', async () => {
+    const routerExecute = vi.fn();
+    const ctx = withToolExecutionConfig(createMockCtx(routerExecute), {
+      allowTools: [],
+      rules: [{ tool: 'page/*', action: 'deny' }],
+    });
+
+    const response = await executeToolWithTracking(ctx, 'page_navigate', { url: 'https://x' });
+
+    expect(response).toMatchObject({ isError: true });
+    const payload = gateText(response);
+    expect(payload.success).toBe(false);
+    expect(payload.error).toContain('page/*');
+    expect(payload.error).toContain('action=deny');
+    expect(payload.deniedBy).toMatchObject({ tool: 'page/*', action: 'deny' });
+    // Denied calls never reach the router, circuit breaker, or doom tracker.
+    expect(routerExecute).not.toHaveBeenCalled();
+    expect(ctx.circuitBreaker.shouldBlock).not.toHaveBeenCalled();
+    expect(ctx.contextGuard.recordDoomLoopCall).not.toHaveBeenCalled();
+  });
+
+  it('blocks unlisted tools when the allowTools whitelist is non-empty', async () => {
+    const ctx = withToolExecutionConfig(createMockCtx(vi.fn()), {
+      allowTools: ['page_navigate'],
+      rules: [],
+    });
+
+    const response = await executeToolWithTracking(ctx, 'console_execute', {});
+    const payload = gateText(response);
+
+    expect(response).toMatchObject({ isError: true });
+    expect(payload.error).toContain('allowTools whitelist');
+    expect(payload.error).toContain('console_execute');
+  });
+
+  it('allows listed tools through the legacy allowTools whitelist', async () => {
+    const routerExecute = vi.fn(async () => R.ok().json());
+    const ctx = withToolExecutionConfig(createMockCtx(routerExecute), {
+      allowTools: ['page_navigate'],
+      rules: [],
+    });
+
+    const response = await executeToolWithTracking(ctx, 'page_navigate', {});
+
+    expect(response).not.toMatchObject({ isError: true });
+    expect(routerExecute).toHaveBeenCalledWith('page_navigate', {});
+  });
+
+  it('applies pattern rules: deny on args hit, allow on args miss', async () => {
+    const routerExecute = vi.fn(async () => R.ok().json());
+    const ctx = withToolExecutionConfig(createMockCtx(routerExecute), {
+      allowTools: [],
+      rules: [{ tool: 'page_evaluate', pattern: '*dangerous*', action: 'deny' }],
+    });
+
+    const blocked = await executeToolWithTracking(ctx, 'page_evaluate', { expr: 'dangerous()' });
+    expect(blocked).toMatchObject({ isError: true });
+    expect(gateText(blocked).deniedBy).toMatchObject({
+      tool: 'page_evaluate',
+      pattern: '*dangerous*',
+      action: 'deny',
+    });
+
+    const allowed = await executeToolWithTracking(ctx, 'page_evaluate', { expr: 'safe()' });
+    expect(allowed).not.toMatchObject({ isError: true });
+    expect(routerExecute).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a later user allow rule override an earlier deny (findLast semantics)', async () => {
+    const routerExecute = vi.fn(async () => R.ok().json());
+    const ctx = withToolExecutionConfig(createMockCtx(routerExecute), {
+      allowTools: [],
+      rules: [
+        { tool: 'page/*', action: 'deny' },
+        { tool: 'page_navigate', action: 'allow' },
+      ],
+    });
+
+    const response = await executeToolWithTracking(ctx, 'page_navigate', {});
+    expect(response).not.toMatchObject({ isError: true });
+    expect(routerExecute).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the doom-loop error response when the guard trips', async () => {
+    const routerExecute = vi.fn();
+    const ctx = createMockCtx(routerExecute);
+    (ctx.contextGuard.recordDoomLoopCall as ReturnType<typeof vi.fn>).mockReturnValue({
+      count: 5,
+      threshold: 5,
+      fullAdvisory: true,
+    });
+
+    const response = await executeToolWithTracking(ctx, 'page_navigate', { url: 'https://x' });
+
+    expect(response).toMatchObject({ isError: true });
+    const payload = gateText(response);
+    expect(payload.error).toContain('Doom loop detected');
+    expect(payload.doomLoop).toEqual({
+      toolName: 'page_navigate',
+      consecutiveCount: 5,
+      threshold: 5,
+    });
+    expect(payload.advisory).toBeDefined();
+    // Looped calls never reach the router or the circuit breaker.
+    expect(routerExecute).not.toHaveBeenCalled();
+    expect(ctx.circuitBreaker.shouldBlock).not.toHaveBeenCalled();
+  });
+
+  it('proceeds normally when no toolExecution config is present (pre-gate behavior)', async () => {
+    const routerExecute = vi.fn(async () => R.ok().json());
+    const ctx = createMockCtx(routerExecute);
+
+    const response = await executeToolWithTracking(ctx, 'page_navigate', {});
+
+    expect(response).not.toMatchObject({ isError: true });
+    expect(routerExecute).toHaveBeenCalledTimes(1);
   });
 });
