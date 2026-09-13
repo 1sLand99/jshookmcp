@@ -7,6 +7,7 @@ import {
   extensionTools,
   artifactTools,
   sandboxTools,
+  snapshotTools,
 } from '@server/domains/maintenance/definitions';
 import type {
   CoreMaintenanceHandlers,
@@ -21,7 +22,12 @@ const SANDBOX_DEP_KEY = 'sandboxHandlers' as const;
 type H = CoreMaintenanceHandlers;
 type E = ExtensionManagementHandlers;
 type S = SandboxToolHandlers;
-const coreToolDefinitions = [...tokenBudgetTools, ...cacheTools, ...artifactTools] as const;
+const coreToolDefinitions = [
+  ...tokenBudgetTools,
+  ...cacheTools,
+  ...artifactTools,
+  ...snapshotTools,
+] as const;
 const extensionToolDefinitions = [...extensionTools] as const;
 const sandboxToolDefinitions = [...sandboxTools] as const;
 const t = toolLookup([
@@ -84,6 +90,31 @@ const coreRegistrations = defineMethodRegistrations<
       tool: 'maintenance_detect_gpu',
       method: 'handleDetectGpu',
       profiles: ['workflow', 'full'],
+    },
+    {
+      tool: 'snapshot_create',
+      method: 'handleSnapshotCreate',
+      mapArgs: (args) => [
+        {
+          targetDir: args.targetDir as unknown,
+          label: args.label as unknown,
+        },
+      ],
+    },
+    {
+      tool: 'snapshot_list',
+      method: 'handleSnapshotList',
+      mapArgs: (args) => [{ targetDir: args.targetDir as unknown }],
+    },
+    {
+      tool: 'snapshot_restore',
+      method: 'handleSnapshotRestore',
+      mapArgs: (args) => [
+        {
+          targetDir: args.targetDir as unknown,
+          snapshotId: args.snapshotId as unknown,
+        },
+      ],
     },
   ],
 });

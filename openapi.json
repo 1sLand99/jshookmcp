@@ -8685,6 +8685,44 @@
         },
         "type": "object"
       },
+      "maintenance_snapshot_create": {
+        "properties": {
+          "label": {
+            "description": "Optional human-readable label stored with the snapshot",
+            "type": "string"
+          },
+          "targetDir": {
+            "description": "Directory to snapshot. Must resolve inside the project root or system temp directories.",
+            "type": "string"
+          }
+        },
+        "required": ["targetDir"],
+        "type": "object"
+      },
+      "maintenance_snapshot_list": {
+        "properties": {
+          "targetDir": {
+            "description": "Directory whose snapshots should be listed. Must resolve inside the project root or system temp directories.",
+            "type": "string"
+          }
+        },
+        "required": ["targetDir"],
+        "type": "object"
+      },
+      "maintenance_snapshot_restore": {
+        "properties": {
+          "snapshotId": {
+            "description": "Snapshot id from snapshot_list",
+            "type": "string"
+          },
+          "targetDir": {
+            "description": "Directory to restore. Must resolve inside the project root or system temp directories.",
+            "type": "string"
+          }
+        },
+        "required": ["targetDir", "snapshotId"],
+        "type": "object"
+      },
       "memory_memory_allocate": {
         "properties": {
           "pid": {
@@ -29577,6 +29615,99 @@
         "x-domain": "maintenance"
       }
     },
+    "/maintenance/snapshot_create": {
+      "post": {
+        "description": "Create a shadow-git snapshot of a scan-artifact directory (artifacts, HAR, screenshots, debugger-sessions, ...) so it can be rolled back later. Uses an ISOLATED git object store outside the target directory — the project .git is never touched and no git commit is made. The store keeps full file contents, so snapshots can grow large; snapshot output directories, not source trees.",
+        "operationId": "snapshot_create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/maintenance_snapshot_create"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Create a shadow-git snapshot of a scan-artifact directory (artifacts, HAR, screenshots, debugger-sessions, ...) so it...",
+        "tags": ["maintenance"],
+        "x-domain": "maintenance"
+      }
+    },
+    "/maintenance/snapshot_list": {
+      "post": {
+        "description": "List shadow-git snapshots recorded for a directory, newest first.",
+        "operationId": "snapshot_list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/maintenance_snapshot_list"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "List shadow-git snapshots recorded for a directory, newest first.",
+        "tags": ["maintenance"],
+        "x-domain": "maintenance"
+      }
+    },
+    "/maintenance/snapshot_restore": {
+      "post": {
+        "description": "Restore a directory to a recorded shadow-git snapshot. DESTRUCTIVE: files modified after the snapshot are overwritten, files created after it are DELETED, and files deleted after it are written back (full revert semantics). The isolated store never touches the project .git. Create a fresh snapshot_create first if you may need the current state.",
+        "operationId": "snapshot_restore",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/maintenance_snapshot_restore"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Restore a directory to a recorded shadow-git snapshot.",
+        "tags": ["maintenance"],
+        "x-domain": "maintenance"
+      }
+    },
     "/memory/memory_allocate": {
       "post": {
         "description": "Allocate executable memory in target process (VirtualAllocEx wrapper). Win32 only. Requires JSHOOK_INJECTION_ENABLE=1.",
@@ -32083,7 +32214,7 @@
     },
     "/meta/search_tools": {
       "post": {
-        "description": "Search 724 tools across 35 capability domains. This includes built-in tools plus any loaded plugin/workflow tools (0 currently loaded). In search-tier sessions, call this before assuming a capability is unavailable. Use activate_tools for exact matches, activate_domain for an entire domain. Domains: browser (85) | memory (74) | native-emulator (56) | binary-instrument (44) | network (38) | boringssl-inspector (29) | process (28) | adb-bridge (26) | core (25) | debugger (21) | exploit-dev (21) | v8-inspector (21) | protocol-analysis (20) | platform (18) | streaming (17) | wasm (17) | dart-inspector (16) | syscall-hook (15) | maintenance (14) | instrumentation (13) | workflow (13) | coordination (12) | canvas (11) | proxy (11) | trace (10) | webgpu (10) | cross-domain (8) | mojo-ipc (8) | extension-registry (7) | graphql (7) | sourcemap (7) | transform (7) | native-bridge (6) | encoding (5) | tasks (4). Query tip: before searching, distill your intent into key concepts (action verb + target + domain). The engine combines token matching, fuzzy names, profile context, and optional static embeddings.",
+        "description": "Search 727 tools across 35 capability domains. This includes built-in tools plus any loaded plugin/workflow tools (0 currently loaded). In search-tier sessions, call this before assuming a capability is unavailable. Use activate_tools for exact matches, activate_domain for an entire domain. Domains: browser (85) | memory (74) | native-emulator (56) | binary-instrument (44) | network (38) | boringssl-inspector (29) | process (28) | adb-bridge (26) | core (25) | debugger (21) | exploit-dev (21) | v8-inspector (21) | protocol-analysis (20) | platform (18) | maintenance (17) | streaming (17) | wasm (17) | dart-inspector (16) | syscall-hook (15) | instrumentation (13) | workflow (13) | coordination (12) | canvas (11) | proxy (11) | trace (10) | webgpu (10) | cross-domain (8) | mojo-ipc (8) | extension-registry (7) | graphql (7) | sourcemap (7) | transform (7) | native-bridge (6) | encoding (5) | tasks (4). Query tip: before searching, distill your intent into key concepts (action verb + target + domain). The engine combines token matching, fuzzy names, profile context, and optional static embeddings.",
         "operationId": "search_tools",
         "requestBody": {
           "content": {
@@ -32107,7 +32238,7 @@
             "description": "Tool execution result returned as MCP tool result text content."
           }
         },
-        "summary": "Search 724 tools across 35 capability domains.",
+        "summary": "Search 727 tools across 35 capability domains.",
         "tags": ["meta"]
       }
     },

@@ -21,6 +21,7 @@ describe('server/domains/maintenance exports', () => {
         'cacheTools',
         'extensionTools',
         'sandboxTools',
+        'snapshotTools',
         'tokenBudgetTools',
       ],
       loadDefinitions: () => import('@server/domains/maintenance/definitions'),
@@ -30,6 +31,7 @@ describe('server/domains/maintenance exports', () => {
         module.artifactTools as Array<Record<string, unknown>>,
         module.extensionTools as Array<Record<string, unknown>>,
         module.sandboxTools as Array<Record<string, unknown>>,
+        module.snapshotTools as Array<Record<string, unknown>>,
       ],
       loadManifest: () => import('@server/domains/maintenance/manifest'),
     });

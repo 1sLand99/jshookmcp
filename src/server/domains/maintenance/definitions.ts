@@ -101,6 +101,53 @@ export const sandboxTools: Tool[] = [
   ),
 ];
 
+// ── Shadow-git snapshots ──
+
+export const snapshotTools: Tool[] = [
+  tool('snapshot_create', (t) =>
+    t
+      .desc(
+        'Create a shadow-git snapshot of a scan-artifact directory (artifacts, HAR, screenshots, ' +
+          'debugger-sessions, ...) so it can be rolled back later. Uses an ISOLATED git object ' +
+          'store outside the target directory — the project .git is never touched and no git ' +
+          'commit is made. The store keeps full file contents, so snapshots can grow large; ' +
+          'snapshot output directories, not source trees.',
+      )
+      .string(
+        'targetDir',
+        'Directory to snapshot. Must resolve inside the project root or system temp directories.',
+      )
+      .string('label', 'Optional human-readable label stored with the snapshot')
+      .required('targetDir'),
+  ),
+  tool('snapshot_list', (t) =>
+    t
+      .desc('List shadow-git snapshots recorded for a directory, newest first.')
+      .string(
+        'targetDir',
+        'Directory whose snapshots should be listed. Must resolve inside the project root or system temp directories.',
+      )
+      .required('targetDir')
+      .query(),
+  ),
+  tool('snapshot_restore', (t) =>
+    t
+      .desc(
+        'Restore a directory to a recorded shadow-git snapshot. DESTRUCTIVE: files modified after ' +
+          'the snapshot are overwritten, files created after it are DELETED, and files deleted ' +
+          'after it are written back (full revert semantics). The isolated store never touches ' +
+          'the project .git. Create a fresh snapshot_create first if you may need the current state.',
+      )
+      .string(
+        'targetDir',
+        'Directory to restore. Must resolve inside the project root or system temp directories.',
+      )
+      .string('snapshotId', 'Snapshot id from snapshot_list')
+      .required('targetDir', 'snapshotId')
+      .destructive(),
+  ),
+];
+
 // ── Artifacts ──
 
 export const artifactTools: Tool[] = [

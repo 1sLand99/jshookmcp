@@ -23105,6 +23105,88 @@ export const GENERATED_TOOL_CATALOG = [
   },
   {
     tool: {
+      name: 'snapshot_create',
+      description:
+        'Create a shadow-git snapshot of a scan-artifact directory (artifacts, HAR, screenshots, debugger-sessions, ...) so it can be rolled back later. Uses an ISOLATED git object store outside the target directory — the project .git is never touched and no git commit is made. The store keeps full file contents, so snapshots can grow large; snapshot output directories, not source trees.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          targetDir: {
+            type: 'string',
+            description:
+              'Directory to snapshot. Must resolve inside the project root or system temp directories.',
+          },
+          label: {
+            type: 'string',
+            description: 'Optional human-readable label stored with the snapshot',
+          },
+        },
+        required: ['targetDir'],
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    domain: 'maintenance',
+  },
+  {
+    tool: {
+      name: 'snapshot_list',
+      description: 'List shadow-git snapshots recorded for a directory, newest first.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          targetDir: {
+            type: 'string',
+            description:
+              'Directory whose snapshots should be listed. Must resolve inside the project root or system temp directories.',
+          },
+        },
+        required: ['targetDir'],
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    domain: 'maintenance',
+  },
+  {
+    tool: {
+      name: 'snapshot_restore',
+      description:
+        'Restore a directory to a recorded shadow-git snapshot. DESTRUCTIVE: files modified after the snapshot are overwritten, files created after it are DELETED, and files deleted after it are written back (full revert semantics). The isolated store never touches the project .git. Create a fresh snapshot_create first if you may need the current state.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          targetDir: {
+            type: 'string',
+            description:
+              'Directory to restore. Must resolve inside the project root or system temp directories.',
+          },
+          snapshotId: {
+            type: 'string',
+            description: 'Snapshot id from snapshot_list',
+          },
+        },
+        required: ['targetDir', 'snapshotId'],
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    domain: 'maintenance',
+  },
+  {
+    tool: {
       name: 'sourcemap_coverage',
       description: 'Summarize mapped and unmapped source coverage.',
       inputSchema: {

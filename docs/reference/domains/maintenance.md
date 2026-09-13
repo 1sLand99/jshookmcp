@@ -21,7 +21,7 @@
 - maintenance + workflow
 - maintenance + extensions
 
-## 工具清单（14）
+## 工具清单（17）
 
 | 工具 | 说明 |
 | --- | --- |
@@ -34,6 +34,9 @@
 | `cleanup_artifacts` | 按保留策略清理生成产物、截图和调试会话。 |
 | `doctor_environment` | 检查可选依赖、桥接端点和平台限制等环境状态。 |
 | `maintenance_detect_gpu` | 从 WebGL/WebGPU renderer 字符串检测 GPU 家族，分类为 NVIDIA、AMD、Intel、Apple、Mali、Adreno、PowerVR、Vivante、Broadcom、Qualcomm、Microsoft。纯 TS 分类器，无需浏览器。至少提供 webglRenderer、webgpuDescription 或 deviceName 之一。 |
+| `snapshot_create` | 待补充中文：Create a shadow-git snapshot of a scan-artifact directory (artifacts, HAR, screenshots, debugger-sessions, ...) so it can be rolled back later. Uses an ISOLATED git object store outside the target directory — the project .git is never touched and no git commit is made. The store keeps full file contents, so snapshots can grow large; snapshot output directories, not source trees. |
+| `snapshot_list` | 待补充中文：List shadow-git snapshots recorded for a directory, newest first. |
+| `snapshot_restore` | 待补充中文：Restore a directory to a recorded shadow-git snapshot. DESTRUCTIVE: files modified after the snapshot are overwritten, files created after it are DELETED, and files deleted after it are written back (full revert semantics). The isolated store never touches the project .git. Create a fresh snapshot_create first if you may need the current state. |
 | `list_extensions` | 列出本地已加载的插件、工作流和扩展工具。 |
 | `reload_extensions` | 从已配置目录重新加载全部插件和工作流。 |
 | `browse_extension_registry` | 浏览远程 jshookmcp 扩展注册表以发现可用插件和工作流。 |
