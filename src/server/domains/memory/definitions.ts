@@ -1477,4 +1477,39 @@ export const memoryScanToolDefinitions: readonly Tool[] = [
       .required()
       .query(),
   ),
+
+  // ── Typed Memory Read (koffi endian-sensitive decoding) ──
+  tool('memory_read_typed', (t) =>
+    t
+      .desc(
+        'Read process memory as typed numeric values with explicit endianness. ' +
+          'Decodes consecutive values starting at address via koffi endian-sensitive integer ' +
+          'types (uint64_le / int32_be / …) — no manual byte swapping needed. 64-bit values are ' +
+          "returned as decimal strings alongside two's-complement hex. float/double use IEEE-754 " +
+          'with the requested endianness. Supports up to 1024 consecutive values. Ideal for struct ' +
+          'inspection, big-endian network payloads, and game memory analysis.',
+      )
+      .string('pid', 'Target process ID (optional when a browser session is attached)')
+      .string('address', 'Starting memory address (hex, e.g. "0x1A2B3C")')
+      .enum(
+        'type',
+        [
+          'uint8',
+          'int8',
+          'uint16',
+          'int16',
+          'uint32',
+          'int32',
+          'uint64',
+          'int64',
+          'float',
+          'double',
+        ],
+        'Numeric type to read',
+      )
+      .enum('endian', ['little', 'big'], 'Byte order (default: little)')
+      .number('count', 'Number of consecutive values to read (default: 1, max: 1024)')
+      .required('address', 'type')
+      .query(),
+  ),
 ];

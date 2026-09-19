@@ -8,6 +8,7 @@ import { argEnum, argNumber } from '@server/domains/shared/parse-args';
 import { logger } from '@utils/logger';
 import { MemoryAuditTrail } from '@modules/process/memory/AuditTrail';
 import { requireStringArg, validateHexAddress, validateValueForType } from './validation';
+import { requireKoffi } from '@native/koffi-loader';
 
 const TOOL_WRITE_VALUE = 'memory_write_value';
 const TOOL_FREEZE = 'memory_freeze';
@@ -15,6 +16,21 @@ const TOOL_UNFREEZE = 'memory_freeze';
 const TOOL_DUMP = 'memory_dump';
 const TOOL_BATCH_EDIT = 'memory_batch_edit';
 const TOOL_WATCH = 'memory_watch';
+const TOOL_READ_TYPED = 'memory_read_typed';
+
+/** Numeric types accepted by memory_read_typed (koffi endian-sensitive decoding). */
+const READ_TYPED_TYPES = new Set<string>([
+  'uint8',
+  'int8',
+  'uint16',
+  'int16',
+  'uint32',
+  'int32',
+  'uint64',
+  'int64',
+  'float',
+  'double',
+]);
 
 /** Minimum freeze write interval — faster than this destabilises the target. */
 const FREEZE_MIN_INTERVAL_MS = 10;
@@ -48,6 +64,7 @@ function getByteSizeForValueType(valueType: string): number | undefined {
   switch (valueType) {
     case 'byte':
     case 'int8':
+    case 'uint8':
       return 1;
     case 'int16':
     case 'uint16':
@@ -274,6 +291,107 @@ export class ReadWriteHandlers {
           pid,
           address,
           size,
+          result: 'failure',
+          error: e instanceof Error ? e.message : String(e),
+          durationMs: Date.now() - start,
+        });
+        throw e;
+      }
+    });
+  }
+
+  async handleReadTyped(args: Record<string, unknown>) {
+    return handleSafe(async () => {
+      const pid = await this.resolvePid(args.pid);
+      const address = validateHexAddress(args.address, 'address');
+      const type = argEnum(args, 'type', READ_TYPED_TYPES);
+      if (type === undefined) {
+        throw new Error(
+          `${TOOL_READ_TYPED}: argument "type" is required. Expected one of: ${[...READ_TYPED_TYPES].join(', ')}`,
+        );
+      }
+      const endian = args.endian === 'big' ? 'big' : 'little';
+      const count = Math.floor(argNumber(args, 'count', 1));
+      if (!Number.isInteger(count) || count <= 0 || count > 1024) {
+        throw new Error(
+          `${TOOL_READ_TYPED}: argument "count" must be an integer in [1, 1024], got: ${JSON.stringify(args.count)}`,
+        );
+      }
+
+      const byteSize = getByteSizeForValueType(type);
+      if (byteSize === undefined) {
+        throw new Error(`${TOOL_READ_TYPED}: unsupported type "${type}"`);
+      }
+      const totalSize = byteSize * count;
+      if (totalSize > MEMORY_MAX_READ_BYTES) {
+        throw new Error(
+          `${TOOL_READ_TYPED}: read size ${totalSize} bytes exceeds maximum ${MEMORY_MAX_READ_BYTES}. Reduce count or read smaller regions.`,
+        );
+      }
+
+      const start = Date.now();
+      try {
+        const buf = await this.memCtrl.dumpMemory(pid, address, totalSize);
+        const baseAddr = BigInt(address.startsWith('0x') ? address : `0x${address}`);
+        const koffi = requireKoffi();
+        const values: Array<Record<string, unknown>> = [];
+        for (let i = 0; i < count; i += 1) {
+          const off = i * byteSize;
+          const valueAddr = baseAddr + BigInt(off);
+          const bytes = buf.subarray(off, off + byteSize);
+          let value: unknown;
+          let hexBytes: string;
+          if (type === 'float' || type === 'double') {
+            // IEEE-754 with explicit endianness — DataView, not koffi (no
+            // endian variant exists for float/double in koffi's decode table).
+            const view = new DataView(bytes.buffer, bytes.byteOffset, byteSize);
+            value =
+              type === 'float'
+                ? view.getFloat32(0, endian === 'little')
+                : view.getFloat64(0, endian === 'little');
+            hexBytes = Array.from(bytes)
+              .map((b) => b.toString(16).padStart(2, '0'))
+              .join('');
+          } else {
+            // koffi endian-sensitive integer type (uint64_le / int32_be / …).
+            // 64-bit values decode to BigInt; hex is the two's-complement
+            // unsigned pattern of the decoded value.
+            value = koffi.decode(bytes, 0, `${type}_${endian === 'big' ? 'be' : 'le'}`);
+            const raw = typeof value === 'bigint' ? value : BigInt(Math.trunc(value as number));
+            const mask = (1n << BigInt(byteSize * 8)) - 1n;
+            hexBytes = (raw & mask).toString(16).padStart(byteSize * 2, '0');
+          }
+          values.push({
+            index: i,
+            address: `0x${valueAddr.toString(16)}`,
+            value: String(value),
+            hex: `0x${hexBytes}`,
+          });
+        }
+        this.recordAudit({
+          operation: 'read_typed',
+          pid,
+          address,
+          size: totalSize,
+          result: 'success',
+          durationMs: Date.now() - start,
+        });
+        return {
+          pid,
+          address,
+          type,
+          endian,
+          count,
+          byteSize,
+          bytesRead: buf.length,
+          values,
+        };
+      } catch (e) {
+        this.recordAudit({
+          operation: 'read_typed',
+          pid,
+          address,
+          size: totalSize,
           result: 'failure',
           error: e instanceof Error ? e.message : String(e),
           durationMs: Date.now() - start,

@@ -327,7 +327,17 @@ const allRegistrations = [
     domain: DOMAIN,
     bind: bindByKey((h, a) => h.handleFreezeDispatch(a)),
   },
-  { tool: toolByName('memory_dump'), domain: DOMAIN, bind: bindByKey((h, a) => h.handleDump(a)) },
+  {
+    tool: toolByName('memory_dump'),
+    domain: DOMAIN,
+    bind: bindByKey((h, a) => h.handleDump(a)),
+  },
+  // ── Typed Read (koffi endian-sensitive decoding, cross-platform) ──
+  {
+    tool: toolByName('memory_read_typed'),
+    domain: DOMAIN,
+    bind: bindByKey((h, a) => h.handleReadTyped(a)),
+  },
   // ── Time Tools (Win32-only) ──
   {
     tool: toolByName('memory_speedhack'),

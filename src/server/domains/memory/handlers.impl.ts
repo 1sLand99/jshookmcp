@@ -286,6 +286,7 @@ export class MemoryScanHandlers {
   handleFreeze = (args: Record<string, unknown>) => this.readwrite.handleFreeze(args);
   handleUnfreeze = (args: Record<string, unknown>) => this.readwrite.handleUnfreeze(args);
   handleDump = (args: Record<string, unknown>) => this.readwrite.handleDump(args);
+  handleReadTyped = (args: Record<string, unknown>) => this.readwrite.handleReadTyped(args);
   handleWriteUndo = (args: Record<string, unknown>) => this.readwrite.handleWriteUndo(args);
   handleWriteRedo = (args: Record<string, unknown>) => this.readwrite.handleWriteRedo(args);
   handleBatchEdit = (args: Record<string, unknown>) => this.readwrite.handleBatchEdit(args);

@@ -17,7 +17,7 @@ function toolByName(name: string) {
 
 describe('memory tool annotations', () => {
   it('adds the full MCP annotation set to every memory tool', async () => {
-    expect(memoryScanToolDefinitions).toHaveLength(74);
+    expect(memoryScanToolDefinitions).toHaveLength(75);
 
     for (const tool of memoryScanToolDefinitions) {
       expect(tool.annotations, `Missing annotations for ${tool.name}`).toBeDefined();

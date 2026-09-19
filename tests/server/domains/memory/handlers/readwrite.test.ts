@@ -497,4 +497,118 @@ describe('ReadWriteHandlers', () => {
       expect(parsed.freezes[0].pid).toBe(1234);
     });
   });
+
+  describe('handleReadTyped', () => {
+    function typedArgs(overrides: Record<string, unknown> = {}) {
+      return { pid: 1234, address: '0x7FF612340000', type: 'uint64', ...overrides };
+    }
+
+    async function run(args: Record<string, unknown>) {
+      const response = await handlers.handleReadTyped(args);
+      return JSON.parse((response.content[0] as any).text);
+    }
+
+    it('decodes uint64 little-endian via koffi endian-sensitive types', async () => {
+      const buf = Buffer.alloc(8);
+      buf.writeBigInt64LE(0x1122334455667788n, 0);
+      mockmemCtrl.dumpMemory = vi.fn().mockResolvedValue(buf);
+
+      const parsed = await run(typedArgs());
+      expect(parsed.success).toBe(true);
+      expect(parsed.type).toBe('uint64');
+      expect(parsed.endian).toBe('little');
+      expect(parsed.values).toHaveLength(1);
+      expect(parsed.values[0].value).toBe('1234605616436508552');
+      expect(parsed.values[0].hex).toBe('0x1122334455667788');
+      expect(mockmemCtrl.dumpMemory).toHaveBeenCalledWith(1234, '0x7FF612340000', 8);
+    });
+
+    it('decodes big-endian uint32', async () => {
+      const buf = Buffer.alloc(4);
+      buf.writeUInt32BE(0xdeadbeef, 0);
+      mockmemCtrl.dumpMemory = vi.fn().mockResolvedValue(buf);
+
+      const parsed = await run(typedArgs({ type: 'uint32', endian: 'big' }));
+      expect(parsed.success).toBe(true);
+      expect(parsed.values[0].value).toBe('3735928559');
+      expect(parsed.values[0].hex).toBe('0xdeadbeef');
+    });
+
+    it('decodes negative int32 with twos-complement hex', async () => {
+      const buf = Buffer.alloc(4);
+      buf.writeInt32LE(-2, 0);
+      mockmemCtrl.dumpMemory = vi.fn().mockResolvedValue(buf);
+
+      const parsed = await run(typedArgs({ type: 'int32' }));
+      expect(parsed.success).toBe(true);
+      expect(parsed.values[0].value).toBe('-2');
+      expect(parsed.values[0].hex).toBe('0xfffffffe');
+    });
+
+    it('decodes negative int64 with twos-complement hex', async () => {
+      const buf = Buffer.alloc(8);
+      buf.writeBigInt64LE(-2n, 0);
+      mockmemCtrl.dumpMemory = vi.fn().mockResolvedValue(buf);
+
+      const parsed = await run(typedArgs({ type: 'int64' }));
+      expect(parsed.success).toBe(true);
+      expect(parsed.values[0].value).toBe('-2');
+      expect(parsed.values[0].hex).toBe('0xfffffffffffffffe');
+    });
+
+    it('decodes float and double with explicit endianness', async () => {
+      const buf = Buffer.alloc(12);
+      buf.writeFloatLE(1.5, 0);
+      buf.writeDoubleBE(-2.25, 4);
+      mockmemCtrl.dumpMemory = vi.fn().mockResolvedValue(buf);
+
+      const floatParsed = await run(typedArgs({ type: 'float' }));
+      expect(floatParsed.success).toBe(true);
+      expect(floatParsed.values[0].value).toBe('1.5');
+
+      mockmemCtrl.dumpMemory = vi.fn().mockResolvedValue(buf.subarray(4));
+      const doubleParsed = await run(typedArgs({ type: 'double', endian: 'big', count: 1 }));
+      expect(doubleParsed.values[0].value).toBe('-2.25');
+    });
+
+    it('reads multiple consecutive values with ascending addresses', async () => {
+      const buf = Buffer.alloc(16);
+      buf.writeUInt32LE(10, 0);
+      buf.writeUInt32LE(20, 4);
+      buf.writeUInt32LE(30, 8);
+      buf.writeUInt32LE(40, 12);
+      mockmemCtrl.dumpMemory = vi.fn().mockResolvedValue(buf);
+
+      const parsed = await run(typedArgs({ type: 'uint32', count: 4 }));
+      expect(parsed.success).toBe(true);
+      expect(parsed.values.map((v: any) => v.value)).toEqual(['10', '20', '30', '40']);
+      expect(parsed.values[1].address).toBe('0x7ff612340004');
+      expect(mockmemCtrl.dumpMemory).toHaveBeenCalledWith(1234, '0x7FF612340000', 16);
+    });
+
+    it('rejects missing type argument', async () => {
+      const parsed = await run(typedArgs({ type: undefined }));
+      expect(parsed.success).toBe(false);
+      expect(parsed.error).toContain('type" is required');
+    });
+
+    it('rejects count outside [1, 1024]', async () => {
+      const parsed = await run(typedArgs({ count: 0 }));
+      expect(parsed.success).toBe(false);
+      expect(parsed.error).toContain('count" must be an integer');
+    });
+
+    it('rejects reads whose count is capped at 1024', async () => {
+      const parsed = await run(typedArgs({ type: 'uint64', count: 2048 }));
+      expect(parsed.success).toBe(false);
+      expect(parsed.error).toContain('count" must be an integer in [1, 1024]');
+    });
+
+    it('reports native read failures', async () => {
+      mockmemCtrl.dumpMemory = vi.fn().mockRejectedValue(new Error('access denied'));
+      const parsed = await run(typedArgs());
+      expect(parsed.success).toBe(false);
+      expect(parsed.error).toContain('access denied');
+    });
+  });
 });

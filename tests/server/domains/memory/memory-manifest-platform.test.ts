@@ -87,9 +87,9 @@ describe('memory manifest platform filtering', () => {
     expect(manifest.domain).toBe('memory');
   });
 
-  it(`should have ${IS_WIN32 ? 74 : 57} tools on ${process.platform}`, async () => {
+  it(`should have ${IS_WIN32 ? 75 : 58} tools on ${process.platform}`, async () => {
     const manifest = await loadManifestWithPlatform();
-    const expected = IS_WIN32 ? 74 : 57;
+    const expected = IS_WIN32 ? 75 : 58;
     expect(manifest.registrations.length).toBe(expected);
   });
 
@@ -137,8 +137,8 @@ describe('memory manifest platform filtering', () => {
     const win32Manifest = await loadManifestWithPlatform('win32');
     const linuxManifest = await loadManifestWithPlatform('linux');
 
-    expect(win32Manifest.registrations.length).toBe(74);
-    // E5-A: +3, E5-B: +1, E5-C: +2, E5-D-heap: +3. CE parity: +2 (search_string, pointer_chain autoscan). Mono: +6 (Win32-only). Code injection: +4 (Win32-only). find_references +1. pointer_map +1. assemble +1. Minidump +1. Bookmark +2, antidetection +2 (antidetection + antidetection_check, cross-platform).
-    expect(linuxManifest.registrations.length).toBe(57);
+    expect(win32Manifest.registrations.length).toBe(75);
+    // E5-A: +3, E5-B: +1, E5-C: +2, E5-D-heap: +3. CE parity: +2 (search_string, pointer_chain autoscan). Mono: +6 (Win32-only). Code injection: +4 (Win32-only). find_references +1. pointer_map +1. assemble +1. Minidump +1. Bookmark +2, antidetection +2 (antidetection + antidetection_check, cross-platform). read_typed +1 (cross-platform).
+    expect(linuxManifest.registrations.length).toBe(58);
   });
 });
