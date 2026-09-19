@@ -162,7 +162,7 @@
     "tsdown": "^0.23.0",
     "tsx": "^4.22.4",
     "typescript": "^7.0.2",
-    "vite": "^8.1.5",
+    "vite": "^8.3.0",
     "vitepress": "2.0.0-alpha.18",
     "vitest": "^4.1.9",
     "vue": "^3.5.38"
@@ -206,7 +206,7 @@
       "postcss": ">=8.5.18",
       "ws": ">=8.21.0",
       "@babel/core": ">=7.29.6",
-      "vite": "^8.1.5"
+      "vite": "^8.3.0"
     },
     "onlyBuiltDependencies": [
       "better-sqlite3",
