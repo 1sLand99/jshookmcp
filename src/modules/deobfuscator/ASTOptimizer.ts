@@ -1,7 +1,7 @@
 import * as parser from '@babel/parser';
 import traverse from '@babel/traverse';
 import type { NodePath } from '@babel/traverse';
-import generate from '@babel/generator';
+import { generate } from '@babel/generator';
 import * as t from '@babel/types';
 import { logger } from '@utils/logger';
 

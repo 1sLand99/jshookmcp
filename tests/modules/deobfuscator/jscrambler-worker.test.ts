@@ -13,7 +13,7 @@
 
 import * as parser from '@babel/parser';
 import traverse from '@babel/traverse';
-import generate from '@babel/generator';
+import { generate } from '@babel/generator';
 import * as t from '@babel/types';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WorkerPool } from '@utils/WorkerPool';

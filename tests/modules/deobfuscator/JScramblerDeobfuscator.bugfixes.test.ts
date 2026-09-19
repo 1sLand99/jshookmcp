@@ -1,6 +1,6 @@
 import * as parser from '@babel/parser';
 import traverse from '@babel/traverse';
-import generate from '@babel/generator';
+import { generate } from '@babel/generator';
 import * as t from '@babel/types';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 

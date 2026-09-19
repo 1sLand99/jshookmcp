@@ -285,7 +285,7 @@ export class TaskManager {
     // Hard ceiling safety
     if (this.tasks.size > this.maxTasks) {
       const sorted = Array.from(this.tasks.entries())
-        .filter(([_, t]) => t.status !== 'working')
+        .filter(([, t]) => t.status !== 'working')
         .toSorted(
           (a, b) => new Date(a[1].lastUpdatedAt).getTime() - new Date(b[1].lastUpdatedAt).getTime(),
         );

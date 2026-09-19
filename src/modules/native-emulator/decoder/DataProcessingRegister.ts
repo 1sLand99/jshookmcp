@@ -140,10 +140,8 @@ export function execDataProcessingRegister(ctx: ExecutionContext, insn: number):
       if (nBit === 1) operand2 = ~operand2; // BIC/ORN/EON/BICS invert operand2
       const a = ctx.readGpr(rn);
       let value: bigint;
-      if (opc === 0b00 || opc === 0b11)
-        value = a & operand2; // AND/BIC/ANDS/BICS
-      else if (opc === 0b01)
-        value = a | operand2; // ORN
+      if (opc === 0b00 || opc === 0b11) value = a & operand2; // AND/BIC/ANDS/BICS
+      else if (opc === 0b01) value = a | operand2; // ORN
       else value = a ^ operand2; // EON
       value = sf === 1 ? BigInt.asUintN(64, value) : BigInt.asUintN(32, value);
       if (opc === 0b11) {
@@ -362,10 +360,8 @@ export function execDataProcessingRegister(ctx: ExecutionContext, insn: number):
       // op:op2 selects the transform applied to Rm: 0:00 CSEL, 0:01 CSINC,
       // 1:00 CSINV, 1:01 CSNEG.
       let other = ctx.readGpr(rm) & wMask;
-      if (op === 0 && op2 === 0b01)
-        other = (other + 1n) & wMask; // CSINC
-      else if (op === 1 && op2 === 0b00)
-        other = ~other & wMask; // CSINV
+      if (op === 0 && op2 === 0b01) other = (other + 1n) & wMask; // CSINC
+      else if (op === 1 && op2 === 0b00) other = ~other & wMask; // CSINV
       else if (op === 1 && op2 === 0b01) other = (~other + 1n) & wMask; // CSNEG
       value = other;
     }

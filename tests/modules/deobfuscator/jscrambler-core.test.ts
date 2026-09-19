@@ -11,7 +11,7 @@
 
 import * as parser from '@babel/parser';
 import traverse from '@babel/traverse';
-import generate from '@babel/generator';
+import { generate } from '@babel/generator';
 import * as t from '@babel/types';
 import { describe, expect, it } from 'vitest';
 import { JScramberDeobfuscator } from '@modules/deobfuscator/JScramblerDeobfuscator';

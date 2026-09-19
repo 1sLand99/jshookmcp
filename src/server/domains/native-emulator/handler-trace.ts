@@ -249,10 +249,8 @@ function memAccess(
         const baseVal = ev.x(rn);
         const indexVal = Number(ev.x(rm));
         let effectiveIndex: number;
-        if (option === 0b011)
-          effectiveIndex = indexVal & 0xffffffff; // UXTW
-        else if (option === 0b111)
-          effectiveIndex = (indexVal << 32) >> 32; // SXTW
+        if (option === 0b011) effectiveIndex = indexVal & 0xffffffff; // UXTW
+        else if (option === 0b111) effectiveIndex = (indexVal << 32) >> 32; // SXTW
         else effectiveIndex = indexVal; // LSL (UXTX)
         const offset = effectiveIndex * scale;
         const addr = Number(baseVal) + offset;

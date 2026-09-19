@@ -1,5 +1,5 @@
 import * as parser from '@babel/parser';
-import generate from '@babel/generator';
+import { generate } from '@babel/generator';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const loggerState = vi.hoisted(() => ({

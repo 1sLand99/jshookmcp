@@ -471,8 +471,7 @@ function execScalarLoadStore(ctx: SimdContext, insn: number): boolean {
     const simm9 = signExtend9((insn >>> 12) & 0x1ff);
     const mode = (insn >>> 10) & 0b11; // 00 unscaled(LDUR), 01 post, 11 pre
     let addr = base;
-    if (mode === 0b11)
-      addr = base + simm9; // pre-index: address uses the offset
+    if (mode === 0b11) addr = base + simm9; // pre-index: address uses the offset
     else if (mode === 0b00) addr = base + simm9; // unscaled: base + simm9
     // post-index (01): access at base, write-back after — base reg is a GPR here.
     transfer(ctx, isLoad, rt, addr, bytes);

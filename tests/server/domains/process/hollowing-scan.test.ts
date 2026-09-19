@@ -106,10 +106,8 @@ function buildMinimalPE32(
     const rawSize = i === 0 ? 0x8000 : 0x2000;
     const rawPtr = 0x400 + i * 0x200;
     let characteristics = 0;
-    if (i === 0)
-      characteristics = 0x60000020; // .text: code + execute
-    else if (i === 1 || i === 2)
-      characteristics = 0xc0000040; // .data/.rdata: initialized data + read
+    if (i === 0) characteristics = 0x60000020; // .text: code + execute
+    else if (i === 1 || i === 2) characteristics = 0xc0000040; // .data/.rdata: initialized data + read
     else characteristics = 0x42000040; // .reloc: discardable + read
 
     hex += nameHex;

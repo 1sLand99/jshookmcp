@@ -312,10 +312,8 @@ describe('StructureAnalyzer', () => {
     it('should identify vtable_ptr via heuristics when RTTI check fails', async () => {
       mockProvider.readMemory.mockImplementation((_h: any, addr: bigint, _size: number) => {
         const buf = Buffer.alloc(16);
-        if (addr === 0x5000n)
-          buf.writeBigUInt64LE(0x40000n, 0); // pointer to simulated vtable
-        else if (addr === 0x40000n)
-          buf.writeBigUInt64LE(0x50000n, 0); // heuristic reads firstFunc inside vtable
+        if (addr === 0x5000n) buf.writeBigUInt64LE(0x40000n, 0); // pointer to simulated vtable
+        else if (addr === 0x40000n) buf.writeBigUInt64LE(0x50000n, 0); // heuristic reads firstFunc inside vtable
         else if (addr === 0x3fff8n) throw new Error('RTTI missing'); // throw to force fallback
         return { data: buf };
       });
@@ -342,10 +340,8 @@ describe('StructureAnalyzer', () => {
     it('should ignore RTTI base class arrays if numBaseClasses is out of bounds', async () => {
       mockProvider.readMemory.mockImplementation((_h: any, addr: bigint, _size: number) => {
         const buf = Buffer.alloc(48);
-        if (addr === 0x1000n)
-          buf.writeBigUInt64LE(0x2000n, 0); // VTable pointer
-        else if (addr === 0x1ff8n)
-          buf.writeBigUInt64LE(0x3000n, 0); // COL addr
+        if (addr === 0x1000n) buf.writeBigUInt64LE(0x2000n, 0); // VTable pointer
+        else if (addr === 0x1ff8n) buf.writeBigUInt64LE(0x3000n, 0); // COL addr
         else if (addr === 0x3000n) {
           // CompleteObjectLocator
           buf.writeInt32LE(0, 8); // cdOffset
@@ -374,10 +370,8 @@ describe('StructureAnalyzer', () => {
     it('should ignore RTTI base class arrays if numBaseClasses is exactly zero', async () => {
       mockProvider.readMemory.mockImplementation((_h: any, addr: bigint, _size: number) => {
         const buf = Buffer.alloc(48);
-        if (addr === 0x1000n)
-          buf.writeBigUInt64LE(0x2000n, 0); // VTable pointer
-        else if (addr === 0x1ff8n)
-          buf.writeBigUInt64LE(0x3000n, 0); // COL addr
+        if (addr === 0x1000n) buf.writeBigUInt64LE(0x2000n, 0); // VTable pointer
+        else if (addr === 0x1ff8n) buf.writeBigUInt64LE(0x3000n, 0); // COL addr
         else if (addr === 0x3000n) {
           // CompleteObjectLocator
           buf.writeInt32LE(0, 8); // cdOffset
@@ -406,8 +400,7 @@ describe('StructureAnalyzer', () => {
     it('should fallback from vtable_ptr if first func is not executable', async () => {
       mockProvider.readMemory.mockImplementation((_h: any, addr: bigint, _size: number) => {
         const buf = Buffer.alloc(16);
-        if (addr === 0x5000n)
-          buf.writeBigUInt64LE(0x40000n, 0); // pointer to simulated vtable
+        if (addr === 0x5000n) buf.writeBigUInt64LE(0x40000n, 0); // pointer to simulated vtable
         else if (addr === 0x40000n) buf.writeBigUInt64LE(0x50000n, 0); // heuristic reads firstFunc inside vtable
         return { data: buf };
       });

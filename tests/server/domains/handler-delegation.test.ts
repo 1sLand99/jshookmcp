@@ -53,8 +53,8 @@ vi.mock('@server/domains/shared/modules', () => ({
 }));
 
 vi.mock('@server/domains/shared/response', () => ({
-  asJsonResponse: vi.fn((_: any) => ({ content: [{ type: 'text', text: '{}' }] })),
-  asTextResponse: vi.fn((_: string) => ({ content: [{ type: 'text', text: '' }] })),
+  asJsonResponse: vi.fn(() => ({ content: [{ type: 'text', text: '{}' }] })),
+  asTextResponse: vi.fn(() => ({ content: [{ type: 'text', text: '' }] })),
   serializeError: vi.fn((e: any) => String(e)),
 }));
 

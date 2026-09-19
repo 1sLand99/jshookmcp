@@ -498,7 +498,12 @@ export class InjectionHandlers {
         const evaluated = await matchedPage.evaluate((expression: string) => {
           try {
             // Use indirect eval to execute in global scope
-            // This avoids Function constructor but still executes the expression
+            // This avoids Function constructor but still executes the expression.
+            // The expression was validated by validateExpression() before reaching
+            // this point (see the security validation block above), and this eval
+            // runs inside the target page's own context via CDP — that is the
+            // tool's purpose, not an injection vector.
+            // eslint-disable-next-line no-eval
             const result = (0, eval)(expression);
             return { ok: true as const, result };
           } catch (e: unknown) {
