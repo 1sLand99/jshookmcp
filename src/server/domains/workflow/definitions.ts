@@ -252,14 +252,24 @@ export const workflowToolDefinitions: Tool[] = [
         'Evaluate a condition against the stepResults argument and execute one of two tool branches. ' +
           'Supports built-in predicates: always_true, always_false, any_step_failed, ' +
           'success_rate_gte_N (N=0-100), variable_equals_KEY_VALUE, variable_contains_KEY_VALUE, ' +
-          'variable_matches_KEY_REGEX. When stepResults is omitted, an empty set is used, so ' +
-          'value-based predicates (variable_*, success_rate_gte_N, any_step_failed) will not match.',
+          'variable_matches_KEY_REGEX, plus history-driven predicates ' +
+          'history_failure_rate_gte_N / history_failure_rate_lte_N, last_run_failed[:workflowId], ' +
+          'recent_steps_failing_L[:workflowId], history_fallback_rate_gte_N / ' +
+          'history_fallback_rate_lte_N. History predicates read the workflow run store (the last ' +
+          '10 runs of the workflow named by the :workflowId suffix, or the current workflow ' +
+          'when none is given); they evaluate false when no history exists. When stepResults ' +
+          'is omitted, an empty set is used, so value-based predicates (variable_*, ' +
+          'success_rate_gte_N, any_step_failed) will not match.',
       )
       .string(
         'predicateId',
         'Predicate identifier. Built-in: always_true, always_false, any_step_failed, ' +
           'success_rate_gte_<0-100>, variable_equals_<KEY>_<VALUE>, variable_contains_<KEY>_<VALUE>, ' +
-          'variable_matches_<KEY>_<REGEX>.',
+          'variable_matches_<KEY>_<REGEX>, history_failure_rate_gte_<N> / ' +
+          'history_failure_rate_lte_<N> (recent failure rate %), last_run_failed[:<workflowId>], ' +
+          'recent_steps_failing_<L>[:<workflowId>] (worst failed-step count in the window), ' +
+          'history_fallback_rate_gte_<N> / history_fallback_rate_lte_<N> (share of runs that ' +
+          'needed a fallback arm).',
       )
       .object(
         'whenTrue',
