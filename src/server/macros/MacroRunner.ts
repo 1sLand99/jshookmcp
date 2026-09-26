@@ -15,6 +15,7 @@ import {
   parallelStep,
   sequenceStep,
   toolStep,
+  WorkflowSpanNames,
   type WorkflowContract,
   type ToolNodeInput,
   type WorkflowNode,
@@ -54,13 +55,13 @@ export class MacroRunner {
           }),
         )
         .onStart((ctx) => {
-          ctx.emitSpan('macro.start', {
+          ctx.emitSpan(WorkflowSpanNames.macroStart, {
             macroId: def.id,
             totalSteps: def.steps.length,
           });
         })
         .onError((_ctx, err) => {
-          _ctx.emitSpan('macro.error', {
+          _ctx.emitSpan(WorkflowSpanNames.macroError, {
             macroId: def.id,
             error: err.message,
           });
@@ -306,12 +307,16 @@ export class MacroRunner {
     stepResults: Record<string, unknown>,
   ): MacroStepProgress[] {
     return def.steps.map((step, i) => {
-      // Find start/finish spans for this node
+      // Find start/finish spans for this node. Matched through
+      // `WorkflowSpanNames` rather than bare literals: these two names are the
+      // contract between this reader and the engine's emitter, and as literals a
+      // rename on either side would have made both lookups return undefined and
+      // silently blanked durationMs, with no test failing.
       const startSpan = spans.find(
-        (s) => s.name === 'workflow.node.start' && s.attrs?.nodeId === step.id,
+        (s) => s.name === WorkflowSpanNames.nodeStart && s.attrs?.nodeId === step.id,
       );
       const finishSpan = spans.find(
-        (s) => s.name === 'workflow.node.finish' && s.attrs?.nodeId === step.id,
+        (s) => s.name === WorkflowSpanNames.nodeFinish && s.attrs?.nodeId === step.id,
       );
 
       let durationMs: number | undefined;

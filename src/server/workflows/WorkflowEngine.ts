@@ -2,6 +2,11 @@ import { randomUUID } from 'node:crypto';
 import type { MCPServerContext } from '@server/MCPServer.context';
 import type { ReverseEvidenceGraph } from '@server/evidence/ReverseEvidenceGraph';
 import { getRoutingState } from '@server/ToolRouter.probe';
+import {
+  MetricNames,
+  resolveInstrumentation,
+  SpanNames,
+} from '@server/observability/InstrumentationContract';
 import type { ToolArgs } from '@server/types';
 import {
   resolveInputFrom,
@@ -15,14 +20,15 @@ import {
   getEvidenceState,
 } from '@server/workflows/WorkflowPreflight';
 import { WorkflowRunStore } from '@server/workflows/WorkflowRunStore';
-import type {
-  BranchNode,
-  FallbackNode,
-  ParallelNode,
-  SequenceNode,
-  ToolNode,
-  WorkflowContract,
-  WorkflowNode,
+import {
+  WorkflowSpanNames,
+  type BranchNode,
+  type FallbackNode,
+  type ParallelNode,
+  type SequenceNode,
+  type ToolNode,
+  type WorkflowContract,
+  type WorkflowNode,
 } from '@server/workflows/WorkflowContract';
 import {
   type ExecuteWorkflowOptions,
@@ -185,13 +191,42 @@ async function runParallelNode(
   return keyedResults;
 }
 
+/**
+ * Per-step span wrapper.
+ *
+ * The span is owned here, around the whole node execution, rather than inline in
+ * the node body: a node can throw from any of several nested calls (a tool node,
+ * a nested sequence, a fallback's primary), and only a `finally` around all of
+ * them guarantees exactly one `end`. An unterminated span reports a null
+ * duration, which is worse than having no span at all.
+ */
 async function executeNode(
   ctx: MCPServerContext,
   node: WorkflowNode,
   executionContext: WorkflowEngineExecutionContext,
   options: ExecuteWorkflowOptions,
 ): Promise<unknown> {
-  executionContext.emitSpan('workflow.node.start', { nodeId: node.id, kind: node.kind });
+  const stepSpan = resolveInstrumentation(ctx).startSpan(SpanNames.workflowStep, {
+    nodeId: node.id,
+    kind: node.kind,
+  });
+  let completed = false;
+  try {
+    const result = await executeNodeInner(ctx, node, executionContext, options);
+    completed = true;
+    return result;
+  } finally {
+    stepSpan.end({ ok: completed });
+  }
+}
+
+async function executeNodeInner(
+  ctx: MCPServerContext,
+  node: WorkflowNode,
+  executionContext: WorkflowEngineExecutionContext,
+  options: ExecuteWorkflowOptions,
+): Promise<unknown> {
+  executionContext.emitSpan(WorkflowSpanNames.nodeStart, { nodeId: node.id, kind: node.kind });
 
   let result: unknown;
   switch (node.kind) {
@@ -232,7 +267,7 @@ async function executeNode(
       try {
         result = await executeNode(ctx, fallbackNode.primary, executionContext, options);
       } catch (error) {
-        executionContext.emitSpan('workflow.node.fallback', {
+        executionContext.emitSpan(WorkflowSpanNames.nodeFallback, {
           nodeId: fallbackNode.id,
           primaryNodeId: fallbackNode.primary.id,
           fallbackNodeId: fallbackNode.fallback.id,
@@ -247,7 +282,7 @@ async function executeNode(
   }
 
   executionContext.stepResults.set(node.id, result);
-  executionContext.emitSpan('workflow.node.finish', { nodeId: node.id, kind: node.kind });
+  executionContext.emitSpan(WorkflowSpanNames.nodeFinish, { nodeId: node.id, kind: node.kind });
   return result;
 }
 
@@ -260,6 +295,17 @@ export async function executeExtensionWorkflow(
   const profile = options.profile ?? String(ctx.baseTier ?? 'workflow');
   const startedAt = new Date().toISOString();
   const startedAtMs = Date.now();
+  const instrumentation = resolveInstrumentation(ctx);
+  // Run-scope span, added ALONGSIDE the engine's own `workflow.node.*` spans
+  // rather than replacing them. Those names are load-bearing:
+  // `MacroRunner.buildProgress` matches `workflow.node.start`/`finish` plus
+  // `attrs.nodeId` to derive per-step durations, so renaming them would silently
+  // blank out macro progress. `workflow.run` is a different granularity.
+  const runSpan = instrumentation.startSpan(SpanNames.workflowRun, {
+    workflowId: workflow.id,
+    runId,
+    profile,
+  });
   const metrics: WorkflowMetric[] = [];
   const spans: WorkflowSpan[] = [];
   const stepResults = new Map<string, unknown>();
@@ -296,7 +342,7 @@ export async function executeExtensionWorkflow(
     let preflightWarnings: PreflightWarning[] = [];
 
     if (preflightMode === 'skip') {
-      executionContext.emitSpan('workflow.preflight', {
+      executionContext.emitSpan(WorkflowSpanNames.preflight, {
         mode: preflightMode,
         skipped: true,
         evidenceState: getEvidenceState(ctx),
@@ -307,7 +353,7 @@ export async function executeExtensionWorkflow(
         const routingState = await getRoutingState(ctx);
         const evidenceState = getEvidenceState(ctx);
         preflightWarnings = collectUnsatisfiedPrerequisites(graph, routingState);
-        executionContext.emitSpan('workflow.preflight', {
+        executionContext.emitSpan(WorkflowSpanNames.preflight, {
           mode: preflightMode,
           routingState,
           evidenceState,
@@ -323,7 +369,7 @@ export async function executeExtensionWorkflow(
           throw error;
         }
         // Preflight is best-effort — registry may not be initialised in tests
-        executionContext.emitSpan('workflow.preflight', {
+        executionContext.emitSpan(WorkflowSpanNames.preflight, {
           mode: preflightMode,
           warningCount: 0,
           skipped: true,
@@ -348,13 +394,13 @@ export async function executeExtensionWorkflow(
           : undefined;
       if (evidenceGraph && evidenceGraph.nodeCount > 0) {
         stepResults.set('__evidenceSnapshot', evidenceGraph.exportJson());
-        executionContext.emitSpan('workflow.evidence.auto-export', {
+        executionContext.emitSpan(WorkflowSpanNames.evidenceAutoExport, {
           nodeCount: evidenceGraph.nodeCount,
           edgeCount: evidenceGraph.edgeCount,
         });
       }
     } catch (exportError) {
-      executionContext.emitSpan('workflow.evidence.auto-export', {
+      executionContext.emitSpan(WorkflowSpanNames.evidenceAutoExport, {
         skipped: true,
         error: exportError instanceof Error ? exportError.message : String(exportError),
       });
@@ -374,9 +420,32 @@ export async function executeExtensionWorkflow(
       spans,
     };
     globalRunStore.recordSuccess(runResult);
+    runSpan.end({ status: 'success' });
+    instrumentation.emitMetric(MetricNames.workflowRunsTotal, 1, 'counter', {
+      profile,
+      status: 'success',
+    });
+    instrumentation.emitMetric(MetricNames.workflowDurationMs, runResult.durationMs, 'histogram', {
+      profile,
+      status: 'success',
+    });
     return runResult;
   } catch (error) {
     const workflowError = error instanceof Error ? error : new Error(String(error));
+    // Ended BEFORE `onError` runs: a user-supplied hook can itself throw, and the
+    // run span must not be left open because a callback failed.
+    runSpan.end({ status: 'error', error: workflowError.message });
+    instrumentation.emitMetric(MetricNames.workflowRunsTotal, 1, 'counter', {
+      profile,
+      status: 'error',
+    });
+    instrumentation.emitMetric(MetricNames.workflowErrorsTotal, 1, 'counter', { profile });
+    instrumentation.emitMetric(
+      MetricNames.workflowDurationMs,
+      Date.now() - startedAtMs,
+      'histogram',
+      { profile, status: 'error' },
+    );
     globalRunStore.recordError(workflow.id, runId, startedAt, workflowError);
     await workflow.onError?.(executionContext, workflowError);
     throw workflowError;

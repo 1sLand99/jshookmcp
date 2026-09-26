@@ -7,6 +7,11 @@ import {
 } from '@src/constants';
 import { handleSafe, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
 import { asJsonResponse, serializeError } from '@server/domains/shared/response';
+import {
+  getGlobalInstrumentation,
+  MetricNames,
+  SpanNames,
+} from '@server/observability/InstrumentationContract';
 export * from './definitions';
 export { default } from './manifest';
 
@@ -82,16 +87,39 @@ async function bridgeFetch(
   body?: string,
 ): Promise<BridgeResponse> {
   const url = `${baseUrl.replace(/\/$/, '')}${path}`;
-  const res = await fetch(url, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    ...(body === undefined ? {} : { body }),
-    signal: AbortSignal.timeout(NATIVE_BRIDGE_TIMEOUT_MS),
-  });
-  // Parse failure (non-JSON body) yields null so health checks do not treat
-  // a misconfigured 200 HTML error page as a healthy bridge.
-  const data = await res.json().catch(() => null);
-  return { status: res.status, data };
+  // Process-global rather than context-resolved: this is a module-level helper
+  // that receives no server context, and all four `handle*Bridge` methods funnel
+  // through it, so one span covers every backend. A thrown fetch (timeout,
+  // connection refused) is the interesting case for a bridge, so the `finally`
+  // records it as a transport error before the error propagates.
+  const instrumentation = getGlobalInstrumentation();
+  const span = instrumentation.startSpan(SpanNames.bridgeRequest, { url, method });
+  const startedAtMs = Date.now();
+  let status = 'transport_error';
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body }),
+      signal: AbortSignal.timeout(NATIVE_BRIDGE_TIMEOUT_MS),
+    });
+    // Parse failure (non-JSON body) yields null so health checks do not treat
+    // a misconfigured 200 HTML error page as a healthy bridge.
+    const data = await res.json().catch(() => null);
+    status = String(res.status);
+    return { status: res.status, data };
+  } catch (error) {
+    span.addEvent('error', { message: error instanceof Error ? error.message : String(error) });
+    throw error;
+  } finally {
+    const durationMs = Date.now() - startedAtMs;
+    span.end({ status });
+    instrumentation.emitMetric(MetricNames.bridgeRequestsTotal, 1, 'counter', { status });
+    instrumentation.emitMetric(MetricNames.bridgeDurationMs, durationMs, 'histogram', {
+      method,
+      status,
+    });
+  }
 }
 
 async function checkBridgeHealth(

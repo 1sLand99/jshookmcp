@@ -17,6 +17,49 @@ export interface Config {
    * missing section behaves exactly as before the gate existed (allow all).
    */
   toolExecution?: ToolExecutionConfig;
+  /**
+   * Span/metric export (see `src/server/observability/`).
+   *
+   * NOT REACHABLE FROM THE SHIPPED LOADER YET. `getConfig()` in
+   * `src/utils/config.ts` has no `observability` key and no env reader, so
+   * `createInstrumentation` always sees `undefined` from a real `Config` and
+   * always returns `NoopInstrumentation`. Every wired span/metric site is
+   * therefore a no-op in production as shipped.
+   *
+   * The section is honoured when a `Config` is constructed programmatically
+   * (tests, embedders) — `createInstrumentation` reads it correctly. To make it
+   * live in the shipped server it still needs: an `observability` key in
+   * `DEFAULT_CONFIG`, a branch in `getConfig()`, an env reader in
+   * `src/constants/`, and a matching `.env.example` line (which the
+   * `tests/scripts/env-example.test.ts` guard then enforces in both
+   * directions). Until then, treat `memory` as a test/embedding facility, not
+   * an operator-facing feature.
+   */
+  observability?: ObservabilityConfig;
+}
+
+/**
+ * Where instrumentation samples go.
+ *
+ * `none` (the default when the section is absent) is `NoopInstrumentation`:
+ * the interface is called at real sites, and every call does nothing. `memory`
+ * selects `InMemoryInstrumentation`, a bounded in-process buffer that can be
+ * inspected — useful for diagnosing, and for proving the wiring works. Note
+ * that nothing in `src/` calls `snapshot()`, so the buffer has no production
+ * reader either; a health endpoint or shutdown flush is still missing.
+ *
+ * A network exporter (OTLP, Prometheus) is the third case and is deliberately
+ * NOT implemented here: it needs a dependency and a transport this repo has not
+ * chosen. The interface is shaped so that adding one means implementing
+ * `InstrumentationContract` and adding a branch to `createInstrumentation`.
+ */
+export interface ObservabilityConfig {
+  exporter?: 'none' | 'memory';
+  /**
+   * Span window size for the `memory` exporter. Bounded on purpose: a process
+   * that keeps one span per tool call forever is a memory leak.
+   */
+  maxSpans?: number;
 }
 
 /** One ordered tool-execution permission rule (the LAST matching rule wins). */

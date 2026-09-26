@@ -1,5 +1,6 @@
 import { type Page } from 'rebrowser-puppeteer-core';
 import { logger } from '@utils/logger';
+import { getGlobalInstrumentation, SpanNames } from '@server/observability/InstrumentationContract';
 import {
   CAPTCHA_MATCH_RULES,
   DOM_MATCH_RULES,
@@ -141,7 +142,31 @@ export class CaptchaDetector {
     };
   }
 
+  /**
+   * `captcha.detect` span wrapper.
+   *
+   * Owned here rather than inline in the body: detection runs through a chain of
+   * early-returning checks (url, title, DOM, text, vendor) plus a catch, and one
+   * `finally` is the only way to guarantee exactly one `end` across all of them.
+   *
+   * The span name is `captcha.detect`, NOT `captcha.solve` — nothing in this
+   * repo solves a CAPTCHA; the policy layer recommends a manual solve and the AI
+   * path waits for a human. The old name promised a capability that never
+   * existed.
+   */
   async detect(page: Page): Promise<CaptchaDetectionResult> {
+    const instrumentation = getGlobalInstrumentation();
+    const span = instrumentation.startSpan(SpanNames.captchaDetect);
+    let outcome: CaptchaDetectionResult | undefined;
+    try {
+      outcome = await this.detectInner(page);
+      return outcome;
+    } finally {
+      span.end({ detected: outcome?.detected ?? false, type: outcome?.type ?? 'none' });
+    }
+  }
+
+  private async detectInner(page: Page): Promise<CaptchaDetectionResult> {
     try {
       logger.info('Starting CAPTCHA detection checks');
 

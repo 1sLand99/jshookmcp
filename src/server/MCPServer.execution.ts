@@ -10,6 +10,7 @@
  * - Domain TTL refresh
  * - Event bus notifications
  * - Execution metrics collection (E2E performance testing)
+ * - Instrumentation spans/metrics (see src/server/observability/)
  */
 
 import { logger } from '@utils/logger';
@@ -18,6 +19,11 @@ import { getToolDomain } from '@server/ToolCatalog';
 import { fastValidateToolArgs } from '@server/registry/compiled-validators';
 import { refreshDomainTtlForTool } from '@server/MCPServer.activation.ttl';
 import { emitBusEvent } from '@server/EventBus';
+import {
+  MetricNames,
+  resolveInstrumentation,
+  SpanNames,
+} from '@server/observability/InstrumentationContract';
 import {
   buildDoomLoopErrorResponse,
   buildToolGateDenyResponse,
@@ -189,6 +195,9 @@ export async function executeToolWithTracking(ctx: MCPServerContext, name: strin
   // histogram via the 'tool:called' event (r1-2). Two performance.now() calls per
   // tool call is negligible, unlike the E2E-gated CPU/memory snapshots below.
   const executionStartTime = performance.now();
+  // Resolved once per call rather than once per emission: this is a hot path,
+  // and resolution is a Map read behind a `typeof` guard.
+  const instrumentation = resolveInstrumentation(ctx);
   const executionCpuStart = collectExecutionMetrics ? process.cpuUsage() : null;
   const executionMemoryBefore = collectExecutionMetrics ? captureExecutionMetricMemory() : null;
   try {
@@ -223,7 +232,19 @@ export async function executeToolWithTracking(ctx: MCPServerContext, name: strin
     // unambiguously invalid arguments without a Zod pass. Conservative by
     // design — unknown/complex tools validate as OK and fall through to the
     // SDK's strict Zod validation on MCP-envelope calls.
+    const validationSpan = instrumentation.startSpan(SpanNames.toolValidateInput, {
+      toolName: name,
+      domain: getToolDomain(name) ?? null,
+    });
     const fastArgError = fastValidateToolArgs(name, args);
+    // Ended before the early return below, so a rejected tool still gets a
+    // timed span rather than an unterminated one.
+    //
+    // `!fastArgError`, mirroring the `if (fastArgError)` early return exactly:
+    // the validator's contract is `string | null`, where NULL means valid. An
+    // earlier `=== undefined` here compiled cleanly and reported `valid: false`
+    // for every successful validation — a span attribute that always lied.
+    validationSpan.end({ valid: !fastArgError });
     if (fastArgError) {
       if (timeoutTimer) clearTimeout(timeoutTimer);
       return {
@@ -285,22 +306,47 @@ export async function executeToolWithTracking(ctx: MCPServerContext, name: strin
         timeoutTimer.unref();
         try {
           const executeTool = async () => {
-            if (browserCoordinator) {
-              await browserCoordinator.restoreSessionContext(sessionId);
-            }
-            const response = await ctx.router.execute(name, args);
+            // Covers the real handler call only — not the whole request. The
+            // gate, validation and admission above are measured by their own
+            // span, and `tool:called`'s durationMs already covers the full
+            // interval, so this span is the one that isolates handler cost.
+            const executeSpan = instrumentation.startSpan(SpanNames.toolExecute, {
+              toolName: name,
+              domain: toolDomain,
+            });
+            // `handlerReturned` means "did not throw". A tool that returns
+            // `isError: true` is a successful execution with a failed result —
+            // that distinction belongs to the metrics, not to this span.
+            let handlerReturned = false;
+            try {
+              if (browserCoordinator) {
+                await browserCoordinator.restoreSessionContext(sessionId);
+              }
+              const response = await ctx.router.execute(name, args);
 
-            // Keep browser-derived state reads inside the session AsyncLocalStorage scope.
-            await ctx.largeDataOffloader.offload(name, response);
-            if (toolDomain === 'browser') {
-              browserCoordinator?.noteToolResult(
-                sessionId,
-                name,
-                parseBrowserSessionSnapshot(response),
-              );
+              // Keep browser-derived state reads inside the session AsyncLocalStorage scope.
+              await ctx.largeDataOffloader.offload(name, response);
+              if (toolDomain === 'browser') {
+                browserCoordinator?.noteToolResult(
+                  sessionId,
+                  name,
+                  parseBrowserSessionSnapshot(response),
+                );
+              }
+              ctx.contextGuard.recordCall(name);
+              const enrichedResponse = ctx.contextGuard.enrichResponse(name, response);
+              handlerReturned = true;
+              return enrichedResponse;
+            } catch (error) {
+              // Recorded as a span event rather than a second end(): keeping a
+              // single end path in `finally` is what keeps the duration honest.
+              executeSpan.addEvent('error', {
+                message: error instanceof Error ? error.message : String(error),
+              });
+              throw error;
+            } finally {
+              executeSpan.end({ ok: handlerReturned });
             }
-            ctx.contextGuard.recordCall(name);
-            return ctx.contextGuard.enrichResponse(name, response);
           };
           if (fleetRouter && fleetRoute) {
             const execution = await fleetRouter.runWithLeaseKeepAlive(fleetRoute, executeTool);
@@ -375,6 +421,10 @@ export async function executeToolWithTracking(ctx: MCPServerContext, name: strin
     } else {
       ctx.circuitBreaker.recordFailure(name);
     }
+    // Duration is computed ONCE and shared by the event and the metric below.
+    // Two clocks for the same interval is exactly how an event stream and a
+    // metrics backend drift apart, after which neither is trustworthy.
+    const toolDurationMs = Number((performance.now() - executionStartTime).toFixed(2));
     // Emit tool:called event for ActivationController
     void ctx.eventBus.emit('tool:called', {
       toolName: name,
@@ -385,7 +435,7 @@ export async function executeToolWithTracking(ctx: MCPServerContext, name: strin
           : (getToolRequestContext()?.sessionId ?? null),
       timestamp: new Date().toISOString(),
       success: toolResultSuccess,
-      durationMs: Number((performance.now() - executionStartTime).toFixed(2)),
+      durationMs: toolDurationMs,
       args,
       result: {
         success: toolResultSuccess,
@@ -397,9 +447,23 @@ export async function executeToolWithTracking(ctx: MCPServerContext, name: strin
       toolName: name,
       domain: getToolDomain(name) ?? null,
       sessionId: resolveCallSessionId(args),
-      durationMs: Number((performance.now() - executionStartTime).toFixed(2)),
+      durationMs: toolDurationMs,
       ok: toolResultSuccess,
       timestamp: new Date().toISOString(),
+    });
+    // One observation, two sinks: the event stream stays in-process, these go to
+    // whichever instrumentation backend is configured. Emitted from the same
+    // point so the two can never disagree about what happened.
+    instrumentation.emitMetric(MetricNames.toolCallsTotal, 1, 'counter', {
+      tool: name,
+      success: toolResultSuccess,
+    });
+    if (!toolResultSuccess) {
+      instrumentation.emitMetric(MetricNames.toolErrorsTotal, 1, 'counter', { tool: name });
+    }
+    instrumentation.emitMetric(MetricNames.toolDurationMs, toolDurationMs, 'histogram', {
+      tool: name,
+      success: toolResultSuccess,
     });
     const searchQualityTracker =
       ctx.getDomainInstance<import('@server/search/SearchQualityTracker').SearchQualityTracker>(
@@ -422,14 +486,27 @@ export async function executeToolWithTracking(ctx: MCPServerContext, name: strin
   } catch (error) {
     // Pair the earlier started event even on the failure path. Message-only
     // summary — never the args or response payloads.
+    const failureDurationMs = Number((performance.now() - executionStartTime).toFixed(2));
     emitBusEvent(ctx.eventBus, 'tool.execution.finished', {
       toolName: name,
       domain: getToolDomain(name) ?? null,
       sessionId: resolveCallSessionId(args),
-      durationMs: Number((performance.now() - executionStartTime).toFixed(2)),
+      durationMs: failureDurationMs,
       ok: false,
       errorSummary: truncateErrorSummary(error),
       timestamp: new Date().toISOString(),
+    });
+    // The throwing path exits separately from the success path, so it accounts
+    // for its own sample. Without this every throw would be invisible to the
+    // counters and the error rate would read as zero.
+    instrumentation.emitMetric(MetricNames.toolCallsTotal, 1, 'counter', {
+      tool: name,
+      success: false,
+    });
+    instrumentation.emitMetric(MetricNames.toolErrorsTotal, 1, 'counter', { tool: name });
+    instrumentation.emitMetric(MetricNames.toolDurationMs, failureDurationMs, 'histogram', {
+      tool: name,
+      success: false,
     });
     const admissionError =
       error instanceof BrowserSessionQueueError ||

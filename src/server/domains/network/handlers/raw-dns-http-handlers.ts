@@ -44,6 +44,15 @@ function roundTiming(start: number): number {
   return Math.round((performance.now() - start) * 100) / 100;
 }
 
+/**
+ * Real number of results a `resolve()` call returned. Most RR types yield an
+ * array (A/AAAA -> addresses, MX/SRV/TXT -> records), but SOA yields a single
+ * object — that is one record, not zero.
+ */
+function countDnsRecords(records: DnsRecords): number {
+  return Array.isArray(records) ? records.length : 1;
+}
+
 function createDnsClient(server: string | undefined): DnsClient {
   if (!server) {
     return dns;
@@ -77,6 +86,11 @@ export class RawDnsHttpHandlers {
       const start = performance.now();
       const records = await resolver.resolve(hostname, rrType);
       const timing = roundTiming(start);
+      emitEvent(this.eventBus, 'network:dns_resolved', {
+        hostname,
+        count: countDnsRecords(records),
+        timestamp: new Date().toISOString(),
+      });
       return R.ok().json({ hostname, rrType, records, timing, ...(server ? { server } : {}) });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -95,6 +109,11 @@ export class RawDnsHttpHandlers {
       const start = performance.now();
       const hostnames = await resolver.reverse(ip);
       const timing = roundTiming(start);
+      emitEvent(this.eventBus, 'network:dns_reversed', {
+        address: ip,
+        count: hostnames.length,
+        timestamp: new Date().toISOString(),
+      });
       return R.ok().json({ ip, hostnames, timing, ...(server ? { server } : {}) });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -265,6 +284,21 @@ export class RawDnsHttpHandlers {
           }),
         );
         results.push(...batchResults);
+      }
+
+      // One `network:dns_resolved` per hostname that actually resolved. The
+      // declared payload carries a single `hostname`, so a bulk request — N
+      // independent lookups — honours the contract by emitting once per
+      // successful lookup, each with its own real result count. Failed lookups
+      // emit nothing, and no aggregate fits the payload (there is no single
+      // hostname to name).
+      for (const result of results) {
+        if (result.status !== 'NOERROR') continue;
+        emitEvent(this.eventBus, 'network:dns_resolved', {
+          hostname: result.hostname,
+          count: countDnsRecords(result.records),
+          timestamp: new Date().toISOString(),
+        });
       }
 
       const errorCount = results.filter((r) => r.status !== 'NOERROR').length;

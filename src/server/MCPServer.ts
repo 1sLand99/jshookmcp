@@ -46,6 +46,11 @@ import { registerServerResources } from '@server/MCPServer.resources';
 import { registerServerPrompts } from '@server/MCPServer.prompts';
 import type { MCPServerContext } from '@server/MCPServer.context';
 import { createServerEventBus, type EventBus, type ServerEventMap } from '@server/EventBus';
+import { createInstrumentation } from '@server/observability/createInstrumentation';
+import {
+  INSTRUMENTATION_DOMAIN_KEY,
+  setGlobalInstrumentation,
+} from '@server/observability/InstrumentationContract';
 import { getAllManifests, ensureDomainLoaded } from '@server/registry/index';
 import {
   RuntimeSnapshotScheduler,
@@ -306,6 +311,14 @@ export class MCPServer implements MCPServerContext {
     // subscribers (/progress/:sessionId) observe the real lifecycle. Built here
     // rather than as a field initializer because it needs `this.eventBus`.
     this.taskManager = new TaskManager({ eventBus: this.eventBus });
+    // ONE instance, two access paths: registered as a domain instance for
+    // server-layer code (which reaches it through the context it already
+    // receives), and installed as the process global for the sites below the
+    // server layer that receive no context at all (browser module, native
+    // bridge, registry discovery). Same object, so the two cannot disagree.
+    const instrumentation = createInstrumentation(config);
+    this.setDomainInstance(INSTRUMENTATION_DOMAIN_KEY, instrumentation);
+    setGlobalInstrumentation(instrumentation);
     this.tokenBudget.setExternalCleanup(() => this.detailedData.clear());
     const { tools, profile } = resolveToolsForRegistration(config);
     this.selectedTools = tools;

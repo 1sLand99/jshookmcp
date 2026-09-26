@@ -2,6 +2,7 @@
 import { logger } from '@utils/logger';
 import { readEnvBoolean } from '@src/config/environment';
 import type { DomainManifest } from '@server/registry/contracts';
+import { getGlobalInstrumentation, SpanNames } from '@server/observability/InstrumentationContract';
 import { emitBusEvent, type EventBus, type ServerEventMap } from '@server/EventBus';
 import { generatedManifestLoaders, DOMAIN_PROFILE_MAP } from './generated-domains.js';
 
@@ -74,6 +75,14 @@ export async function discoverDomainManifests(
   const seenDomains = new Set<string>();
   const seenDepKeys = new Set<string>();
 
+  // `registry.discovery` covers the one place the domain registry is built.
+  // Counts, not names: a span per domain would be hundreds of events per boot.
+  // Resolved globally because this is a module-level function with no context
+  // to read a domain instance from.
+  const span = getGlobalInstrumentation().startSpan(SpanNames.registryDiscovery, {
+    requested: domainsToLoad?.size ?? null,
+  });
+
   for (const { domain: domainName, load } of generatedManifestLoaders) {
     if (domainsToLoad && !domainsToLoad.has(domainName)) continue;
 
@@ -120,6 +129,8 @@ export async function discoverDomainManifests(
     } catch (err) {
       logger.error(`[discovery] Failed to load domain "${domainName}"`, err);
       if (readEnvBoolean('DISCOVERY_STRICT', false)) {
+        // End the span before propagating, or strict mode leaks a dangling span.
+        span.end({ manifests: manifests.length, failedDomain: domainName });
         throw err;
       }
     }
@@ -139,6 +150,7 @@ export async function discoverDomainManifests(
         ' tools total',
     );
   }
+  span.end({ manifests: manifests.length, tools: totalTools });
   return manifests;
 }
 
