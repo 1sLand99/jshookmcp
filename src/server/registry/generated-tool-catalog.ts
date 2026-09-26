@@ -2180,6 +2180,7 @@ export const GENERATED_TOOL_CATALOG = [
                 'dead_code_remove',
                 'control_flow_flatten',
                 'rename_vars',
+                'beautify',
               ],
             },
             description: 'Direct transform list (used when chainName is not provided).',
@@ -2190,6 +2191,39 @@ export const GENERATED_TOOL_CATALOG = [
         readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    domain: 'transform',
+  },
+  {
+    tool: {
+      name: 'ast_transform_beautify',
+      description:
+        'Pretty-print minified or obfuscated JavaScript: re-emit the parsed source with standard 2-space indentation and normalised spacing. Formatting only — the AST is preserved, so program semantics do not change. Unparseable input is returned unchanged.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          code: {
+            type: 'string',
+            description: 'Direct source code input.',
+          },
+          scriptId: {
+            type: 'string',
+            description:
+              'Target script ID from page debugger context (used when code is not provided).',
+          },
+          includeDiff: {
+            type: 'boolean',
+            description: 'Include a line diff between input and output.',
+            default: false,
+          },
+        },
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
         openWorldHint: false,
       },
     },
@@ -2216,6 +2250,7 @@ export const GENERATED_TOOL_CATALOG = [
                 'dead_code_remove',
                 'control_flow_flatten',
                 'rename_vars',
+                'beautify',
               ],
             },
             description: 'Ordered transform list.',
@@ -2258,6 +2293,7 @@ export const GENERATED_TOOL_CATALOG = [
                 'dead_code_remove',
                 'control_flow_flatten',
                 'rename_vars',
+                'beautify',
               ],
             },
             description: 'Ordered transform list.',
@@ -14984,6 +15020,59 @@ export const GENERATED_TOOL_CATALOG = [
   },
   {
     tool: {
+      name: 'memory_read_typed',
+      description:
+        "Read process memory as typed numeric values with explicit endianness. Decodes consecutive values starting at address via koffi endian-sensitive integer types (uint64_le / int32_be / …) — no manual byte swapping needed. 64-bit values are returned as decimal strings alongside two's-complement hex. float/double use IEEE-754 with the requested endianness. Supports up to 1024 consecutive values. Ideal for struct inspection, big-endian network payloads, and game memory analysis.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          pid: {
+            type: 'string',
+            description: 'Target process ID (optional when a browser session is attached)',
+          },
+          address: {
+            type: 'string',
+            description: 'Starting memory address (hex, e.g. "0x1A2B3C")',
+          },
+          type: {
+            type: 'string',
+            enum: [
+              'uint8',
+              'int8',
+              'uint16',
+              'int16',
+              'uint32',
+              'int32',
+              'uint64',
+              'int64',
+              'float',
+              'double',
+            ],
+            description: 'Numeric type to read',
+          },
+          endian: {
+            type: 'string',
+            enum: ['little', 'big'],
+            description: 'Byte order (default: little)',
+          },
+          count: {
+            type: 'number',
+            description: 'Number of consecutive values to read (default: 1, max: 1024)',
+          },
+        },
+        required: ['address', 'type'],
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    domain: 'memory',
+  },
+  {
+    tool: {
       name: 'memory_region_compare',
       description:
         "Compare two memory regions byte-by-byte and return a diff summary. Equivalent to Cheat Engine's compareMemory(). Returns identical flag, diff count, and per-offset differences (byte1, byte2). Max compare size: 64KB.",
@@ -18725,7 +18814,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['port'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -18760,7 +18849,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['port'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -18782,7 +18871,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['port'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -18817,7 +18906,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['port'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -24919,7 +25008,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['sessionId'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -24951,7 +25040,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['port'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -24990,7 +25079,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['sessionId'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -25020,7 +25109,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['sessionId'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -25038,7 +25127,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['target'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -25051,7 +25140,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: [],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -25075,7 +25164,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: [],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -25103,7 +25192,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['sessionId'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -25137,7 +25226,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['encryptedHex', 'keyHex', 'nonceHex'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -25154,7 +25243,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: [],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -25166,7 +25255,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: [],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -25187,7 +25276,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['clientRandom'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -25204,7 +25293,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: [],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -25217,7 +25306,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: [],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -25239,7 +25328,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: [],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -25305,7 +25394,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['host'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -25323,7 +25412,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['rawHex'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -25341,7 +25430,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['rawHex'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -25407,7 +25496,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['host'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -25446,7 +25535,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['sessionId'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -25476,7 +25565,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['sessionId'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -27848,7 +27937,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['sessionId'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -27935,7 +28024,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: [],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -27957,7 +28046,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['sessionId'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
@@ -28000,7 +28089,7 @@ export const GENERATED_TOOL_CATALOG = [
         required: ['sessionId', 'frameType'],
       },
     },
-    domain: 'boringssl-inspector',
+    domain: 'tls-inspector',
   },
   {
     tool: {
