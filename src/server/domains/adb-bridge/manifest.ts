@@ -53,6 +53,7 @@ async function ensure(ctx: MCPServerContext): Promise<ADBBridgeHandlers> {
   }
 
   const handlers = new ADBBridgeHandlers();
+  handlers.setEventBus(ctx.eventBus);
   ctx.setDomainInstance(DEP_KEY, handlers);
   return handlers;
 }

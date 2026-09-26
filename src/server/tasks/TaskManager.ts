@@ -15,6 +15,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { TaskStatus } from '@modelcontextprotocol/server';
+import { emitBusEvent, type EventBus, type ServerEventMap } from '@server/EventBus';
 import { getToolRequestContext } from '@server/runtime/ToolRequestContext';
 import { logger } from '@utils/logger';
 
@@ -75,13 +76,48 @@ export class TaskManager {
    * (and result payload) forever — working tasks older than this are failed.
    */
   private readonly maxWorkingAgeMs: number;
+  /**
+   * Server event bus, if the owning layer supplied one. Task status transitions
+   * are published here as `task:update` (see {@link emitTaskUpdate}).
+   */
+  private readonly eventBus?: EventBus<ServerEventMap>;
 
   constructor(
-    options: { defaultTtlMs?: number; maxTasks?: number; maxWorkingAgeMs?: number } = {},
+    options: {
+      defaultTtlMs?: number;
+      maxTasks?: number;
+      maxWorkingAgeMs?: number;
+      eventBus?: EventBus<ServerEventMap>;
+    } = {},
   ) {
     this.defaultTtlMs = options.defaultTtlMs ?? 10 * 60 * 1000; // 10 minutes default
     this.maxTasks = options.maxTasks ?? 500;
     this.maxWorkingAgeMs = options.maxWorkingAgeMs ?? 30 * 60 * 1000; // 30 minutes default
+    this.eventBus = options.eventBus;
+  }
+
+  /**
+   * Publish a task status transition on the server event bus.
+   *
+   * `SseStream` (src/server/http/SseStream.ts) forwards `task:update` to
+   * `/progress/:sessionId` subscribers and drops events whose `sessionId` does
+   * not match the stream, so the owning session is carried whenever the record
+   * has one (process-level tasks legitimately omit it). Fire-and-forget via
+   * `emitBusEvent`: observer faults never propagate into task execution.
+   */
+  private emitTaskUpdate(task: TaskRecord): void {
+    emitBusEvent(this.eventBus, 'task:update', {
+      taskId: task.taskId,
+      status: task.status,
+      ...(task.sessionId ? { sessionId: task.sessionId } : {}),
+      timestamp: new Date().toISOString(),
+      data: {
+        name: task.name,
+        progress: task.progress,
+        total: task.total,
+        message: task.message,
+      },
+    });
   }
 
   /**
@@ -115,6 +151,7 @@ export class TaskManager {
     };
 
     this.tasks.set(taskId, task as TaskRecord);
+    this.emitTaskUpdate(task);
 
     const abortController = new AbortController();
     this.abortControllers.set(taskId, abortController);
@@ -146,6 +183,7 @@ export class TaskManager {
             task.result = result;
             task.progress = task.total ?? 100;
             task.lastUpdatedAt = new Date().toISOString();
+            this.emitTaskUpdate(task);
           }
         } catch (err: unknown) {
           if (task.status === 'working') {
@@ -153,6 +191,7 @@ export class TaskManager {
             task.error = err instanceof Error ? err.message : String(err);
             task.lastUpdatedAt = new Date().toISOString();
             logger.error(`Task ${taskId} (${options.name}) failed:`, err);
+            this.emitTaskUpdate(task);
           } else if (task.status === 'cancelled') {
             logger.warn(`Task ${taskId} (${options.name}) rejected after cancellation:`, err);
           }
@@ -193,6 +232,7 @@ export class TaskManager {
     if (result !== undefined) task.result = result;
     if (error !== undefined) task.error = error;
     task.lastUpdatedAt = new Date().toISOString();
+    this.emitTaskUpdate(task);
     return true;
   }
 
@@ -233,6 +273,7 @@ export class TaskManager {
     task.status = 'cancelled';
     task.lastUpdatedAt = new Date().toISOString();
     this.abortControllers.get(taskId)?.abort();
+    this.emitTaskUpdate(task);
 
     if (task.cancelHandler) {
       try {
@@ -272,6 +313,7 @@ export class TaskManager {
           task.error = `task exceeded maxWorkingAgeMs (${this.maxWorkingAgeMs}ms)`;
           task.lastUpdatedAt = new Date().toISOString();
           logger.warn(`Task ${id} (${task.name}) failed: exceeded maxWorkingAgeMs`);
+          this.emitTaskUpdate(task);
         }
         continue;
       }

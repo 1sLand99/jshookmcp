@@ -38,12 +38,12 @@ export function createPerformanceMonitorFactory(
   };
 }
 
-export function emitEvent(
+export function emitEvent<K extends keyof ServerEventMap>(
   eventBus: EventBus<ServerEventMap> | undefined,
-  event: keyof ServerEventMap,
-  payload: ServerEventMap[keyof ServerEventMap],
+  event: K,
+  payload: ServerEventMap[K],
 ): void {
-  void eventBus?.emit(event as never, payload);
+  void eventBus?.emit(event, payload);
 }
 
 // ── Shared Arg Parsing Helpers ──

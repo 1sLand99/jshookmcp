@@ -42,6 +42,7 @@ import {
   argStringArray,
 } from '@server/domains/shared/parse-args';
 import { handleSafe } from '@server/domains/shared/ResponseBuilder';
+import type { EventBus, ServerEventMap } from '@server/EventBus';
 import { asJsonResponse } from '@server/domains/shared/response';
 import type { ToolResponse } from '@server/types';
 import { captureAdbLogcat } from './logcat';
@@ -313,6 +314,17 @@ function parseAdbPortMappings(
 
 export class ADBBridgeHandlers {
   private cachedAdb?: string;
+  private eventBus?: EventBus<ServerEventMap>;
+
+  /**
+   * Receive the server event bus so `adb_device_list` can announce attached
+   * devices. The activation layer boosts this domain off `adb:device_connected`,
+   * and nothing else emits that event — without this wiring the boost rule is
+   * inert configuration that silently never fires.
+   */
+  setEventBus(eventBus: EventBus<ServerEventMap>): void {
+    this.eventBus = eventBus;
+  }
 
   private async resolveAdb(): Promise<string> {
     if (this.cachedAdb) return this.cachedAdb;
@@ -457,12 +469,25 @@ export class ADBBridgeHandlers {
             if (k && v) meta[k] = v;
           }
         }
+        const state = parts[1] ?? '';
+        const model = meta['model'] ?? '';
         devices.push({
           serial,
-          state: parts[1] ?? '',
-          model: meta['model'] ?? '',
+          state,
+          model,
           product: meta['product'] ?? '',
         });
+
+        // Announce attached devices so the activation layer can boost this
+        // domain. `state === 'device'` skips `offline` / `unauthorized` entries,
+        // which `adb devices` lists but which cannot be driven.
+        if (state === 'device') {
+          void this.eventBus?.emit('adb:device_connected', {
+            serial,
+            model: model || serial,
+            timestamp: new Date().toISOString(),
+          });
+        }
       }
       return { success: true, count: devices.length, devices };
     });

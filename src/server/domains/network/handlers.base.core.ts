@@ -53,8 +53,8 @@ export class NetworkHandlersCore {
     this.traceRecorderGetter = traceRecorderGetter;
   }
 
-  protected emit(event: keyof ServerEventMap, payload: ServerEventMap[keyof ServerEventMap]): void {
-    void this.eventBus?.emit(event as never, payload);
+  protected emit<K extends keyof ServerEventMap>(event: K, payload: ServerEventMap[K]): void {
+    void this.eventBus?.emit(event, payload);
   }
 
   protected getPerformanceMonitor(): PerformanceMonitor {

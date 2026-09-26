@@ -11,7 +11,48 @@ export type EventHandler<T = unknown> = (payload: T) => void | Promise<void>;
 
 /** Core event map — extend via module augmentation for domain-specific events. */
 export interface ServerEventMap {
-  [key: string]: unknown;
+  /**
+   * There is deliberately NO `[key: string]: unknown` index signature here.
+   *
+   * One used to be, and it silently disabled event typing for the whole repo:
+   * an index signature widens `keyof ServerEventMap` to `string | number`, so
+   * `EventBus.emit<K extends keyof TMap>`, `emitBusEvent` and `on` all accepted
+   * any string at all. Wrong event names compiled, and payloads were checked
+   * against the union of every event's payload instead of their own.
+   *
+   * Removing the signature surfaced five events that were being emitted
+   * undeclared and unchecked: `frida:spawned`, `network:http2_probed`,
+   * `network:http2_frame_build_completed`, `network:rtt_measured` and
+   * `task:update`. `scripts/audit-event-contracts.mjs` fails the build if the
+   * signature ever comes back.
+   *
+   * ONE event below is declared with no producer: `domain:unloaded`. It is
+   * groundwork, not dead code — kept because the registry has no teardown path
+   * to report. See `UNEMITTED_EVENT_BASELINE` in
+   * `scripts/audit-event-contracts.mjs` for the evidence (caches are
+   * append-only; AutoPruner and the domain TTL only change VISIBILITY, which is
+   * not an unload).
+   *
+   * The other ten events that used to sit in the same gap were WIRED on
+   * 2026-09-24 rather than documented away: `tool:activated`/`tool:deactivated`
+   * (MCPServer.search.handlers.activate.ts), `domain:loaded`
+   * (registry/discovery.ts + registry/index.ts), `extension:loaded`/
+   * `extension:unloaded` (extension-registry/PluginRegistry.ts),
+   * `session:browser_launched`/`session:browser_closed`
+   * (browser/handlers/browser-control.ts), `network:dns_resolved`/
+   * `network:dns_reversed` (network/handlers/raw-dns-http-handlers.ts), and
+   * `task:update` (tasks/TaskManager.ts — its `SseStream` subscriber at
+   * src/server/http/SseStream.ts:62 can now actually fire; note `SseStream.ts:68`
+   * calls `sendEvent`, which forwards to an HTTP client and is NOT a producer).
+   *
+   * `scripts/audit-event-contracts.mjs` enforces this as check 9. It fails when
+   * a NEW declared-but-unemitted name appears, when a baseline name is no longer
+   * declared at all, and when a baseline name GAINS a producer (that entry is
+   * then stale and must be deleted from the baseline, otherwise the guard would
+   * silently exempt a live event). So: wire the emitter rather than deleting the
+   * declaration, and never silence the guard by adding a name to the baseline
+   * without naming the call site that will emit it.
+   */
   'tool:activated': { toolName: string; domain: string; timestamp: string };
   'tool:deactivated': { toolName: string; domain: string; timestamp: string };
   /**
@@ -85,6 +126,19 @@ export interface ServerEventMap {
     total?: number;
     timestamp: string;
   };
+  /**
+   * Task progress mirrored to SSE subscribers by `src/server/http/SseStream.ts`.
+   * SseStream is not constructed anywhere under src/ yet, so nothing emits this
+   * today — declared so the subscription is type-checked. The general
+   * missing-producer check lives in scripts/audit-event-contracts.mjs.
+   */
+  'task:update': {
+    taskId: string;
+    status: string;
+    sessionId?: string;
+    timestamp: string;
+    data?: Record<string, unknown>;
+  };
   'evidence:updated': { timestamp: string; reason: string };
   'evidence-evicted': {
     reason: 'node-cap' | 'edge-cap';
@@ -108,7 +162,10 @@ export interface ServerEventMap {
     byteLength: number;
     timestamp: string;
   };
-  'network:http2_probe_completed': {
+  // Renamed from `network:http2_probe_completed`, which nothing referenced
+  // except its own declaration — the emitter and its tests already used this
+  // name, so the declared key was a ghost that could never be emitted.
+  'network:http2_probed': {
     url: string;
     statusCode: number | null;
     alpnProtocol: string | null;
@@ -120,6 +177,32 @@ export interface ServerEventMap {
     typeCode: number;
     streamId: number;
     payloadBytes: number;
+    timestamp: string;
+  };
+  'network:http2_frame_build_completed': {
+    frameType: string;
+    typeCode: number;
+    streamId: number;
+    flags: number;
+    payloadBytes: number;
+    timestamp: string;
+  };
+  'network:rtt_measured': {
+    url: string;
+    probeType: string;
+    iterations: number;
+    successCount: number;
+    errorCount: number;
+    stats: {
+      count: number;
+      minMs: number;
+      maxMs: number;
+      avgMs: number;
+      p50Ms: number;
+      p90Ms: number;
+      p95Ms: number;
+      p99Ms: number;
+    } | null;
     timestamp: string;
   };
   'network:http2_fingerprint_computed': {
@@ -186,6 +269,7 @@ export interface ServerEventMap {
   };
   'skia:scene_captured': { canvasId: string; nodeCount: number; timestamp: string };
   'frida:attached': { target: string; sessionId: string; timestamp: string };
+  'frida:spawned': { target: string; sessionId: string; timestamp: string };
   'adb:device_connected': { serial: string; model: string; timestamp: string };
   'mojo:message_captured': { messageCount: number; timestamp: string };
   'syscall:trace_started': { backend: string; pid?: number; simulate?: boolean; timestamp: string };
@@ -258,7 +342,15 @@ interface Subscription {
   once: boolean;
 }
 
-export class EventBus<TMap extends Record<string, unknown> = ServerEventMap> {
+/**
+ * Typed pub/sub bus.
+ *
+ * `TMap` is constrained to `object`, not `Record<string, unknown>`: requiring a
+ * string index signature would force every event map to declare one, and a
+ * declared index signature collapses `keyof TMap` to `string | number` —
+ * turning `emit`/`on` into unchecked calls. See the note on `ServerEventMap`.
+ */
+export class EventBus<TMap extends object = ServerEventMap> {
   private readonly listeners = new Map<keyof TMap, Subscription[]>();
   private readonly wildcardListeners: Subscription[] = [];
 

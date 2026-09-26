@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
   discoverDomainManifests: vi.fn(),
+  loadSingleManifest: vi.fn(),
   domainProfileMap: {} as Record<string, readonly string[]>,
   logger: {
     warn: vi.fn(),
@@ -13,6 +14,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock('@server/registry/discovery', () => ({
   discoverDomainManifests: state.discoverDomainManifests,
+  loadSingleManifest: state.loadSingleManifest,
 }));
 
 vi.mock('@server/registry/generated-domains.js', () => ({
@@ -173,5 +175,51 @@ describe('registry/index', () => {
       (entry) => entry.domain === 'maintenance',
     );
     expect(maintenanceEntry?.secondaryDepKeys).toContain('sandboxHandlers');
+  });
+
+  it('emits domain:loaded when a domain is loaded on demand', async () => {
+    state.discoverDomainManifests.mockResolvedValue([]);
+    state.loadSingleManifest.mockResolvedValue(
+      makeManifest(
+        'ondemand',
+        'ondemandDep',
+        ['full'],
+        [makeRegistration('t1', 'ondemand'), makeRegistration('t2', 'ondemand')],
+      ),
+    );
+    const registry = await import('@server/registry/index');
+    await registry.initRegistry();
+
+    const { createServerEventBus } = await import('@server/EventBus');
+    const bus = createServerEventBus();
+    const handler = vi.fn();
+    bus.on('domain:loaded', handler);
+
+    const manifest = await registry.ensureDomainLoaded('ondemand', bus);
+
+    expect(manifest?.domain).toBe('ondemand');
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith({
+      domain: 'ondemand',
+      toolCount: 2,
+      timestamp: expect.any(String),
+    });
+  });
+
+  it('does not re-emit domain:loaded for an already-loaded domain', async () => {
+    state.discoverDomainManifests.mockResolvedValue([
+      makeManifest('alpha', 'alphaDep', ['full'], [makeRegistration('alpha_tool', 'alpha')]),
+    ]);
+    const registry = await import('@server/registry/index');
+    await registry.initRegistry();
+
+    const { createServerEventBus } = await import('@server/EventBus');
+    const bus = createServerEventBus();
+    const handler = vi.fn();
+    bus.on('domain:loaded', handler);
+
+    await registry.ensureDomainLoaded('alpha', bus);
+
+    expect(handler).not.toHaveBeenCalled();
   });
 });

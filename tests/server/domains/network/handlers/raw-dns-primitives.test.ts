@@ -413,3 +413,72 @@ describe('RawDnsHttpHandlers — DNS primitives', () => {
     });
   });
 });
+
+// ── bus emissions ──
+
+describe('RawDnsHttpHandlers — DNS event emissions', () => {
+  let handler: RawDnsHttpHandlers;
+  let eventBus: { emit: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    eventBus = { emit: vi.fn() };
+    handler = new RawDnsHttpHandlers(eventBus as never);
+  });
+
+  it('emits network:dns_resolved with the real address count (a constant 1 would fail)', async () => {
+    state.dnsResolve.mockResolvedValue(['1.1.1.1', '2.2.2.2', '3.3.3.3']);
+
+    await handler.handleDnsResolve({ hostname: 'example.com', rrType: 'A' });
+
+    expect(eventBus.emit).toHaveBeenCalledWith(
+      'network:dns_resolved',
+      expect.objectContaining({ hostname: 'example.com', count: 3 }),
+    );
+  });
+
+  it('emits network:dns_reversed with the real name count', async () => {
+    state.dnsReverse.mockResolvedValue(['a.example.com', 'b.example.com']);
+
+    await handler.handleDnsReverse({ ip: '93.184.216.34' });
+
+    expect(eventBus.emit).toHaveBeenCalledWith(
+      'network:dns_reversed',
+      expect.objectContaining({ address: '93.184.216.34', count: 2 }),
+    );
+  });
+
+  it('does not emit network:dns_resolved when the lookup fails', async () => {
+    state.dnsResolve.mockRejectedValue(dnsError('ENOTFOUND', 'dead.example.com'));
+
+    await handler.handleDnsResolve({ hostname: 'dead.example.com' });
+
+    expect(eventBus.emit).not.toHaveBeenCalled();
+  });
+
+  it('does not emit network:dns_reversed when the lookup fails', async () => {
+    state.dnsReverse.mockRejectedValue(dnsError('ENOTFOUND', '10.0.0.1'));
+
+    await handler.handleDnsReverse({ ip: '10.0.0.1' });
+
+    expect(eventBus.emit).not.toHaveBeenCalled();
+  });
+
+  it('emits one network:dns_resolved per successful bulk host, with that host real count', async () => {
+    state.dnsResolve
+      .mockResolvedValueOnce(['1.1.1.1', '2.2.2.2', '3.3.3.3'])
+      .mockRejectedValueOnce(dnsError('ENOTFOUND', 'dead.example.com'));
+
+    await handler.handleDnsBulkResolve({
+      hostnames: ['a.example.com', 'dead.example.com'],
+    });
+
+    const dnsResolvedCalls = eventBus.emit.mock.calls.filter(
+      ([eventName]) => eventName === 'network:dns_resolved',
+    );
+    expect(dnsResolvedCalls).toHaveLength(1);
+    expect(dnsResolvedCalls[0]?.[1]).toEqual(
+      expect.objectContaining({ hostname: 'a.example.com', count: 3 }),
+    );
+  });
+});

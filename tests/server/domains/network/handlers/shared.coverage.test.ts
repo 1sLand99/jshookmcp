@@ -100,12 +100,20 @@ describe('network handlers shared', () => {
     it('calls emit on eventBus when provided', async () => {
       const emit = vi.fn();
       const eventBus = { emit } as never;
-      emitEvent(eventBus, 'network:intercept_started', { test: true });
+      emitEvent(eventBus, 'network:intercept_started', {
+        interceptType: 'fetch',
+        timestamp: new Date().toISOString(),
+      });
       expect(emit).toHaveBeenCalled();
     });
 
     it('does nothing when eventBus is undefined', async () => {
-      expect(() => emitEvent(undefined, 'network:intercept_started', {})).not.toThrow();
+      expect(() =>
+        emitEvent(undefined, 'network:intercept_started', {
+          interceptType: 'fetch',
+          timestamp: new Date().toISOString(),
+        }),
+      ).not.toThrow();
     });
   });
 

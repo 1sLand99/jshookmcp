@@ -6,6 +6,7 @@ import type { TabRegistry } from '@modules/browser/TabRegistry';
 import { argBool, argNumber, argString, argStringArray } from '@server/domains/shared/parse-args';
 import { R } from '@server/domains/shared/ResponseBuilder';
 import type { ToolResponse } from '@server/types';
+import { emitBusEvent, type EventBus, type ServerEventMap } from '@server/EventBus';
 import { logger } from '@utils/logger';
 import { readFile, writeFile } from 'node:fs/promises';
 import type { BrowserAttachRuntimeSnapshot } from '@server/runtime/ServerRuntimeState';
@@ -52,6 +53,7 @@ interface BrowserControlHandlersDeps {
   }>;
   sessionCoordinator?: BrowserSessionCoordinator;
   fleetRouter?: BrowserFleetRouter;
+  eventBus?: EventBus<ServerEventMap>;
   onBrowserAttachStateChanged?: (snapshot: Partial<BrowserAttachRuntimeSnapshot>) => void;
 }
 
@@ -130,6 +132,20 @@ export class BrowserControlHandlers {
 
   private getCurrentSessionId(): string | null {
     return this.deps.sessionCoordinator?.getCurrentSessionId() ?? null;
+  }
+
+  /**
+   * Announce that `browser_launch` established a browser session for this
+   * session. `mode` is the resolved launch mode the handler actually used
+   * (`launch` | `connect`), not a literal — the same value the tool response
+   * reports. Fire-and-forget: a missing bus (partial/degraded startup) or a
+   * throwing subscriber must never break the launch path.
+   */
+  private emitBrowserLaunched(mode: BrowserLaunchMode): void {
+    emitBusEvent(this.deps.eventBus, 'session:browser_launched', {
+      mode,
+      timestamp: new Date().toISOString(),
+    });
   }
 
   private parseHeadlessArg(value: unknown): boolean | undefined {
@@ -356,6 +372,8 @@ export class BrowserControlHandlers {
         const claim = this.deps.sessionCoordinator?.claimBrowserLease(sessionId);
         const status = await this.deps.collector.getStatus();
 
+        this.emitBrowserLaunched('connect');
+
         return R.ok()
           .merge({
             driver: 'chrome',
@@ -400,6 +418,8 @@ export class BrowserControlHandlers {
         });
 
         const status = await this.deps.collector.getStatus();
+
+        this.emitBrowserLaunched('launch');
 
         return R.ok()
           .merge({
@@ -450,6 +470,8 @@ export class BrowserControlHandlers {
           attachedAt: new Date().toISOString(),
         });
         const fallbackStatus = await this.deps.collector.getStatus();
+
+        this.emitBrowserLaunched('launch');
 
         return R.ok()
           .merge({
@@ -502,6 +524,14 @@ export class BrowserControlHandlers {
       }
       await this.deps.collector.close();
       this.deps.sessionCoordinator?.clearBrowserLeases();
+      // Only reachable when this session was the last owner, so the browser was
+      // actually torn down (the shared-lease branch above returns early). The
+      // reason is the operation that caused the close — the `browser_close`
+      // tool this handler serves — not a fabricated value.
+      emitBusEvent(this.deps.eventBus, 'session:browser_closed', {
+        reason: 'browser_close',
+        timestamp: new Date().toISOString(),
+      });
       return R.ok()
         .merge({
           message: 'Browser closed successfully',

@@ -26,6 +26,7 @@ import {
   getAllKnownDomainNames,
 } from '@server/registry/discovery';
 import { DOMAIN_PROFILE_MAP } from '@server/registry/generated-domains.js';
+import { emitBusEvent, type EventBus, type ServerEventMap } from '@server/EventBus';
 import { logger } from '@utils/logger';
 
 // ── Cache invalidation listeners ──
@@ -58,7 +59,7 @@ let domainsView: Set<string> | null = null;
 let toolNamesView: ReadonlySet<string> | null = null;
 let registrationsByName: Map<string, ToolRegistration> | null = null;
 
-async function init(profile?: ToolProfileId): Promise<void> {
+async function init(profile?: ToolProfileId, eventBus?: EventBus<ServerEventMap>): Promise<void> {
   if (manifestsCache !== null) return;
   if (initPromise) {
     await initPromise;
@@ -66,7 +67,7 @@ async function init(profile?: ToolProfileId): Promise<void> {
   }
   initPromise = (async () => {
     const domainsToLoad = profile ? getDomainsForProfile(profile) : undefined;
-    const discovered = await discoverDomainManifests(domainsToLoad);
+    const discovered = await discoverDomainManifests(domainsToLoad, eventBus);
     manifestsCache = discovered;
 
     registrationsByName = new Map();
@@ -95,8 +96,11 @@ async function init(profile?: ToolProfileId): Promise<void> {
 
 // ── Public initialiser (call before first use) ──
 
-export async function initRegistry(profile?: ToolProfileId): Promise<void> {
-  await init(profile);
+export async function initRegistry(
+  profile?: ToolProfileId,
+  eventBus?: EventBus<ServerEventMap>,
+): Promise<void> {
+  await init(profile, eventBus);
 }
 
 // ── On-demand loading ──
@@ -106,7 +110,10 @@ export async function initRegistry(profile?: ToolProfileId): Promise<void> {
  * Loads the manifest, adds its registrations, and updates cached views.
  * Returns the manifest or null if loading failed.
  */
-export async function ensureDomainLoaded(domainName: string): Promise<DomainManifest | null> {
+export async function ensureDomainLoaded(
+  domainName: string,
+  eventBus?: EventBus<ServerEventMap>,
+): Promise<DomainManifest | null> {
   if (!manifestsCache) throw new Error('[registry] Not initialised - call initRegistry() first.');
 
   // Already loaded
@@ -140,6 +147,12 @@ export async function ensureDomainLoaded(domainName: string): Promise<DomainMani
     (toolNamesView as Set<string>).add(r.tool.name);
   }
 
+  emitBusEvent(eventBus, 'domain:loaded', {
+    domain: manifest.domain,
+    toolCount: manifest.registrations.length,
+    timestamp: new Date().toISOString(),
+  });
+
   return manifest;
 }
 
@@ -148,7 +161,7 @@ export async function ensureDomainLoaded(domainName: string): Promise<DomainMani
  * Useful for search_tools which needs to index all tools.
  * No-op if all domains are already loaded.
  */
-export async function ensureAllDomainsLoaded(): Promise<void> {
+export async function ensureAllDomainsLoaded(eventBus?: EventBus<ServerEventMap>): Promise<void> {
   if (!manifestsCache) throw new Error('[registry] Not initialised - call initRegistry() first.');
 
   const allDomains = getAllKnownDomainNames();
@@ -158,7 +171,7 @@ export async function ensureAllDomainsLoaded(): Promise<void> {
   if (missing.length === 0) return;
 
   logger.info(`[registry] Loading ${missing.length} remaining domains for full discovery`);
-  await Promise.all(missing.map((d) => ensureDomainLoaded(d)));
+  await Promise.all(missing.map((d) => ensureDomainLoaded(d, eventBus)));
 }
 
 // ── Accessors ──

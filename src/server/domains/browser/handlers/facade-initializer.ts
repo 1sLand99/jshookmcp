@@ -112,6 +112,7 @@ export function initializeBrowserHandlerModules(
       getTabRegistry,
       sessionCoordinator: deps.sessionCoordinator,
       fleetRouter: deps.fleetRouter,
+      eventBus: deps.eventBus,
       clearAttachedTargetContext: (context) => targetControl.clearAttachedTargetContext(context),
       onBrowserAttachStateChanged: deps.onBrowserAttachStateChanged,
     }),

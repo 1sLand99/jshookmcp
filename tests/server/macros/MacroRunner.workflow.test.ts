@@ -110,4 +110,39 @@ describe('MacroRunner workflow integration', () => {
     expect(flakyAttempts).toBe(2);
     expect(executeToolWithTracking).toHaveBeenCalledWith('fast_tool', {});
   });
+
+  it('derives per-step durations from the engine own node spans', async () => {
+    // The end-to-end pairing test. `MacroRunner.buildProgress` reads the engine's
+    // node spans BY NAME to derive each step's duration; as bare string literals
+    // on both sides, a rename on either would have made both lookups return
+    // undefined and silently blanked `durationMs`, with no test failing — the
+    // same shape as the `adb:device_connected` regression, just not yet fired.
+    // Both sides now share `WorkflowSpanNames`, and this drives the REAL engine
+    // (no engine mock) so the pairing is checked by behaviour rather than by a
+    // fixture that repeats the consumer's assumption back at it.
+    const executeToolWithTracking = vi.fn(async (name: string) => successResponse({ name }));
+    const runner = new MacroRunner(mockContext(executeToolWithTracking));
+    const def: MacroDefinition = {
+      id: 'timed_macro',
+      displayName: 'Timed Macro',
+      description: 'Per-step durations must come from real engine spans',
+      tags: [],
+      steps: [
+        { id: 'first', toolName: 'some_tool' },
+        { id: 'second', toolName: 'another_tool' },
+      ],
+    };
+
+    const result = await runner.execute(def);
+
+    expect(result.ok).toBe(true);
+    expect(result.progress).toHaveLength(2);
+    for (const step of result.progress) {
+      expect(step.status).toBe('complete');
+      // undefined here means the consumer's name lookup missed the producer's
+      // emission — the failure this test exists to make loud.
+      expect(step.durationMs).toBeTypeOf('number');
+      expect(step.durationMs).toBeGreaterThanOrEqual(0);
+    }
+  });
 });

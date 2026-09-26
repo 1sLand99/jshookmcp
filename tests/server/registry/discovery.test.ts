@@ -352,4 +352,88 @@ describe('registry/discovery', () => {
       expect(getAllKnownDomainNames()).toEqual(new Set(['alpha', 'beta']));
     });
   });
+
+  describe('domain:loaded emission', () => {
+    it('emits domain:loaded once per loaded domain with the real tool count', async () => {
+      const manifestA = {
+        kind: 'domain-manifest',
+        version: 1,
+        domain: 'alpha',
+        depKey: 'alphaDep',
+        profiles: ['full'],
+        registrations: [{}, {}],
+        ensure: () => {},
+      };
+      const manifestB = {
+        kind: 'domain-manifest',
+        version: 1,
+        domain: 'beta',
+        depKey: 'betaDep',
+        profiles: ['full'],
+        registrations: [{}],
+        ensure: () => {},
+      };
+
+      state.mockLoaders = [
+        {
+          domain: 'alpha',
+          depKey: 'a',
+          profiles: ['full'],
+          secondaryDepKeys: [],
+          load: () => Promise.resolve({ default: manifestA }),
+        },
+        {
+          domain: 'beta',
+          depKey: 'b',
+          profiles: ['full'],
+          secondaryDepKeys: [],
+          load: () => Promise.resolve({ default: manifestB }),
+        },
+      ];
+
+      const { createServerEventBus } = await import('@server/EventBus');
+      const { discoverDomainManifests } = await import('@server/registry/discovery');
+      const bus = createServerEventBus();
+      const handler = vi.fn();
+      bus.on('domain:loaded', handler);
+
+      await discoverDomainManifests(undefined, bus);
+
+      expect(handler).toHaveBeenCalledTimes(2);
+      expect(handler).toHaveBeenCalledWith({
+        domain: 'alpha',
+        toolCount: 2,
+        timestamp: expect.any(String),
+      });
+      expect(handler).toHaveBeenCalledWith({
+        domain: 'beta',
+        toolCount: 1,
+        timestamp: expect.any(String),
+      });
+    });
+
+    it('loads manifests without a bus (scripts/tests outside a server)', async () => {
+      const manifest = {
+        kind: 'domain-manifest',
+        version: 1,
+        domain: 'solo',
+        depKey: 'soloDep',
+        profiles: ['full'],
+        registrations: [{}],
+        ensure: () => {},
+      };
+      state.mockLoaders = [
+        {
+          domain: 'solo',
+          depKey: 's',
+          profiles: ['full'],
+          secondaryDepKeys: [],
+          load: () => Promise.resolve({ default: manifest }),
+        },
+      ];
+
+      const { discoverDomainManifests } = await import('@server/registry/discovery');
+      await expect(discoverDomainManifests()).resolves.toHaveLength(1);
+    });
+  });
 });

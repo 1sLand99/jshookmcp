@@ -906,6 +906,7 @@ export class BrowserToolHandlers {
         clearCamoufoxPage: () => {
           this.camoufoxPage = null;
         },
+        eventBus: this.eventBus,
       },
       args,
     );

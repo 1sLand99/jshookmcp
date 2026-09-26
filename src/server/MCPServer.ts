@@ -89,6 +89,13 @@ const INFO_LOG_FORWARD_EVERY = 10;
 
 export interface MCPServerRuntimeOptions {
   browserFleetLeaseStore?: BrowserFleetLeaseStore;
+  /**
+   * Event bus to use instead of creating a fresh one. Lets the CLI entry
+   * construct the single bus before the registry is initialised, so
+   * registry-time events (`domain:loaded`) are published on the same bus the
+   * server later exposes. Tests may omit it to get an isolated bus.
+   */
+  eventBus?: EventBus<ServerEventMap>;
 }
 
 export class MCPServer implements MCPServerContext {
@@ -107,7 +114,7 @@ export class MCPServer implements MCPServerContext {
   public readonly contextGuard: ToolCallContextGuard;
   public readonly circuitBreaker = new ToolCircuitBreaker();
   /** MCP 2.0 Tasks protocol — background scheduler for long-running tool operations. */
-  public readonly taskManager = new TaskManager();
+  public readonly taskManager: TaskManager;
   private readonly circuitBrokenTools = new Set<string>();
   private readonly searchQualityTracker = new SearchQualityTracker();
   /** Offloads large response data (>512KB) to disk / DetailedDataManager to keep context lean. */
@@ -193,8 +200,8 @@ export class MCPServer implements MCPServerContext {
   declare v8InspectorHandlers:
     | import('@server/domains/v8-inspector/handlers').V8InspectorHandlers
     | undefined;
-  declare boringsslInspectorHandlers:
-    | import('@server/domains/boringssl-inspector/handlers').BoringsslInspectorHandlers
+  declare tlsInspectorHandlers:
+    | import('@server/domains/tls-inspector/handlers').TlsInspectorHandlers
     | undefined;
   declare skiaCaptureHandlers:
     | import('@server/domains/canvas/skia').SkiaCaptureHandlers
@@ -294,7 +301,11 @@ export class MCPServer implements MCPServerContext {
     this.tokenBudget = new TokenBudgetManager();
     this.unifiedCache = new UnifiedCacheManager();
     this.detailedData = new DetailedDataManager();
-    this.eventBus = createServerEventBus();
+    this.eventBus = runtimeOptions.eventBus ?? createServerEventBus();
+    // Task status transitions publish `task:update` on this bus so SseStream
+    // subscribers (/progress/:sessionId) observe the real lifecycle. Built here
+    // rather than as a field initializer because it needs `this.eventBus`.
+    this.taskManager = new TaskManager({ eventBus: this.eventBus });
     this.tokenBudget.setExternalCleanup(() => this.detailedData.clear());
     const { tools, profile } = resolveToolsForRegistration(config);
     this.selectedTools = tools;
@@ -342,7 +353,7 @@ export class MCPServer implements MCPServerContext {
           depsEntries.push([
             meta.depKey,
             createDomainProxy(this, meta.domain, `${meta.domain}:${meta.depKey}`, async () => {
-              const manifest = await ensureDomainLoaded(meta.domain);
+              const manifest = await ensureDomainLoaded(meta.domain, this.eventBus);
               if (!manifest) throw new Error(`Failed to load domain ${meta.domain}`);
               return manifest.ensure(this) as object;
             }),
@@ -353,7 +364,7 @@ export class MCPServer implements MCPServerContext {
               depsEntries.push([
                 key,
                 createDomainProxy(this, meta.domain, `${meta.domain}:${key}`, async () => {
-                  const manifest = await ensureDomainLoaded(meta.domain);
+                  const manifest = await ensureDomainLoaded(meta.domain, this.eventBus);
                   if (!manifest) throw new Error(`Failed to load domain ${meta.domain}`);
                   await manifest.ensure(this);
                   return (this as Record<string, unknown>)[key] as object;
@@ -787,7 +798,7 @@ const DOMAIN_INSTANCE_KEYS: ReadonlyArray<
   'consoleMonitor',
   'browserHandlers',
   'v8InspectorHandlers',
-  'boringsslInspectorHandlers',
+  'tlsInspectorHandlers',
   'skiaCaptureHandlers',
   'binaryInstrumentHandlers',
   'binarySecretsHandlers',

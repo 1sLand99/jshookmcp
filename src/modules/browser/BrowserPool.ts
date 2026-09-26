@@ -8,6 +8,28 @@
  * - Multi-tab support per browser instance
  * - Graceful shutdown with cleanup
  *
+ * Status: intentionally NOT wired into the runtime yet.
+ *
+ * Nothing under `src/` imports this class — the only importers are its own two
+ * tests (`tests/modules/browser/BrowserPool.test.ts` and
+ * `tests/modules/browser/BrowserPool.bugfixes.test.ts`) — and the
+ * `@modules/browser` barrel has no `src/` importer either. This is deliberate
+ * groundwork for the pooled-browser path, so a "zero callers = delete" sweep
+ * must NOT remove it.
+ *
+ * Measured consequence: `SpanNames.captchaDetect` has exactly one emission site
+ * (`src/modules/captcha/CaptchaDetector.ts:159`), and the only construction
+ * chain reaching it is
+ *   BrowserPool.ts:178            -> new UnifiedBrowserManager()
+ *   UnifiedBrowserManager.ts:214  -> new BrowserModeManager()
+ *   BrowserModeManager.ts:97      -> new CaptchaDetector()
+ * so that span is "declared, producer exists, producer unreachable from any
+ * entry point". The browser domain's LIVE path uses `AICaptchaDetector`
+ * (`src/server/domains/browser/handlers.impl.ts:163`) instead, which emits no
+ * span. That is expected until this pool is wired — see the note on
+ * `setGlobalInstrumentation` in `InstrumentationContract.ts` about this module
+ * having been "abandoned half-wired" once already.
+ *
  * Usage:
  *   const pool = new BrowserPool();
  *   const instance = await pool.acquire({ profile: 'default' });

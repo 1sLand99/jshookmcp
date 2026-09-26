@@ -5,6 +5,7 @@ import { MCPServer } from '@server/MCPServer';
 import { getConfig, validateConfig } from '@utils/config';
 import { logger } from '@utils/logger';
 import { initRegistry } from '@server/registry/index';
+import { createServerEventBus } from '@server/EventBus';
 import { resolveCliFastPath } from '@utils/cliFastPath';
 import { registerServerInstance, unregisterServerInstance } from '@utils/InstanceRegistry';
 import {
@@ -128,8 +129,11 @@ export async function main(): Promise<void> {
     logger.info('Creating MCP server instance...');
     logger.info(`[startup] transport=${transportMode} profile=${profile}`);
     await registerServerInstance({ transport: transportMode, profile });
-    await initRegistry(profile);
-    const server = new MCPServer(config);
+    // Create the single event bus before the registry loads so registry-time
+    // `domain:loaded` events publish on the same bus the server later exposes.
+    const eventBus = createServerEventBus();
+    await initRegistry(profile, eventBus);
+    const server = new MCPServer(config, { eventBus });
     const stopArtifactRetentionScheduler = startArtifactRetentionScheduler();
     const recoveryWindowMs = Math.max(1000, RUNTIME_ERROR_WINDOW_MS);
     const maxRecoverableErrors = Math.max(1, RUNTIME_ERROR_THRESHOLD);

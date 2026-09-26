@@ -11,6 +11,7 @@ import {
 import { type PageNavigationWaitUntil } from '@modules/browser/navigation-wait-until';
 import { parsePageNavigationWaitUntil } from '@server/domains/browser/page-navigation-wait-until';
 import { handleSafe, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
+import { emitBusEvent, type EventBus, type ServerEventMap } from '@server/EventBus';
 
 function extractCamoufoxConfig(args: Record<string, unknown>): CamoufoxBrowserConfig {
   const addons = argStringArray(args, 'addons');
@@ -55,6 +56,7 @@ export interface CamoufoxLaunchFlowContext {
   setCamoufoxManager: (manager: CamoufoxBrowserManager) => void;
   setActiveDriver: (driver: 'chrome' | 'camoufox') => void;
   clearCamoufoxPage: () => void;
+  eventBus?: EventBus<ServerEventMap>;
 }
 
 export async function handleCamoufoxLaunchFlow(
@@ -75,6 +77,11 @@ export async function handleCamoufoxLaunchFlow(
       context.setActiveDriver('camoufox');
       context.clearCamoufoxPage();
 
+      emitBusEvent(context.eventBus, 'session:browser_launched', {
+        mode: 'connect',
+        timestamp: new Date().toISOString(),
+      });
+
       return {
         driver: 'camoufox',
         mode: 'connect',
@@ -88,6 +95,11 @@ export async function handleCamoufoxLaunchFlow(
     context.setCamoufoxManager(manager);
     context.setActiveDriver('camoufox');
     context.clearCamoufoxPage();
+
+    emitBusEvent(context.eventBus, 'session:browser_launched', {
+      mode: 'launch',
+      timestamp: new Date().toISOString(),
+    });
 
     return {
       driver: 'camoufox',

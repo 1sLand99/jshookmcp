@@ -2,6 +2,7 @@
 import { logger } from '@utils/logger';
 import { readEnvBoolean } from '@src/config/environment';
 import type { DomainManifest } from '@server/registry/contracts';
+import { emitBusEvent, type EventBus, type ServerEventMap } from '@server/EventBus';
 import { generatedManifestLoaders, DOMAIN_PROFILE_MAP } from './generated-domains.js';
 
 // ── validation ──
@@ -67,6 +68,7 @@ export function getLoaderMetadata(): readonly DomainLoaderMeta[] {
  */
 export async function discoverDomainManifests(
   domainsToLoad?: ReadonlySet<string>,
+  eventBus?: EventBus<ServerEventMap>,
 ): Promise<DomainManifest[]> {
   const manifests: DomainManifest[] = [];
   const seenDomains = new Set<string>();
@@ -110,6 +112,11 @@ export async function discoverDomainManifests(
           String(manifest.registrations.length) +
           ' tools)',
       );
+      emitBusEvent(eventBus, 'domain:loaded', {
+        domain: manifest.domain,
+        toolCount: manifest.registrations.length,
+        timestamp: new Date().toISOString(),
+      });
     } catch (err) {
       logger.error(`[discovery] Failed to load domain "${domainName}"`, err);
       if (readEnvBoolean('DISCOVERY_STRICT', false)) {
