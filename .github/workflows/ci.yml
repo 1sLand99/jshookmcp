@@ -77,7 +77,44 @@ jobs:
       - name: Generate registry index
         run: node scripts/generate-domains-index.mjs
 
-      - name: Run Linters & Formatters
+      - name: Assert generated registry is committed and current
+        # The step above OVERWRITES the three generated-*.ts files, so every
+        # downstream guard would otherwise be comparing the freshly generated
+        # output against itself. `audit:domains` check 1 in particular is
+        # tautological without this step: it diffs generated-tool-domains.ts
+        # against initRegistry(), and CI has just written that file from the
+        # same registry. A stale committed artifact is what .gitignore's NOTE
+        # says must never ship, so pin it here.
+        #
+        # `--exit-code` (not `--stat`) so the diff is actually visible in the log.
+        run: |
+          if ! git diff --exit-code -- src/server/registry/generated-domains.ts src/server/registry/generated-tool-catalog.ts src/server/registry/generated-tool-domains.ts; then
+            echo "::error::Committed generated-*.ts is stale. Run 'node scripts/generate-domains-index.mjs' and commit the result."
+            exit 1
+          fi
+
+      - name: Contract & drift guards
+        # Guards for the "hand-maintained artifact drifted from the thing it
+        # describes" class of bug: registry metadata, the openapi surface, domain
+        # integrity, event contracts, and the tool audit. All five are read-only.
+        #
+        # Four of these five previously ran only through `pnpm run check`, which
+        # is invoked solely by publish-packages.yml, a tag-triggered workflow —
+        # so on a pull request they never executed at all, and a desync surfaced
+        # only at release time. The fifth, `audit:tools`, was not in `check` at
+        # all and had never run in CI; it is listed here on its own merit.
+        #
+        # Deliberately NOT included: `audit:events:selftest`. It writes to src/ by
+        # design, to prove the audit can actually fail; a CI job that mutates
+        # source is a hazard rather than a check (see its own header comment).
+        run: |
+          pnpm run metadata:check
+          pnpm run openapi:check
+          pnpm run audit:domains
+          pnpm run audit:events
+          pnpm run audit:tools
+
+      - name: Run Linters, Formatters & Typecheck
         run: |
           pnpm run lint
           pnpm run format:check
