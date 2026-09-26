@@ -22,7 +22,7 @@
  *   - analysis.ts: GRAPHQL_*, WASM_*, ANALYSIS_*, MINIAPP_*, DEBUGGER_*, WATCH_*, PROCESS_*, WIN_*, SOURCEMAP_*
  *   - streaming.ts: WS_*, SSE_*
  *   - proxy.ts: PROXY_*
- *   - coordination.ts: ORCHESTRATOR_*, WEBHOOK_*, MACRO_*, COORDINATION_*
+ *   - coordination.ts: WEBHOOK_*, MACRO_*, COORDINATION_*
  *
  * All existing imports from '@src/constants' remain valid (backward compatibility).
  */

@@ -133,7 +133,6 @@ describe('constants barrel export', () => {
 
   test('coordination constants are exported', ({ expect }) => {
     expect(constants.WEBHOOK_PROCESS_TIMEOUT_MS).toBeTypeOf('number');
-    expect(constants.ORCHESTRATOR_STEP_TIMEOUT_MS).toBeTypeOf('number');
     expect(constants.MACRO_DEFAULT_TIMEOUT_MS).toBeTypeOf('number');
     expect(constants.COORDINATION_GOTO_TIMEOUT_MS).toBeTypeOf('number');
   });

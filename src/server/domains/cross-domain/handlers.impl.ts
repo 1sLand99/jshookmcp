@@ -133,14 +133,12 @@ export class CrossDomainWorkflowClassifier {
 
   getHealth(): {
     evidenceBridgeReady: boolean;
-    orchestratorReady: boolean;
     availableDomains: string[];
     missingDomains: string[];
   } {
     const availableDomains = this.getAvailableDomains();
     return {
       evidenceBridgeReady: this.evidenceBridgeReady,
-      orchestratorReady: true,
       availableDomains,
       missingDomains: GENERATED_DOMAIN_NAMES.filter((d) => !availableDomains.includes(d)),
     };
@@ -337,7 +335,6 @@ export class CrossDomainHandlers {
     }
     return asJsonResponse({
       evidenceBridgeReady: true,
-      orchestratorReady: false,
       evidenceGraph: stats,
     });
   }
