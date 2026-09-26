@@ -31,7 +31,7 @@ async function ensure(ctx: MCPServerContext): Promise<H> {
     return existing;
   }
 
-  const handlers = new ExtensionRegistryHandlers();
+  const handlers = new ExtensionRegistryHandlers(undefined, undefined, ctx.eventBus);
   ctx.setDomainInstance(DEP_KEY, handlers);
 
   // Start webhook server on demand (lazy)

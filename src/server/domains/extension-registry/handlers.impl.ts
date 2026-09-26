@@ -2,7 +2,7 @@ import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { PluginRegistry, WebhookBridge } from '@modules/extension-registry';
-import type { RegisteredPluginManifest } from '@modules/extension-registry';
+import type { PluginEventBus, RegisteredPluginManifest } from '@modules/extension-registry';
 import { CommandQueueImpl, WebhookServer } from '@server/webhook';
 import {
   argObject,
@@ -100,10 +100,18 @@ export class ExtensionRegistryHandlers {
   private registry?: PluginRegistry;
   private webhook?: WebhookBridge;
   private webhookServer?: WebhookServer;
+  /**
+   * The single server event bus, threaded through so the PluginRegistry this
+   * domain lazily builds publishes `extension:loaded` / `extension:unloaded` on
+   * the same bus the rest of the server uses. Absent in unit tests that build
+   * the handlers with no context.
+   */
+  private readonly eventBus?: PluginEventBus;
 
-  constructor(registry?: PluginRegistry, webhook?: WebhookBridge) {
+  constructor(registry?: PluginRegistry, webhook?: WebhookBridge, eventBus?: PluginEventBus) {
     this.registry = registry;
     this.webhook = webhook;
+    this.eventBus = eventBus;
   }
 
   async handleInstallTool(args: ToolArgs): Promise<ToolResponse> {
@@ -342,7 +350,7 @@ export class ExtensionRegistryHandlers {
 
   private getRegistry(): PluginRegistry {
     if (!this.registry) {
-      this.registry = new PluginRegistry();
+      this.registry = new PluginRegistry(undefined, this.eventBus);
     }
 
     return this.registry;

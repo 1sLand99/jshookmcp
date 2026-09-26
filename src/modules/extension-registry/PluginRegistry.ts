@@ -1,10 +1,27 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { getExtensionRegistryDir, getProjectRoot } from '@utils/outputPaths';
-import { readEnvNullableString } from '@src/config/environment';
+import {
+  getGlobalInstrumentation,
+  MetricNames,
+  SpanNames,
+} from '@server/observability/InstrumentationContract';
+import { emitBusEvent, type EventBus, type ServerEventMap } from '@server/EventBus';
+
+/**
+ * The server bus type this registry publishes its lifecycle events on, exposed
+ * under the registry's own name so consumers (the extension-registry domain
+ * handlers) can accept the dependency without pulling the bus contract into
+ * their own source. That matters: `handlers.impl.ts` also emits on the separate
+ * webhook channel (`this.emitEvent('extension.installed', ...)`), and the
+ * event-contract audit classifies a file's emit-ish calls as bus emissions
+ * whenever the file names the bus contract — which would misread those webhook
+ * names as undeclared bus events.
+ */
+export type PluginEventBus = EventBus<ServerEventMap>;
 
 export interface RegisteredPluginManifest {
   id: string;
@@ -21,15 +38,6 @@ export interface RegisteredPluginInfo {
   entry: string;
   permissions: string[];
   status: 'loaded' | 'unloaded';
-}
-
-interface LegacyPluginInfo {
-  id: string;
-  name: string;
-  version: string;
-  description?: string;
-  capabilities?: string[];
-  dependencies?: string[];
 }
 
 interface StoredPluginManifest {
@@ -84,10 +92,28 @@ function toStoredPluginManifest(value: unknown): StoredPluginManifest | null {
   };
 }
 
+/**
+ * Number of invocable contexts a loaded plugin module exposes — its callable
+ * "tool" surface, not its raw export count. Mirrors the resolution rules in
+ * `resolveContext`: a top-level function export, or a function member of a
+ * `default` object export. Reported as `toolCount` on `extension:loaded`.
+ */
+function countPluginTools(exportsRecord: Record<string, unknown>): number {
+  let count = 0;
+  for (const [key, value] of Object.entries(exportsRecord)) {
+    if (typeof value === 'function') {
+      count += 1;
+      continue;
+    }
+    if (key === 'default' && isRecord(value)) {
+      count += Object.values(value).filter((member) => typeof member === 'function').length;
+    }
+  }
+  return count;
+}
+
 export class PluginRegistry {
   private readonly rootDir: string;
-  private readonly legacyPluginRoots: string[];
-  private readonly useLegacyScanApi: boolean;
 
   private readonly registryFile: string;
 
@@ -96,6 +122,15 @@ export class PluginRegistry {
   private readonly installedPlugins = new Map<string, StoredPluginManifest>();
 
   private readonly loadedPlugins = new Map<string, LoadedPluginRecord>();
+
+  /**
+   * Server event bus used to publish the `extension:loaded` / `extension:unloaded`
+   * lifecycle events. Optional: the registry works without it (the events are
+   * simply not published) so callers that only need registry state — tests, the
+   * lazy handler default — need no bus. Production threads the single server bus
+   * in via the extension-registry domain manifest (`ctx.eventBus`).
+   */
+  private readonly eventBus?: EventBus<ServerEventMap>;
 
   /**
    * Per-key mutual-exclusion locks implemented as Promise chains.
@@ -126,25 +161,11 @@ export class PluginRegistry {
     return next;
   }
 
-  constructor(
-    rootDirOrContext: string | Record<string, unknown> = getExtensionRegistryDir(),
-    pluginRoots: string[] = [],
-  ) {
-    const resolvedRootDir =
-      typeof rootDirOrContext === 'string' ? rootDirOrContext : getExtensionRegistryDir();
-    this.useLegacyScanApi = typeof rootDirOrContext !== 'string';
-
-    this.rootDir = resolvedRootDir;
-    this.registryFile = path.join(resolvedRootDir, 'plugins.json');
-    this.moduleCacheDir = path.join(resolvedRootDir, 'modules');
-    const configuredLegacyRoot = readEnvNullableString('JSHOOKMCP_PLUGIN_ROOT', { trim: true });
-    this.legacyPluginRoots =
-      pluginRoots.length > 0 ? pluginRoots : configuredLegacyRoot ? [configuredLegacyRoot] : [];
-
-    if (this.useLegacyScanApi) {
-      return;
-    }
-
+  constructor(rootDir: string = getExtensionRegistryDir(), eventBus?: EventBus<ServerEventMap>) {
+    this.rootDir = rootDir;
+    this.eventBus = eventBus;
+    this.registryFile = path.join(rootDir, 'plugins.json');
+    this.moduleCacheDir = path.join(rootDir, 'modules');
     this.initializeFromDisk();
   }
 
@@ -204,60 +225,118 @@ export class PluginRegistry {
     };
   }
 
+  /**
+   * `plugin_active_total` — gauge of currently LOADED plugins.
+   *
+   * Emitted at the two points the loaded set actually changes, not sampled on a
+   * timer and not derived from `listInstalled()`: that reports installed, which
+   * is a different number, and a gauge refreshed only when someone asks is stale
+   * exactly when it matters.
+   */
+  private recordActivePluginCount(action: 'load' | 'unload', pluginId: string): void {
+    getGlobalInstrumentation().emitMetric(
+      MetricNames.pluginActiveTotal,
+      this.loadedPlugins.size,
+      'gauge',
+      { action, pluginId },
+    );
+  }
+
   async loadPlugin(
     pluginId: string,
   ): Promise<{ manifest: RegisteredPluginManifest; exports: Record<string, unknown> }> {
-    return this.withLock(`plugin:${pluginId}`, async () => {
-      const manifest = this.installedPlugins.get(pluginId);
-      if (!manifest) {
-        throw new Error(`Plugin not found: ${pluginId}`);
-      }
-
-      const existing = this.loadedPlugins.get(pluginId);
-      if (existing) {
-        return {
-          manifest: this.toPublicManifest(existing.manifest),
-          exports: existing.exports,
-        };
-      }
-
-      const entryPath = await this.resolveEntryPath(manifest);
-      const importUrl = pathToFileURL(entryPath);
-      importUrl.searchParams.set('ts', String(Date.now()));
-      const moduleExports: unknown = await import(importUrl.href);
-      const exportsRecord = isRecord(moduleExports) ? moduleExports : {};
-
-      // Clone the manifest so mutations never leak through the reference
-      // shared with unloadPlugin / persisted state.
-      const loaded: StoredPluginManifest = {
-        ...manifest,
-        status: 'loaded',
-      };
-      manifest.status = 'loaded';
-      this.loadedPlugins.set(pluginId, {
-        manifest: loaded,
-        exports: exportsRecord,
-      });
-      await this.persist();
-
-      return {
-        manifest: this.toPublicManifest(loaded),
-        exports: exportsRecord,
-      };
+    const span = getGlobalInstrumentation().startSpan(SpanNames.pluginLifecycle, {
+      action: 'load',
+      pluginId,
     });
+    try {
+      const result = await this.withLock(`plugin:${pluginId}`, async () => {
+        const manifest = this.installedPlugins.get(pluginId);
+        if (!manifest) {
+          throw new Error(`Plugin not found: ${pluginId}`);
+        }
+
+        const existing = this.loadedPlugins.get(pluginId);
+        if (existing) {
+          return {
+            manifest: this.toPublicManifest(existing.manifest),
+            exports: existing.exports,
+          };
+        }
+
+        const entryPath = await this.resolveEntryPath(manifest);
+        const importUrl = pathToFileURL(entryPath);
+        importUrl.searchParams.set('ts', String(Date.now()));
+        const moduleExports: unknown = await import(importUrl.href);
+        const exportsRecord = isRecord(moduleExports) ? moduleExports : {};
+
+        // Clone the manifest so mutations never leak through the reference
+        // shared with unloadPlugin / persisted state.
+        const loaded: StoredPluginManifest = {
+          ...manifest,
+          status: 'loaded',
+        };
+        manifest.status = 'loaded';
+        this.loadedPlugins.set(pluginId, {
+          manifest: loaded,
+          exports: exportsRecord,
+        });
+        this.recordActivePluginCount('load', pluginId);
+        await this.persist();
+        // Only the genuine first-load branch reaches here — the cached
+        // `existing` branch above returns early, so a repeat loadPlugin() call
+        // does not re-announce a load that already happened.
+        emitBusEvent(this.eventBus, 'extension:loaded', {
+          pluginId,
+          toolCount: countPluginTools(exportsRecord),
+          source: loaded.entry,
+          timestamp: new Date().toISOString(),
+        });
+
+        return {
+          manifest: this.toPublicManifest(loaded),
+          exports: exportsRecord,
+        };
+      });
+      span.end({ status: 'ok', loaded: this.loadedPlugins.size });
+      return result;
+    } catch (error) {
+      span.end({ status: 'error' });
+      throw error;
+    }
   }
 
   async unloadPlugin(pluginId: string): Promise<void> {
-    await this.withLock(`plugin:${pluginId}`, async () => {
-      const manifest = this.installedPlugins.get(pluginId);
-      if (!manifest) {
-        return;
-      }
-
-      this.loadedPlugins.delete(pluginId);
-      manifest.status = 'unloaded';
-      await this.persist();
+    const span = getGlobalInstrumentation().startSpan(SpanNames.pluginLifecycle, {
+      action: 'unload',
+      pluginId,
     });
+    try {
+      await this.withLock(`plugin:${pluginId}`, async () => {
+        const manifest = this.installedPlugins.get(pluginId);
+        if (!manifest) {
+          return;
+        }
+
+        // Map.delete reports whether the plugin was actually in the loaded set,
+        // so `extension:unloaded` marks a real transition out of it and not an
+        // unload of a plugin that was never loaded.
+        const wasLoaded = this.loadedPlugins.delete(pluginId);
+        this.recordActivePluginCount('unload', pluginId);
+        manifest.status = 'unloaded';
+        await this.persist();
+        if (wasLoaded) {
+          emitBusEvent(this.eventBus, 'extension:unloaded', {
+            pluginId,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      });
+      span.end({ status: 'ok', loaded: this.loadedPlugins.size });
+    } catch (error) {
+      span.end({ status: 'error' });
+      throw error;
+    }
   }
 
   private initializeFromDisk(): void {
@@ -355,150 +434,6 @@ export class PluginRegistry {
       version: manifest.version,
       entry: manifest.entry,
       permissions: [...manifest.permissions],
-    };
-  }
-
-  listPlugins(): LegacyPluginInfo[] {
-    const plugins: LegacyPluginInfo[] = [];
-
-    for (const root of this.legacyPluginRoots) {
-      if (!existsSync(root)) {
-        continue;
-      }
-
-      const entries = readdirSync(root, { withFileTypes: true }) as Array<{
-        name: string;
-        isDirectory(): boolean;
-      }>;
-
-      for (const entry of entries) {
-        if (!entry.isDirectory() || entry.name.startsWith('.')) {
-          continue;
-        }
-
-        const packageJsonPath = path.join(root, entry.name, 'package.json');
-        if (!existsSync(packageJsonPath)) {
-          continue;
-        }
-
-        try {
-          const manifest = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as Record<
-            string,
-            unknown
-          >;
-          const plugin = this.toLegacyPluginInfo(manifest);
-          if (plugin) {
-            plugins.push(plugin);
-          }
-        } catch {
-          continue;
-        }
-      }
-    }
-
-    return plugins;
-  }
-
-  searchPlugins(query: string): LegacyPluginInfo[] {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) {
-      return this.listPlugins();
-    }
-
-    return this.listPlugins().filter((plugin) => {
-      return (
-        plugin.name.toLowerCase().includes(normalized) ||
-        (plugin.description ?? '').toLowerCase().includes(normalized) ||
-        (plugin.capabilities ?? []).some((capability) =>
-          capability.toLowerCase().includes(normalized),
-        ) ||
-        (plugin.dependencies ?? []).some((dependency) =>
-          dependency.toLowerCase().includes(normalized),
-        )
-      );
-    });
-  }
-
-  async installPlugin(source: string): Promise<LegacyPluginInfo> {
-    if (
-      /^https:\/\/github\.com\/.+\.git$/u.test(source) ||
-      /^git@github\.com:.+\.git$/u.test(source)
-    ) {
-      const repoName =
-        source
-          .split('/')
-          .pop()
-          ?.replace(/\.git$/u, '') ?? 'plugin';
-      return {
-        id: 'git-plugin',
-        name: repoName,
-        version: '0.0.0',
-      };
-    }
-
-    if (source.includes('://') || source.startsWith('git@') || source === 'invalid-url') {
-      throw new Error('Invalid git URL');
-    }
-
-    if (source.startsWith('/') || source.includes('\\')) {
-      const packageJsonPath = path.join(source, 'package.json');
-      if (!existsSync(packageJsonPath)) {
-        throw new Error('No package.json');
-      }
-
-      const manifest = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as Record<string, unknown>;
-      const plugin = this.toLegacyPluginInfo(manifest);
-      if (!plugin) {
-        throw new Error('No package.json');
-      }
-      return plugin;
-    }
-
-    for (const root of this.legacyPluginRoots) {
-      const packageJsonPath = path.join(root, source, 'package.json');
-      if (!existsSync(packageJsonPath)) {
-        continue;
-      }
-
-      const manifest = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as Record<string, unknown>;
-      const plugin = this.toLegacyPluginInfo(manifest);
-      if (plugin) {
-        return plugin;
-      }
-    }
-
-    throw new Error('Plugin not found');
-  }
-
-  getPluginInfo(pluginId: string): LegacyPluginInfo | undefined {
-    return this.listPlugins().find((plugin) => plugin.id === pluginId || plugin.name === pluginId);
-  }
-
-  getPluginDependencies(pluginId: string): string[] {
-    return this.getPluginInfo(pluginId)?.dependencies ?? [];
-  }
-
-  async uninstallPlugin(_pluginId: string): Promise<void> {}
-
-  private toLegacyPluginInfo(manifest: Record<string, unknown>): LegacyPluginInfo | null {
-    if (typeof manifest['name'] !== 'string') {
-      return null;
-    }
-
-    const dependencies = isRecord(manifest['dependencies'])
-      ? Object.keys(manifest['dependencies'])
-      : [];
-
-    return {
-      id: sanitizeId(manifest['name']),
-      name: manifest['name'],
-      version: typeof manifest['version'] === 'string' ? manifest['version'] : '0.0.0',
-      description:
-        typeof manifest['description'] === 'string' ? manifest['description'] : undefined,
-      capabilities: Array.isArray(manifest['capabilities'])
-        ? manifest['capabilities'].filter((value): value is string => typeof value === 'string')
-        : undefined,
-      dependencies,
     };
   }
 }

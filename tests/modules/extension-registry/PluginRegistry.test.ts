@@ -1,10 +1,11 @@
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PluginRegistry } from '@modules/extension-registry/PluginRegistry';
+import { EventBus } from '@server/EventBus';
 import { TEST_URLS, withPath } from '@tests/shared/test-urls';
 
 describe('PluginRegistry', () => {
@@ -103,6 +104,12 @@ describe('PluginRegistry', () => {
 
     await registry.unregister(pluginId);
     expect(registry.listInstalled()).toEqual([]);
+    // Removal must be durable, not just in-memory: persist() is what makes it
+    // survive a restart, and nothing else in this file asserts the written file.
+    const disk = JSON.parse(
+      await readFile(path.join(tempDir, 'plugins.json'), 'utf8'),
+    ) as unknown[];
+    expect(disk).toEqual([]);
   });
 
   it('downloads remote plugin modules into the local cache before loading them', async () => {
@@ -152,61 +159,74 @@ describe('PluginRegistry', () => {
     );
   });
 
-  it('supports legacy plugin discovery, search, install, and dependency lookups', async () => {
-    const pluginsRoot = path.join(tempDir, 'legacy-plugins');
-    const alphaDir = path.join(pluginsRoot, 'alpha');
-    const betaDir = path.join(pluginsRoot, 'beta');
-    await mkdir(alphaDir, { recursive: true });
-    await mkdir(betaDir, { recursive: true });
-
-    await writeFile(
-      path.join(alphaDir, 'package.json'),
-      JSON.stringify({
-        name: 'Alpha Plugin',
-        version: '1.0.0',
-        description: 'Handles network captures',
-        capabilities: ['network', 'capture'],
-        dependencies: { chalk: '^5.0.0' },
-      }),
-      'utf8',
-    );
-    await writeFile(
-      path.join(betaDir, 'package.json'),
-      JSON.stringify({
-        name: 'Beta Plugin',
-        version: '2.0.0',
-        capabilities: ['analysis'],
-      }),
-      'utf8',
-    );
-
-    const registry = new PluginRegistry({} as Record<string, unknown>, [pluginsRoot]);
-
-    expect(registry.listPlugins()).toHaveLength(2);
-    expect(registry.searchPlugins('capture')).toHaveLength(1);
-    expect(registry.searchPlugins('chalk')).toHaveLength(1);
-    expect(registry.searchPlugins('')).toHaveLength(2);
-    expect(registry.getPluginInfo('alpha-plugin')?.name).toBe('Alpha Plugin');
-    expect(registry.getPluginDependencies('alpha-plugin')).toEqual(['chalk']);
-    expect(registry.getPluginDependencies('missing-plugin')).toEqual([]);
-
-    const installedByName = await registry.installPlugin('alpha');
-    expect(installedByName.name).toBe('Alpha Plugin');
-
-    const installedByPath = await registry.installPlugin(alphaDir);
-    expect(installedByPath.name).toBe('Alpha Plugin');
-
-    const gitPlugin = await registry.installPlugin('https://github.com/example/plugin.git');
-    expect(gitPlugin).toMatchObject({
-      id: 'git-plugin',
-      name: 'plugin',
-      version: '0.0.0',
+  it('publishes extension:loaded once per real load and extension:unloaded once per real unload', async () => {
+    const bus = new EventBus();
+    const loaded: Array<{
+      pluginId: string;
+      toolCount: number;
+      source: string;
+      timestamp: string;
+    }> = [];
+    const unloaded: Array<{ pluginId: string; timestamp: string }> = [];
+    bus.on('extension:loaded', (payload) => {
+      loaded.push(payload);
+    });
+    bus.on('extension:unloaded', (payload) => {
+      unloaded.push(payload);
     });
 
-    await expect(registry.installPlugin('invalid-url')).rejects.toThrow('Invalid git URL');
-    await expect(registry.installPlugin('missing')).rejects.toThrow('Plugin not found');
-    await expect(registry.installPlugin(path.join(tempDir, 'missing-path'))).rejects.toThrow(
-      'No package.json',
+    const registry = new PluginRegistry(tempDir, bus);
+    const modulePath = path.join(tempDir, 'event-plugin.mjs');
+    // Two invocable contexts: a top-level function and a function on `default`.
+    // A non-callable export must NOT be counted as a tool.
+    await writeFile(
+      modulePath,
+      'export const marker = 42; export const ping = () => "pong"; export default { run: () => 1 };',
+      'utf8',
     );
+
+    const pluginId = await registry.register({
+      id: 'event-plugin',
+      name: 'Event Plugin',
+      version: '1.0.0',
+      entry: pathToFileURL(modulePath).href,
+    });
+
+    await registry.loadPlugin(pluginId);
+    // A cached second load must not re-announce a load that already happened.
+    await registry.loadPlugin(pluginId);
+
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]).toMatchObject({
+      pluginId: 'event-plugin',
+      toolCount: 2,
+      source: pathToFileURL(modulePath).href,
+    });
+    expect(typeof loaded[0]?.timestamp).toBe('string');
+
+    await registry.unloadPlugin(pluginId);
+    expect(unloaded).toHaveLength(1);
+    expect(unloaded[0]).toMatchObject({ pluginId: 'event-plugin' });
+    expect(typeof unloaded[0]?.timestamp).toBe('string');
+
+    // Unloading an already-unloaded plugin is not a transition — no event.
+    await registry.unloadPlugin(pluginId);
+    expect(unloaded).toHaveLength(1);
+  });
+
+  it('emits no lifecycle events when constructed without an event bus', async () => {
+    const registry = new PluginRegistry(tempDir);
+    const modulePath = path.join(tempDir, 'no-bus-plugin.mjs');
+    await writeFile(modulePath, 'export const ping = () => "pong";', 'utf8');
+
+    const pluginId = await registry.register({
+      id: 'no-bus-plugin',
+      name: 'No Bus Plugin',
+      version: '1.0.0',
+      entry: pathToFileURL(modulePath).href,
+    });
+
+    await expect(registry.loadPlugin(pluginId)).resolves.toBeDefined();
+    await expect(registry.unloadPlugin(pluginId)).resolves.toBeUndefined();
   });
 });
