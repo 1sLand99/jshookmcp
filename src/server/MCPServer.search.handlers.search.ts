@@ -13,6 +13,7 @@ import {
   getVisibleDomainsForTier,
   getBaseTier,
 } from '@server/MCPServer.search.helpers';
+import { registerSearchSnapshotSourcesFromCtx } from '@server/search/snapshotRegistration';
 import { describeTool, generateExampleArgs } from '@server/ToolRouter';
 import { activateToolNames } from '@server/MCPServer.search.handlers.activate';
 import { ACTIVATION_TTL_MINUTES, SEARCH_AUTO_ACTIVATE_DOMAINS } from '@src/constants';
@@ -29,6 +30,9 @@ export async function handleSearchTools(
 
   const searchStart = performance.now();
   const engine = await getSearchEngine(ctx);
+  // Trackers live on the engine; register them for persistence the first time
+  // the engine is built. Idempotent — the scheduler dedupes by source.
+  registerSearchSnapshotSourcesFromCtx(ctx, engine);
   const activeNames = getActiveToolNames(ctx);
   const visibleDomains = getVisibleDomainsForTier(ctx);
   let results = await engine.search(query, topK, activeNames, visibleDomains, getBaseTier(ctx));

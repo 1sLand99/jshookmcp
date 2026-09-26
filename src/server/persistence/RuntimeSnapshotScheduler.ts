@@ -68,6 +68,11 @@ export class RuntimeSnapshotScheduler {
     }
   }
 
+  /** Read-only view of the registered sources (test/inspection surface). */
+  getRegisteredSources(): readonly { filePath: string; source: SnapshotSource }[] {
+    return this.sources;
+  }
+
   async start(): Promise<void> {
     if (this.started || this.disposed) return;
     this.started = true;

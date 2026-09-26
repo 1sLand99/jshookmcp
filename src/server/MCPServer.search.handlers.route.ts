@@ -9,6 +9,7 @@ import type { RouterResponse } from '@server/ToolRouter';
 import { activateToolNames } from '@server/MCPServer.search.handlers.activate';
 import { handleActivateDomain } from '@server/MCPServer.search.handlers.domain';
 import { getSearchEngine } from '@server/MCPServer.search.helpers';
+import { registerSearchSnapshotSourcesFromCtx } from '@server/search/snapshotRegistration';
 import { ACTIVATION_TTL_MINUTES } from '@src/constants';
 import { loadSearchCatalog } from '@server/registry/SearchCatalog';
 
@@ -59,6 +60,9 @@ export async function handleRouteTool(
   }
 
   const engine = await getSearchEngine(ctx);
+  // Trackers live on the engine; register them for persistence the first time
+  // the engine is built. Idempotent — the scheduler dedupes by source.
+  registerSearchSnapshotSourcesFromCtx(ctx, engine);
   // SECURITY: Default autoActivate to false to prevent privilege escalation.
   // Previously defaulted to true, allowing prompt injection to activate powerful tools.
   const autoActivate = context?.autoActivate === true;

@@ -1060,6 +1060,10 @@ export class ToolSearchEngine {
     return this.qualityTracker;
   }
 
+  getFeedbackTracker(): import('./FeedbackTracker').FeedbackTracker {
+    return this.feedbackTracker;
+  }
+
   /**
    * Apply curated intent bonuses as a final ranking band.
    * Any tool with an explicit routing bonus should outrank non-bonus matches,

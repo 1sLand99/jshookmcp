@@ -17,6 +17,7 @@ import type { MCPServerContext } from '@server/MCPServer.context';
 import type { ToolResponse } from '@server/types';
 import { normalizeToolName } from '@server/MCPServer.search.validation';
 import { getSearchEngine } from '@server/MCPServer.search.helpers';
+import { registerSearchSnapshotSourcesFromCtx } from '@server/search/snapshotRegistration';
 import { getRuntimeState } from '@server/runtime/ServerRuntimeState';
 import { getToolInputSchema } from '@server/ToolRouter.probe';
 import { loadSearchCatalog } from '@server/registry/SearchCatalog';
@@ -312,6 +313,9 @@ export async function handleCallTool(
     try {
       const engine = await getSearchEngine(ctx);
       engine.recordToolCallFeedback(name, '');
+      // Trackers live on the engine; register them for persistence the first
+      // time the engine is built. Idempotent — the scheduler dedupes by source.
+      registerSearchSnapshotSourcesFromCtx(ctx, engine);
     } catch {
       /* non-critical — ignore feedback errors */
     }

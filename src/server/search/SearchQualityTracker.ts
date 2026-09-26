@@ -1,4 +1,5 @@
 import { RingBuffer } from '@utils/RingBuffer';
+import type { SnapshotSource } from '@server/persistence/RuntimeSnapshotScheduler';
 
 export interface SearchQueryRecord {
   id: string;
@@ -22,6 +23,16 @@ export interface SearchQualityMetrics {
   topKDistribution: Record<string, number>;
 }
 
+/**
+ * Serialized search-quality history. `lastRecordId` is carried alongside the
+ * records so `associateLastSearch` keeps working after a restore (it targets
+ * the most recent record by id).
+ */
+export interface SearchQualityTrackerSnapshot {
+  lastRecordId: string | null;
+  records: SearchQueryRecord[];
+}
+
 let recordCounter = 0;
 
 function generateId(): string {
@@ -34,10 +45,11 @@ function percentile(sorted: number[], p: number): number {
   return sorted[Math.max(0, idx)] ?? 0;
 }
 
-export class SearchQualityTracker {
+export class SearchQualityTracker implements SnapshotSource {
   private readonly MAX_HISTORY = 1000;
   private readonly records = new RingBuffer<SearchQueryRecord>(this.MAX_HISTORY);
   private lastRecordId: string | undefined;
+  private dirty = false;
 
   recordSearch(
     query: string,
@@ -56,6 +68,7 @@ export class SearchQualityTracker {
     };
     this.records.push(record);
     this.lastRecordId = id;
+    this.dirty = true;
     return id;
   }
 
@@ -72,6 +85,7 @@ export class SearchQualityTracker {
         if (rank < 0) return;
         record.usedTool = toolName;
         record.usedToolRank = rank + 1;
+        this.dirty = true;
         return;
       }
     }
@@ -87,6 +101,7 @@ export class SearchQualityTracker {
         if (rank >= 0) {
           record.usedTool = toolName;
           record.usedToolRank = rank + 1;
+          this.dirty = true;
         }
         return;
       }
@@ -183,5 +198,90 @@ export class SearchQualityTracker {
     }
 
     return suggestions.length > 0 ? suggestions : null;
+  }
+
+  // ── Snapshot persistence ──────────────────────────────────────────────
+  //
+  // The search-quality history feeds the search-tune dataset and MRR/MRR-style
+  // metrics across process restarts. Implements the SnapshotSource contract
+  // (see src/server/persistence/RuntimeSnapshotScheduler.ts); the scheduler
+  // owns file I/O (atomic tmp+rename) and calls these methods.
+
+  isPersistDirty(): boolean {
+    return this.dirty;
+  }
+
+  markPersisted(): void {
+    this.dirty = false;
+  }
+
+  exportSnapshot(): SearchQualityTrackerSnapshot {
+    return {
+      lastRecordId: this.lastRecordId ?? null,
+      records: this.records.toArray(),
+    };
+  }
+
+  restoreSnapshot(data: unknown): void {
+    if (!data || typeof data !== 'object') return;
+    const snapshot = data as { lastRecordId?: unknown; records?: unknown };
+    if (!Array.isArray(snapshot.records)) return;
+
+    const restored: SearchQueryRecord[] = [];
+    for (const item of snapshot.records) {
+      // Defensive: same shape validation level as FeedbackTracker — a
+      // hand-edited or future-versioned file must not corrupt the buffer.
+      if (!item || typeof item !== 'object') return;
+      const record = item as Record<string, unknown>;
+      if (
+        typeof record.id !== 'string' ||
+        typeof record.query !== 'string' ||
+        typeof record.timestamp !== 'number' ||
+        !Array.isArray(record.returnedTools) ||
+        !Array.isArray(record.returnedScores) ||
+        typeof record.latencyMs !== 'number'
+      ) {
+        return;
+      }
+      if (record.usedTool !== undefined && typeof record.usedTool !== 'string') return;
+      if (record.usedToolRank !== undefined && typeof record.usedToolRank !== 'number') return;
+
+      const tools = record.returnedTools as unknown[];
+      if (tools.some((t) => typeof t !== 'string')) return;
+      const scores = record.returnedScores as unknown[];
+      if (scores.some((s) => typeof s !== 'number')) return;
+
+      restored.push({
+        id: record.id,
+        query: record.query,
+        timestamp: record.timestamp,
+        returnedTools: tools as string[],
+        returnedScores: scores as number[],
+        latencyMs: record.latencyMs,
+        usedTool: record.usedTool as string | undefined,
+        usedToolRank: record.usedToolRank as number | undefined,
+      });
+    }
+
+    // Rebuild from oldest to newest so the ring buffer evicts the same tail
+    // it would have in the original process.
+    this.records.clear();
+    for (const record of restored) this.records.push(record);
+
+    this.lastRecordId =
+      typeof snapshot.lastRecordId === 'string' ? snapshot.lastRecordId : undefined;
+
+    // The module-level id counter (`sq-<ts>-<n>`) is shared across tracker
+    // instances, so a restored record's id can in principle collide with one
+    // generated later. Reset the counter past the largest restored suffix to
+    // make a collision practically impossible; the ids are otherwise opaque.
+    let maxSuffix = 0;
+    for (const record of restored) {
+      const suffix = Number.parseInt(record.id.split('-').pop() ?? '', 10);
+      if (Number.isFinite(suffix) && suffix > maxSuffix) maxSuffix = suffix;
+    }
+    if (maxSuffix > recordCounter) recordCounter = maxSuffix;
+
+    this.dirty = false;
   }
 }

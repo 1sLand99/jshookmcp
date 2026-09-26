@@ -269,6 +269,146 @@ describe('SearchQualityTracker', () => {
     });
   });
 
+  describe('snapshot persistence', () => {
+    it('exports an empty snapshot with no records', () => {
+      expect(tracker.exportSnapshot()).toEqual({ lastRecordId: null, records: [] });
+      expect(tracker.isPersistDirty()).toBe(false);
+    });
+
+    it('exports records with the last record id', () => {
+      const id1 = tracker.recordSearch('q1', ['a'], [0.9], 5);
+      const id2 = tracker.recordSearch('q2', ['b', 'c'], [0.8, 0.7], 3);
+      tracker.recordToolUsed(id1, 'a');
+      const snapshot = tracker.exportSnapshot();
+      expect(snapshot.lastRecordId).toBe(id2);
+      expect(snapshot.records).toHaveLength(2);
+      expect(snapshot.records[0]).toMatchObject({
+        id: id1,
+        query: 'q1',
+        usedTool: 'a',
+        usedToolRank: 1,
+      });
+      // Export must not mutate live state or mark it persisted.
+      expect(tracker.getRecentRecords(10)).toHaveLength(2);
+    });
+
+    it('round-trips records through export/restore', () => {
+      const id1 = tracker.recordSearch('q1', ['a', 'b'], [0.9, 0.8], 5);
+      tracker.recordSearch('q2', ['c', 'd'], [0.7, 0.6], 3);
+      tracker.recordToolUsed(id1, 'a');
+      tracker.associateLastSearch('d');
+      const exported = tracker.exportSnapshot();
+
+      const restored = new SearchQualityTracker();
+      restored.restoreSnapshot(exported);
+
+      expect(restored.getRecentRecords(10)).toEqual(tracker.getRecentRecords(10));
+      const metrics = restored.computeMetrics();
+      expect(metrics.totalQueries).toBe(2);
+      expect(metrics.toolUsedRate).toBeCloseTo(1.0, 10);
+      expect(metrics.avgUsedRank).toBeCloseTo(1.5, 10);
+    });
+
+    it('restore marks the tracker clean', () => {
+      tracker.recordSearch('q1', ['a'], [0.9], 5);
+      const dirty = new SearchQualityTracker();
+      dirty.recordSearch('q2', ['b'], [0.8], 3);
+      expect(dirty.isPersistDirty()).toBe(true);
+
+      dirty.restoreSnapshot(tracker.exportSnapshot());
+      expect(dirty.isPersistDirty()).toBe(false);
+      expect(dirty.getRecentRecords(10)).toEqual(tracker.getRecentRecords(10));
+    });
+
+    it('marks itself dirty on recordSearch and clears it on markPersisted', () => {
+      expect(tracker.isPersistDirty()).toBe(false);
+      tracker.recordSearch('q1', ['a'], [0.9], 5);
+      expect(tracker.isPersistDirty()).toBe(true);
+
+      tracker.markPersisted();
+      expect(tracker.isPersistDirty()).toBe(false);
+    });
+
+    it('marks itself dirty on recordToolUsed and associateLastSearch', () => {
+      const id = tracker.recordSearch('q1', ['a', 'b'], [0.9, 0.8], 5);
+      tracker.markPersisted();
+
+      tracker.recordToolUsed(id, 'a');
+      expect(tracker.isPersistDirty()).toBe(true);
+      tracker.markPersisted();
+
+      tracker.associateLastSearch('b');
+      expect(tracker.isPersistDirty()).toBe(true);
+    });
+
+    it('does not mark itself dirty when the mutation is a no-op', () => {
+      const id = tracker.recordSearch('q1', ['a'], [0.9], 5);
+      tracker.markPersisted();
+
+      // recordToolUsed on an unknown tool / unknown record changes nothing.
+      tracker.recordToolUsed(id, 'unknown_tool');
+      tracker.recordToolUsed('nonexistent-id', 'a');
+      expect(tracker.isPersistDirty()).toBe(false);
+
+      // associateLastSearch with no last record id is also a no-op.
+      const empty = new SearchQualityTracker();
+      empty.associateLastSearch('a');
+      expect(empty.isPersistDirty()).toBe(false);
+    });
+
+    it('ignores malformed snapshot payloads', () => {
+      tracker.recordSearch('q1', ['a'], [0.9], 5);
+      const before = tracker.exportSnapshot();
+
+      for (const bad of [
+        null,
+        undefined,
+        'string',
+        42,
+        {},
+        { lastRecordId: 'x', records: 'not-an-array' },
+        { lastRecordId: 'x', records: [null] },
+        { lastRecordId: 'x', records: [{ id: 'r1' }] },
+        { lastRecordId: 'x', records: [{ id: 'r1', query: 5 }] },
+        { records: [{ id: 'r1', query: 'q', timestamp: 1, returnedTools: ['a'] }] },
+      ]) {
+        tracker.restoreSnapshot(bad);
+        expect(tracker.exportSnapshot()).toEqual(before);
+      }
+    });
+
+    it('restores computeMetrics correctly after a snapshot with no usage data', () => {
+      tracker.recordSearch('q1', ['a'], [0.9], 5);
+      tracker.recordSearch('q2', ['b'], [0.8], 3);
+
+      const restored = new SearchQualityTracker();
+      restored.restoreSnapshot(tracker.exportSnapshot());
+
+      const metrics = restored.computeMetrics();
+      expect(metrics.totalQueries).toBe(2);
+      expect(metrics.toolUsedRate).toBe(0);
+      expect(metrics.avgUsedRank).toBe(0);
+      expect(metrics.mrr).toBe(0);
+    });
+
+    it('never generates ids colliding with restored records', () => {
+      const restoredId = tracker.recordSearch('q1', ['a'], [0.9], 5);
+      const exported = tracker.exportSnapshot();
+
+      const restored = new SearchQualityTracker();
+      restored.restoreSnapshot(exported);
+
+      const freshIds = [
+        restored.recordSearch('q2', ['b'], [0.8], 3),
+        restored.recordSearch('q3', ['c'], [0.7], 4),
+      ];
+      // Fresh ids must be unique among themselves and not reuse the restored
+      // record's id — the module counter is bumped past the restored suffix.
+      expect(new Set(freshIds).size).toBe(freshIds.length);
+      expect(freshIds.every((id) => id !== restoredId)).toBe(true);
+    });
+  });
+
   describe('getEnhancementSuggestions', () => {
     it('returns null when results are sufficient and scores are high', () => {
       expect(tracker.getEnhancementSuggestions('hook fetch', 5, 0.6)).toBeNull();

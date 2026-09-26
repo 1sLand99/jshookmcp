@@ -137,12 +137,9 @@ export class FeedbackTracker implements SnapshotSource {
   // The learned vector weight is process state worth surviving a restart;
   // without persistence every process re-learns from the initial 0.53. The
   // methods below implement the RuntimeSnapshotScheduler's SnapshotSource
-  // contract (dirty flag + export/restore).
-  //
-  // TODO: registering this tracker with the RuntimeSnapshotScheduler
-  // (snapshotScheduler.register('feedback-tracker.json', tracker) + wiring
-  // notifyDirty through the search engine) is cross-module wiring and belongs
-  // to a follow-up task; this class only provides the source contract.
+  // contract (dirty flag + export/restore). Registration into the scheduler
+  // happens next to the engine construction (see
+  // src/server/search/snapshotRegistration.ts).
 
   isPersistDirty(): boolean {
     return this.dirty;
