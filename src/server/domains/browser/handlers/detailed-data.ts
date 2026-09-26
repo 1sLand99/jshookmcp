@@ -5,7 +5,7 @@ import { getOffloadRoot } from '@utils/sanitizeForCache';
 import { resolveRelativeProjectPath } from '@utils/outputPaths';
 import { readFile, stat } from 'node:fs/promises';
 import { relative, isAbsolute, sep } from 'node:path';
-import { MAX_OFFLOADED_READ_BYTES } from '@src/constants';
+import { MAX_OFFLOADED_READ_BYTES, DETAILED_DATA_DEFAULT_TTL_MS } from '@src/constants';
 
 interface DetailedDataHandlersDeps {
   detailedDataManager: DetailedDataManager;
@@ -30,8 +30,12 @@ export class DetailedDataHandlers {
         data,
       });
     } catch (error) {
+      // TTL comes from DETAILED_DATA_DEFAULT_TTL_MS (env-overridable), so compute
+      // the minutes from the constant rather than hardcoding a number that can
+      // drift from the value DetailedDataManager actually enforces.
+      const ttlMinutes = Math.round(DETAILED_DATA_DEFAULT_TTL_MS / 60_000);
       return R.fail(error)
-        .set('hint', 'DetailId may have expired (TTL: 10 minutes) or is invalid')
+        .set('hint', `DetailId may have expired (TTL: ${ttlMinutes} minutes) or is invalid`)
         .build();
     }
   }

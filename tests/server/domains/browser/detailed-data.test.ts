@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { DetailedDataHandlers } from '@server/domains/browser/handlers/detailed-data';
 import { getOffloadDir } from '@utils/sanitizeForCache';
 import { getProjectRoot } from '@utils/outputPaths';
-import { MAX_OFFLOADED_READ_BYTES } from '@src/constants';
+import { MAX_OFFLOADED_READ_BYTES, DETAILED_DATA_DEFAULT_TTL_MS } from '@src/constants';
 
 describe('DetailedDataHandlers', () => {
   const detailedDataManager = {
@@ -67,7 +67,27 @@ describe('DetailedDataHandlers', () => {
 
     expect(body.success).toBe(false);
     expect(body.error).toBe('detail expired');
-    expect(body.hint).toContain('TTL: 10 minutes');
+    // The hint must report the TTL actually used by DetailedDataManager
+    // (DETAILED_DATA_DEFAULT_TTL_MS, env-overridable), not a hardcoded number.
+    const expectedMinutes = Math.round(DETAILED_DATA_DEFAULT_TTL_MS / 60_000);
+    expect(body.hint).toContain(`TTL: ${expectedMinutes} minutes`);
+  });
+
+  it('reports the configured TTL in the hint for an invalid detailId', async () => {
+    detailedDataManager.retrieveAsync.mockImplementation(() => {
+      throw new Error('detailId not found');
+    });
+
+    const body = parseJson<BrowserStatusResponse>(
+      await handlers.handleGetDetailedData({ detailId: 'no-such-detail' }),
+    );
+
+    expect(body.success).toBe(false);
+    expect(body.error).toBe('detailId not found');
+    const expectedMinutes = Math.round(DETAILED_DATA_DEFAULT_TTL_MS / 60_000);
+    expect(body.hint).toBe(
+      `DetailId may have expired (TTL: ${expectedMinutes} minutes) or is invalid`,
+    );
   });
 
   describe('handleGetOffloadedData', () => {
