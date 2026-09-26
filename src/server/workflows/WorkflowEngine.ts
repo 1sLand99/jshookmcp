@@ -19,7 +19,8 @@ import {
   collectUnsatisfiedPrerequisites,
   getEvidenceState,
 } from '@server/workflows/WorkflowPreflight';
-import { WorkflowRunStore } from '@server/workflows/WorkflowRunStore';
+import { WorkflowRunStore, type WorkflowStepOutcome } from '@server/workflows/WorkflowRunStore';
+import { createWorkflowHistoryPort } from '@server/workflows/WorkflowHistoryAdapter';
 import {
   WorkflowSpanNames,
   type BranchNode,
@@ -85,6 +86,64 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: str
       },
     );
   });
+}
+
+/**
+ * Reconstruct a partial per-step outcome list from the spans emitted before a
+ * run failed.
+ *
+ * The engine's outermost catch only has the thrown error; the per-step detail
+ * lives in `stepResults` (hook values, not outcomes) and in the `workflow.node.*`
+ * spans. Pairing `nodeStart`/`nodeFinish` by `attrs.nodeId` — the same
+ * convention `MacroRunner.buildProgress` uses — yields every step that ran to
+ * completion, plus whichever step started but never finished: the one that
+ * threw. The failing node is therefore reported as an error and the completed
+ * ones as successes, without retaining any step payload.
+ *
+ * Steps that never started are absent rather than reported as successes, so a
+ * predicate counting failures is not misled by steps the run never reached.
+ */
+function derivePartialStepOutcomes(spans: readonly WorkflowSpan[]): WorkflowStepOutcome[] {
+  const startTimes = new Map<string, number>();
+  const outcomes: WorkflowStepOutcome[] = [];
+  const finished = new Set<string>();
+
+  for (const span of spans) {
+    const nodeId = span.attrs?.nodeId;
+    if (typeof nodeId !== 'string') continue;
+    const at = new Date(span.at).getTime();
+
+    if (span.name === WorkflowSpanNames.nodeStart) {
+      startTimes.set(nodeId, at);
+      continue;
+    }
+
+    if (span.name === WorkflowSpanNames.nodeFinish) {
+      const startedAtMs = startTimes.get(nodeId);
+      outcomes.push({
+        stepId: nodeId,
+        status: 'success',
+        durationMs: startedAtMs === undefined ? undefined : Math.max(0, at - startedAtMs),
+      });
+      finished.add(nodeId);
+    }
+  }
+
+  // Any step that started but never finished is the one that failed.
+  for (const [nodeId, startedAtMs] of startTimes) {
+    if (finished.has(nodeId)) continue;
+    const lastSpanAt = spans.reduce((latest, span) => {
+      const at = new Date(span.at).getTime();
+      return Number.isFinite(at) && at > latest ? at : latest;
+    }, startedAtMs);
+    outcomes.push({
+      stepId: nodeId,
+      status: 'error',
+      durationMs: Math.max(0, lastSpanAt - startedAtMs),
+    });
+  }
+
+  return outcomes;
 }
 
 async function runToolNode(
@@ -331,6 +390,10 @@ export async function executeExtensionWorkflow(
     getConfig(path, fallback) {
       return extractConfigValue(mergedConfig, path, fallback);
     },
+    // History view so branch predicates can reason about this workflow's past
+    // runs. Built from the same store the run outcomes are recorded into.
+    history: createWorkflowHistoryPort(globalRunStore),
+    workflowId: workflow.id,
   };
 
   try {
@@ -446,7 +509,13 @@ export async function executeExtensionWorkflow(
       'histogram',
       { profile, status: 'error' },
     );
-    globalRunStore.recordError(workflow.id, runId, startedAt, workflowError);
+    globalRunStore.recordError(
+      workflow.id,
+      runId,
+      startedAt,
+      workflowError,
+      derivePartialStepOutcomes(spans),
+    );
     await workflow.onError?.(executionContext, workflowError);
     throw workflowError;
   }

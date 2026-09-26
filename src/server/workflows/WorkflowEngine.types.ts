@@ -1,4 +1,5 @@
 import type { RetryPolicy, WorkflowExecutionContext } from '@server/workflows/WorkflowContract';
+import type { WorkflowHistoryPort } from '@server/workflows/WorkflowHistoryPort';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -59,6 +60,21 @@ export interface ExecuteWorkflowResult {
 export interface InternalExecutionContext<TDataBus = unknown> extends WorkflowExecutionContext {
   readonly stepResults: Map<string, unknown>;
   readonly dataBus: TDataBus;
+  /**
+   * Read-only view onto this workflow's past runs, for history-aware branch
+   * predicates (`history_failure_rate_gte_N`, `last_run_failed`, …).
+   *
+   * Optional, and deliberately so: contexts constructed without it (the
+   * `workflow_conditional_step` stub context, unit tests) make those predicates
+   * evaluate to `false` — an absent history source must not flip branch
+   * behaviour. See `WorkflowPredicates.ts` for the degradation rule.
+   */
+  readonly history?: WorkflowHistoryPort;
+  /**
+   * Id of the workflow being executed, so predicates without an explicit
+   * `:workflowId` suffix can resolve which history to read.
+   */
+  readonly workflowId?: string;
 }
 
 export interface ParallelResult {

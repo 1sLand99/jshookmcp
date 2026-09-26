@@ -1,7 +1,76 @@
 import type { ToolResponse } from '@server/types';
 import type { BranchNode } from '@server/workflows/WorkflowContract';
 import type { InternalExecutionContext } from '@server/workflows/WorkflowEngine.types';
+import {
+  computeFailureRate,
+  computeFallbackRate,
+  computeMaxFailedSteps,
+  type WorkflowHistoryEntry,
+  type WorkflowHistoryPort,
+} from '@server/workflows/WorkflowHistoryPort';
 import { collectSuccessStats, parseToolPayload } from '@server/workflows/WorkflowDataBus';
+
+/**
+ * How many most-recent runs the history predicates consider by default.
+ *
+ * A short window tracks the current regime; a long one would average a
+ * recovered-from past into a stale failure rate.
+ */
+const DEFAULT_HISTORY_WINDOW = 10;
+
+/**
+ * Temporary bridge between predicates and the run store.
+ *
+ * `InternalExecutionContext` does not declare `history` or `workflowId` yet —
+ * stage 3 adds them once the run-store rework (stage 1) lands and an adapter
+ * exists. Predicates therefore read both through this optional-field
+ * accessor, which treats absence as "no history available" rather than as a
+ * type error. Every history predicate degrades to a documented default when
+ * the port is missing, so workflows that never supply one behave exactly as
+ * they did before this module knew about history.
+ */
+type HistoryAwareContext = InternalExecutionContext & {
+  readonly history?: WorkflowHistoryPort;
+  readonly workflowId?: string;
+};
+
+function getHistoryPort(ctx: InternalExecutionContext): WorkflowHistoryPort | undefined {
+  return (ctx as HistoryAwareContext).history;
+}
+
+/**
+ * Resolve the workflow whose history a predicate should inspect.
+ *
+ * `ctx` carries a `workflowRunId` (the UUID of the run in flight) but not the
+ * stable workflow id — the engine knows it at construction time and just does
+ * not pass it down. Until stage 3 adds it, predicates take the workflow id
+ * from an explicit `predicateId` suffix (`last_run_failed:heap_snapshot`),
+ * falling back to `ctx.workflowId` when a caller happens to supply one.
+ */
+function resolveWorkflowId(ctx: InternalExecutionContext, explicit?: string): string | undefined {
+  return explicit ?? (ctx as HistoryAwareContext).workflowId;
+}
+
+/**
+ * Most-recent runs for `workflowId`, newest first, capped at `window`.
+ *
+ * Returns `undefined`, not `[]`, when there is no port or no workflow to look
+ * up: the callers must tell "no history to judge" from "history is empty" —
+ * see `computeFailureRate` for why those warrant opposite defaults.
+ */
+function getRecentHistory(
+  ctx: InternalExecutionContext,
+  workflowId: string | undefined,
+  window: number,
+): WorkflowHistoryEntry[] | undefined {
+  const port = getHistoryPort(ctx);
+  if (!port || !workflowId) {
+    return undefined;
+  }
+
+  const entries = port.getHistory(workflowId, { limit: window });
+  return entries.slice(0, window);
+}
 
 function getWorkflowVariable(stepResults: Map<string, unknown>, keyPath: string): unknown {
   if (stepResults.has(keyPath)) {
@@ -130,6 +199,76 @@ export async function evaluatePredicate(
     } catch {
       return false;
     }
+  }
+
+  // ── History-aware predicates ──────────────────────────────────────
+  // These reason about THIS workflow's past runs, so a branch can take the
+  // conservative path while a workflow is progressing and the aggressive one
+  // when it has stalled. All of them degrade to `false` when history is
+  // unavailable (no port, unknown workflow id, no recorded runs): a branch
+  // that flips behavior on evidence it does not have would silently change
+  // the workflow's meaning. Callers wanting "optimistic" behavior can pair
+  // `history_failure_rate_lte_N` with an `always_true` alternative branch.
+  const failureRateMatch = node.predicateId.match(
+    /^history_failure_rate_(gte|lte)_(\d+)(?::(.+))?$/,
+  );
+  if (failureRateMatch?.[1] && failureRateMatch[2]) {
+    const threshold = Number(failureRateMatch[2]);
+    const entries = getRecentHistory(
+      ctx,
+      resolveWorkflowId(ctx, failureRateMatch[3]),
+      DEFAULT_HISTORY_WINDOW,
+    );
+    const rate = entries ? computeFailureRate(entries) : undefined;
+    if (rate === undefined) {
+      return false;
+    }
+
+    return failureRateMatch[1] === 'gte' ? rate >= threshold : rate <= threshold;
+  }
+
+  const lastRunFailedMatch = node.predicateId.match(/^last_run_failed(?::(.+))?$/);
+  if (lastRunFailedMatch) {
+    const entries = getRecentHistory(ctx, resolveWorkflowId(ctx, lastRunFailedMatch[1]), 1);
+    return entries !== undefined && entries.length > 0 && entries[0]?.status === 'error';
+  }
+
+  const failingStepsMatch = node.predicateId.match(/^recent_steps_failing_(\d+)(?::(.+))?$/);
+  if (failingStepsMatch?.[1]) {
+    const threshold = Number(failingStepsMatch[1]);
+    const entries = getRecentHistory(
+      ctx,
+      resolveWorkflowId(ctx, failingStepsMatch[2]),
+      DEFAULT_HISTORY_WINDOW,
+    );
+    const worst = entries ? computeMaxFailedSteps(entries) : undefined;
+    if (worst === undefined) {
+      return false;
+    }
+
+    return worst >= threshold;
+  }
+
+  // Runs that recovered through a fallback arm still terminate as `success`, so
+  // `history_failure_rate_*` cannot see a route that keeps needing its backup.
+  // This predicate reads that signal: "the primary path is degrading, stop
+  // relying on it" — the case a terminal-status-only view is blind to.
+  const fallbackRateMatch = node.predicateId.match(
+    /^history_fallback_rate_(gte|lte)_(\d+)(?::(.+))?$/,
+  );
+  if (fallbackRateMatch?.[1] && fallbackRateMatch[2]) {
+    const threshold = Number(fallbackRateMatch[2]);
+    const entries = getRecentHistory(
+      ctx,
+      resolveWorkflowId(ctx, fallbackRateMatch[3]),
+      DEFAULT_HISTORY_WINDOW,
+    );
+    const rate = entries ? computeFallbackRate(entries) : undefined;
+    if (rate === undefined) {
+      return false;
+    }
+
+    return fallbackRateMatch[1] === 'gte' ? rate >= threshold : rate <= threshold;
   }
 
   throw new Error(`Unknown workflow predicateId "${node.predicateId}"`);

@@ -18,6 +18,7 @@ import { ApiHandlers } from './handlers/api-handlers';
 import { AccountHandlers } from './handlers/account-handlers';
 import { ReverseSessionHandlers } from '@server/reverse-session/ReverseSessionHandlers';
 import { getWorkflowRunStore } from '@server/workflows/WorkflowEngine';
+import { createWorkflowHistoryPort } from '@server/workflows/WorkflowHistoryAdapter';
 import { evaluatePredicate } from '@server/workflows/WorkflowPredicates';
 import type { BranchNode } from '@server/workflows/WorkflowContract';
 import type { InternalExecutionContext } from '@server/workflows/WorkflowEngine.types';
@@ -238,6 +239,13 @@ export class WorkflowHandlers {
       emitSpan: () => {},
       emitMetric: () => {},
       getConfig: <T>(_path: string, fallback?: T) => fallback as T,
+      // History-aware predicates (`history_failure_rate_gte_N`,
+      // `last_run_failed`, …) read the run store through this port. The store
+      // holds only keys and outcome summaries — never raw step outputs — which
+      // is why value-based prior-run resolution above is still impossible, but
+      // outcome-based history is now available here.
+      history: createWorkflowHistoryPort(getWorkflowRunStore()),
+      workflowId: getOptionalString(args.workflowId),
     };
 
     // Build a synthetic BranchNode for evaluatePredicate

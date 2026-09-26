@@ -82,6 +82,7 @@ import {
   reloadExtensions as reloadExtensionsImpl,
 } from '@server/extensions/ExtensionManager';
 import { executeToolWithTracking as executeToolWithTrackingImpl } from '@server/MCPServer.execution';
+import { getWorkflowRunStore } from '@server/workflows/WorkflowEngine';
 
 /**
  * Info-level logs are forwarded to the MCP client at a reduced rate: lines
@@ -550,6 +551,11 @@ export class MCPServer implements MCPServerContext {
     this.setDomainInstance('browserFleetRouter', browserFleetRouter);
     this.setDomainInstance('browserSessionCoordinator', browserSessionCoordinator);
     snapshotScheduler.register(`${stateDir}/runtime-state.json`, runtimeState);
+    // Workflow run history: history-aware branch predicates read failure
+    // patterns (see WorkflowHistoryPort). Without persistence those patterns
+    // reset to "unknown" on every restart, which would make an adaptive
+    // workflow silently fall back to its no-history branch.
+    snapshotScheduler.register(`${stateDir}/workflow-run-store.json`, getWorkflowRunStore());
     snapshotScheduler
       .start()
       .then(async () => {
