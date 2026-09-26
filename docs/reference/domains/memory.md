@@ -20,7 +20,7 @@
 - memory + debugger
 - memory + workflow
 
-## 工具清单（74）
+## 工具清单（75）
 
 | 工具 | 说明 |
 | --- | --- |
@@ -50,6 +50,7 @@
 | `memory_watch` | 监控内存地址值的变化。按间隔轮询读取（默认 500ms），值变化时返回新旧值。scanmem watch 命令的等价物。最大 120 秒。 |
 | `memory_freeze` | 将某个地址冻结为固定值。工具会按设定间隔持续回写该值，防止它被其他逻辑修改。 |
 | `memory_dump` | 以十六进制 + ASCII 列的形式导出一段内存区域，输出风格类似 xxd 的格式化十六进制转储。 |
+| `memory_read_typed` | 以显式字节序按类型读取进程内存。从 address 起用 koffi 的字节序敏感整型（uint64_le / int32_be 等）解码连续数值，无需手工字节交换；64 位值以十进制字符串返回，并同时给出二进制补码十六进制；float/double 按 IEEE-754 与指定字节序解码。最多支持 1024 个连续数值。适合结构体检查、大端网络载荷与游戏内存分析。 |
 | `memory_speedhack` | 通过进程内 SSE2 蹦床挂钩时间 API 来缩放进程时间。操作包括：apply（挂钩并设置速度）、set（调整速度无需重新挂钩）、restore（取消挂钩并恢复原始函数）。速度范围 0.01–100 倍。共挂钩 6 个 API：GetTickCount64、GetTickCount、QueryPerformanceCounter、QueryPerformanceFrequency（速度=0 时除零保护→1.0）、timeGetTime（winmm.dll）、GetSystemTimeAsFileTime。三区 W^X 分配架构（代码/蹦床/数据分离，从不同时可写可执行）。仅 Win32。 |
 | `memory_write_history` | 撤销或重做最近一次内存写入操作。 |
 | `memory_heap_enumerate` | 通过 Toolhelp32 快照枚举目标进程中的所有堆和堆块，返回堆列表、块数量、块大小以及整体统计信息。 |

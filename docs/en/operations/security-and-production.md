@@ -14,7 +14,6 @@ Current behavior:
 MCP_PLUGIN_SIGNATURE_REQUIRED=true
 MCP_PLUGIN_STRICT_LOAD=true
 MCP_PLUGIN_ALLOWED_DIGESTS=<sha256-hex-list>
-MCP_PLUGIN_SIGNATURE_SECRET=<shared-secret>
 ```
 
 ## Platform notes

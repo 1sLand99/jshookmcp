@@ -173,9 +173,8 @@ MCP_BROWSER_FLEET_WORKERS_JSON=[{"id":"worker-a","endpoint":"http://10.0.0.11:30
 | `MCP_WORKFLOW_ROOTS`            | 逗号分隔的 workflow 根目录列表。                                           | 常见示例：`./workflows`                                                        |
 | `MCP_PLUGIN_ALLOWED_DIGESTS`    | plugin 预导入 SHA-256 allowlist。                                          | 无默认值                                                                       |
 | `MCP_PLUGIN_SIGNATURE_REQUIRED` | 是否强制要求 plugin 签名。                                                 | 生产环境默认趋严                                                               |
-| `MCP_PLUGIN_SIGNATURE_SECRET`   | plugin 签名校验用的 HMAC 密钥。                                            | 无默认值                                                                       |
 | `MCP_PLUGIN_STRICT_LOAD`        | 是否启用严格扩展加载策略。                                                 | 生产环境默认趋严                                                               |
-| `EXTENSION_REGISTRY_BASE_URL`   | `browse_extension_registry` / `install_extension` 用的扩展 registry 基址。 | `https://raw.githubusercontent.com/vmoranv/jshookmcpextension/master/registry` |
+| `EXTENSION_REGISTRY_BASE_URL`   | `browse_extension_registry` / `install_extension` 用的扩展 registry 基址。 | 无默认值；未设置时这两个工具直接报错，须显式配置                               |
 
 ### 6. 外部桥接与平台端点
 

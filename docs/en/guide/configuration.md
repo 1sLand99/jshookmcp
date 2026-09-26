@@ -175,9 +175,8 @@ single-worker mode needs no additional setup.
 | `MCP_WORKFLOW_ROOTS`            | Comma-separated workflow roots.                                   | typical example: `./workflows`                                                 |
 | `MCP_PLUGIN_ALLOWED_DIGESTS`    | Pre-import SHA-256 allowlist for plugin files.                    | no default                                                                     |
 | `MCP_PLUGIN_SIGNATURE_REQUIRED` | Requires plugin signatures.                                       | stricter by default in production                                              |
-| `MCP_PLUGIN_SIGNATURE_SECRET`   | HMAC secret used for plugin signature verification.               | no default                                                                     |
 | `MCP_PLUGIN_STRICT_LOAD`        | Enables strict extension loading behavior.                        | stricter by default in production                                              |
-| `EXTENSION_REGISTRY_BASE_URL`   | Base URL for `browse_extension_registry` and `install_extension`. | `https://raw.githubusercontent.com/vmoranv/jshookmcpextension/master/registry` |
+| `EXTENSION_REGISTRY_BASE_URL`   | Base URL for `browse_extension_registry` and `install_extension`. | no default; when unset both tools fail, so it must be configured explicitly    |
 
 ### 6. Bridges and platform endpoints
 

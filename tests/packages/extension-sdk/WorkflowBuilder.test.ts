@@ -208,7 +208,7 @@ describe('defineWorkflow', () => {
       w.buildGraph((_ctx) =>
         sequenceStep('main', (s) => {
           s.tool('nav', 'page_navigate', { input: { url: TEST_URLS.root } });
-          s.tool('links', 'page_get_all_links');
+          s.tool('links', 'page_list_frames');
         }),
       ),
     );

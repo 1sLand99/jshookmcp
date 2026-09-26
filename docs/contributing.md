@@ -37,7 +37,7 @@ npx -y @jshookmcp/jshook
 ## 文档栈防腐原则
 
 - 文档站优先使用 **VitePress 官方能力**，例如 locales、sidebar、local search、默认主题配置。
-- 文档格式化优先使用 **Prettier 官方 CLI**，不为了小收益引入额外 Markdown/VitePress 格式化插件。
+- 文档格式化与校验统一走 **markdownlint-cli2**（`pnpm run check:docs-format`，等价于 `pnpm run lint:md`），不为了小收益引入额外 Markdown/VitePress 格式化插件。
 - 第三方 VitePress 插件只有在官方能力明显无法覆盖需求时才考虑引入，并且必须在 PR 中说明：
   - 为什么官方能力不够
   - 插件维护状态与兼容风险

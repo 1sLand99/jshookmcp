@@ -78,12 +78,12 @@
 
 ## jshook 的不同之处
 
-大多数面向 JS 分析的 MCP 服务器只暴露少量手写工具，或者只封装一个浏览器引擎。jshook 更接近 **面向前端逆向工程的操作系统**——34 个自发现域、搜索优先的元工具控制 token 开销、以及能在页面崩溃和会话中断时恢复的运行时：
+大多数面向 JS 分析的 MCP 服务器只暴露少量手写工具，或者只封装一个浏览器引擎。jshook 更接近 **面向前端逆向工程的操作系统**——36 个自发现域、搜索优先的元工具控制 token 开销、以及能在页面崩溃和会话中断时恢复的运行时：
 
-- **搜索优先、档位可调。** `search` 档加载约 3K token 的工具元数据；`full` 档一次性暴露全部 723 个工具，约 40K token。智能体按任务复杂度逐级提升：`search` → `workflow` → `full`，避免在第一轮就淹没在 schema 海洋里。
+- **搜索优先、档位可调。** `search` 档加载约 3K token 的工具元数据；`full` 档一次性暴露全部 733 个工具，约 40K token。智能体按任务复杂度逐级提升：`search` → `workflow` → `full`，避免在第一轮就淹没在 schema 海洋里。
 - **运行时恢复与会话隔离。** Streamable HTTP 会话在重连后恢复已激活域、浏览器 attach 状态、coverage 状态；浏览器侧会话状态按客户端隔离，两个智能体不会互相踩对方的 CDP 会话。
 - **全栈浏览器自动化。** Chromium 与 Camoufox 通过 CDP 控制，内置反检测；显式输入驱动的 CAPTCHA 求解（不内置页面/特征探测）；按需生成自签名 HTTPS 拦截 CA；HTTP/2 帧级构造。
-- **真正的逆向工程，不是字符串搜索。** Binaryen WASM 反汇编、Frida/Ghidra/IDA 桥接、原生 FFI 扫描、硬件断点、PE 内省、GraphQL/Burp Suite 代理桥接、AST 变换——而不是把单条正则塞进工具里。
+- **真正的逆向工程，不是字符串搜索。** wabt WASM 反汇编（`wasm2wat` / `wasm-decompile` / `wasm-objdump`）、Frida/Ghidra/IDA 桥接、原生 FFI 扫描、硬件断点、PE 内省、GraphQL/Burp Suite 代理桥接、AST 变换——而不是把单条正则塞进工具里。
 - **动态可扩展。** 热重载插件、声明式工作流、自发现域让服务器不需要重启就能持续生长。
 
 ---
@@ -94,13 +94,14 @@
 
 | 能力域 | 亮点 |
 | --- | --- |
-| **工具档位** | `search`（约 3K token，BM25 + 混合向量排序）· `workflow`（复合脚本）· `full`（全部 723 工具） |
+| **工具档位** | `search`（约 3K token，BM25 + 混合向量排序）· `workflow`（复合脚本）· `full`（全部 733 工具） |
 | **浏览器自动化** | Chromium 与 Camoufox · CDP 附着已有目标 · 反检测预设 · 显式输入 CAPTCHA 求解 · 弹窗、下载、权限、协议拦截器 |
 | **网络拦截** | HTTP/1.1 + HTTP/2 帧级构造 · MITM 代理自动生成 CA · WebSocket 抓包 · GraphQL 自省辅助 · Burp Suite 桥接 |
 | **JS Hook 与分析** | LLM 驱动的反混淆 · 加密逻辑识别 · AST 深度理解 · Source Map 重建 · 脚本提取与回放 |
-| **WASM 逆向工程** | Binaryen 反汇编 · 模块内省 · 导入/导出分析 · 交叉引用图谱 · 运行时插桩 |
-| **进程与内存取证** | 原生 FFI 扫描 · 硬件断点 · PE 内省 · 活进程附着 · 带区域守卫的内存读写 |
-| **二进制插桩** | Frida 桥接 · Ghidra 与 IDA 桥接 · 系统调用 hook · BoringSSL 检测器 · BoringSSL/Mojo IPC 分析 |
+| **WASM 逆向工程** | wabt 反汇编 / C 转译（`wasm2wat` / `wasm-decompile` / `wasm-objdump` / `wasm2c`）· Binaryen `wasm-opt` · 纯 TS section 解析 · 导入/导出列表 · 按 section 分组的字符串提取（含 name 段函数名恢复）· 函数级二进制 diff · 混淆检测 · 函数级与基本块级插桩 |
+| **进程与内存取证** | 原生 FFI 扫描 · 交叉引用图谱 · 硬件断点 · PE 内省 · 活进程附着 · 带区域守卫的内存读写 |
+| **二进制插桩** | Frida 桥接 · Ghidra 与 IDA 桥接 · 系统调用 hook · TLS keylog 与会话分析 · Mojo IPC 分析 |
+| **Android 与 APK 分析** | APK 静态分诊 · manifest 导出与查询 · apktool 反编译/回编 · jadx 反编译与代码检索 · DEX 扫描 · native 库列表 · APK 签名 · unidbg 模拟执行 · 运行时 DEX dump |
 | **原生运行时** | 跨架构样本模拟器 · 平台内省 · Mojo IPC · Dart Inspector · ADB 桥接获取设备流量 |
 | **编码与变换** | URL/Base64/Hex/JWT/Protobuf 编码器 · AST 变换 · 流式解码管线 |
 | **协同** | 后台任务队列带进度、取消、异步模式 · 多智能体协同 · 覆盖率报告 |
@@ -113,14 +114,15 @@
 
 | 场景 | 做法 | 涉及域 |
 | --- | --- | --- |
-| 审阅一个压缩后的 bundle | `search_tools` → `deobfuscate` → `format` → `extract-endpoints` | `transform`、`core` |
+| 审阅一个压缩后的 bundle | `search_tools` → `deobfuscate` → `search_in_scripts` → `understand_code` | `core` |
 | 逆向 CAPTCHA 挑战 | 驱动 Camoufox 页面 → 截图 → 用显式输入求解 → 回放 | `browser`、`canvas` |
-| 抓取并回放 OAuth 流程 | `proxy_start`（自动 CA）→ `network_capture` → `graph_dump` → 回放 | `proxy`、`network`、`graphql` |
-| 逆向 WASM 加密逻辑 | `wasm_load` → `wasm_disassemble` → `binary-instrument.hook` → 内存 trace | `wasm`、`binary-instrument`、`memory` |
+| 抓取并回放 OAuth 流程 | `proxy_start`（自动 CA）→ `network_get_requests` → `graphql_introspect` → `graphql_replay` | `proxy`、`network`、`graphql` |
+| 逆向 WASM 加密逻辑 | `wasm_dump` → `wasm_disassemble` → `generate_hooks` → `memory_breakpoint` | `wasm`、`binary-instrument`、`memory` |
+| 分诊可疑 APK | `apk_static_triage` → `apk_manifest_dump` → `jadx_decompile` → `dex_scan_file` | `binary-instrument` |
 | 恢复中断的浏览器会话 | 重连 Streamable HTTP → 恢复已激活域与浏览器状态 | `browser`、`coordination` |
-| 审计 Node 进程中的凭据 | `process.list` → `memory.scan` 敏感模式 → 导出 | `process`、`memory`、`encoding` |
-| 构建自定义工作流 | `workflow.register` 写 YAML 步骤 → `workflow.run` | `workflow`、`extension-registry` |
-| Hook 活进程里的函数 | Frida 脚本 → `binary-instrument.attach` → 断点 → 日志调用 | `binary-instrument`、`syscall-hook` |
+| 审计 Node 进程中的凭据 | `process_list` → `memory_scan_filtered` → `binary_strings_extract` | `process`、`memory`、`binary-instrument` |
+| 构建自定义工作流 | `list_extension_workflows` → `run_extension_workflow` | `workflow`、`extension-registry` |
+| Hook 活进程里的函数 | `frida_spawn` → `frida_attach_interceptor` → `frida_run_script` → `frida_enumerate_functions` | `binary-instrument` |
 
 ---
 
@@ -183,7 +185,7 @@ pnpm daemon
 - **元工具。** `describe_tool` 返回 JSON Schema；`call_tool` 在调用前校验参数；每个工具都带 `readOnlyHint` / `destructiveHint` / `idempotentHint` / `openWorldHint`。
 - **浏览器自动化。** Chromium 与 Camoufox 走 CDP，可附着已有目标，反检测预设，弹窗/下载/权限拦截器，显式输入 CAPTCHA 求解，三种文档时机的 JS/CSS 注入，coverage 跨重连持久化。
 - **网络拦截。** 自动生成 HTTPS 拦截 CA、HTTP/1.1 + HTTP/2 帧级构造、WebSocket 抓包、GraphQL 辅助、Burp Suite 桥接——同一套 MCP 工具面。
-- **逆向工程。** Binaryen WASM 反汇编、Frida/Ghidra/IDA 桥接、硬件断点、原生 FFI 扫描、PE 内省、系统调用 hook、AST 变换、Source Map 重建。
+- **逆向工程。** wabt WASM 反汇编（`wasm2wat` / `wasm-decompile` / `wasm-objdump`）与 Binaryen `wasm-opt`、Frida/Ghidra/IDA 桥接、硬件断点、原生 FFI 扫描、PE 内省、系统调用 hook、AST 变换、Source Map 重建。
 - **会话恢复。** Streamable HTTP 传输在重连后恢复已激活域、浏览器 attach 状态、coverage 状态；浏览器侧会话按客户端隔离。
 - **插件和工作流。** 放进目录即获得一个域；写一段 YAML 就能当一个工具跑；注册表自发现。
 
@@ -218,8 +220,8 @@ pnpm daemon
 
 <!-- metadata-sync:start -->
 - 包版本：`0.3.5`
-- 内置工具数：`732`
-- 域列表：`adb-bridge`, `binary-instrument`, `boringssl-inspector`, `browser`, `canvas`, `coordination`, `core`, `cross-domain`, `dart-inspector`, `debugger`, `encoding`, `exploit-dev`, `extension-registry`, `graphql`, `instrumentation`, `maintenance`, `memory`, `mojo-ipc`, `native-bridge`, `native-emulator`, `network`, `platform`, `process`, `protocol-analysis`, `proxy`, `session`, `sourcemap`, `streaming`, `syscall-hook`, `tasks`, `trace`, `transform`, `v8-inspector`, `wasm`, `webgpu`, `workflow`
+- 内置工具数：`733`
+- 域列表：`adb-bridge`, `binary-instrument`, `browser`, `canvas`, `coordination`, `core`, `cross-domain`, `dart-inspector`, `debugger`, `encoding`, `exploit-dev`, `extension-registry`, `graphql`, `instrumentation`, `maintenance`, `memory`, `mojo-ipc`, `native-bridge`, `native-emulator`, `network`, `platform`, `process`, `protocol-analysis`, `proxy`, `session`, `sourcemap`, `streaming`, `syscall-hook`, `tasks`, `tls-inspector`, `trace`, `transform`, `v8-inspector`, `wasm`, `webgpu`, `workflow`
 - 说明：以上数据由运行时 registry 动态生成，不要手改计数。
 <!-- metadata-sync:end -->
 
@@ -233,7 +235,7 @@ pnpm daemon
 - **延迟初始化** — Handler 在首次调用时实例化，而非启动时预加载。
 - **BM25 + 向量搜索** — `search_tools` 混合排序 + 自适应权重。
 - **MCP `ToolAnnotations`** — 每个工具携带 `readOnlyHint` / `destructiveHint` / `idempotentHint` / `openWorldHint`。
-- **档位阶梯** — `search`（约 3K token）→ `workflow`（复合脚本）→ `full`（全部 723 工具）。
+- **档位阶梯** — `search`（约 3K token）→ `workflow`（复合脚本）→ `full`（全部 733 工具）。
 - **传输对称** — stdio 与 Streamable HTTP 暴露相同工具面；按客户端隔离会话。
 
 详见 [架构指南](https://vmoranv.github.io/jshookmcp/guide/best-practices.html) 与 [配置参考](https://vmoranv.github.io/jshookmcp/guide/configuration.html)。
@@ -242,14 +244,14 @@ pnpm daemon
 
 ## 从源码构建
 
-环境要求：Node.js 22.12+、pnpm 10.x。
+环境要求：Node.js 22.22.2+、pnpm 10.x。
 
 ```bash
 pnpm install
 pnpm build
 pnpm start           # 从 dist/ 启动构建后的服务
 pnpm dev             # tsx watch 模式从源码启动
-pnpm check           # metadata check + lint + format check + typecheck + 单元测试
+pnpm check           # 漂移守卫（metadata + openapi + 域完整性 + 事件契约）+ lint + format check + typecheck + 单元测试
 pnpm test            # Vitest 单元套件
 pnpm test:e2e        # 浏览器/工具端到端套件
 pnpm daemon          # 构建后启动 Streamable HTTP daemon

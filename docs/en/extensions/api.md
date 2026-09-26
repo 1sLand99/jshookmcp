@@ -154,7 +154,7 @@ export default defineWorkflow('demo.capture', 'Telemetry Synthesis', (w) =>
       s.tool('navigate', 'page_navigate', {
         input: { url: 'https://example.com' },
       });
-      s.tool('links', 'page_get_all_links');
+      s.tool('frames', 'page_list_frames');
     }),
   ),
 );

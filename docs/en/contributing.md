@@ -37,7 +37,7 @@ You only need to clone repositories and build locally when:
 ## Documentation hygiene rules
 
 - Prefer official **VitePress** capabilities first: locales, sidebar, local search, and the default theme.
-- Prefer the official **Prettier CLI** for docs formatting instead of adding extra formatting plugins for marginal gains.
+- Docs formatting and checking both go through **markdownlint-cli2** (`pnpm run check:docs-format`, an alias of `pnpm run lint:md`) instead of adding extra formatting plugins for marginal gains.
 - Only introduce third-party VitePress plugins when official capabilities are clearly insufficient, and explain in the PR:
   - why official capabilities are not enough
   - the plugin maintenance and compatibility risk
@@ -61,7 +61,7 @@ If you are working on dependency or bridge issues, also consider:
 
 ```bash
 pnpm run doctor
-pnpm run format:docs
+pnpm run check:docs-format
 ```
 
 ## Extension development guidance

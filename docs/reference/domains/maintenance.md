@@ -34,9 +34,9 @@
 | `cleanup_artifacts` | 按保留策略清理生成产物、截图和调试会话。 |
 | `doctor_environment` | 检查可选依赖、桥接端点和平台限制等环境状态。 |
 | `maintenance_detect_gpu` | 从 WebGL/WebGPU renderer 字符串检测 GPU 家族，分类为 NVIDIA、AMD、Intel、Apple、Mali、Adreno、PowerVR、Vivante、Broadcom、Qualcomm、Microsoft。纯 TS 分类器，无需浏览器。至少提供 webglRenderer、webgpuDescription 或 deviceName 之一。 |
-| `snapshot_create` | 待补充中文：Create a shadow-git snapshot of a scan-artifact directory (artifacts, HAR, screenshots, debugger-sessions, ...) so it can be rolled back later. Uses an ISOLATED git object store outside the target directory — the project .git is never touched and no git commit is made. The store keeps full file contents, so snapshots can grow large; snapshot output directories, not source trees. |
-| `snapshot_list` | 待补充中文：List shadow-git snapshots recorded for a directory, newest first. |
-| `snapshot_restore` | 待补充中文：Restore a directory to a recorded shadow-git snapshot. DESTRUCTIVE: files modified after the snapshot are overwritten, files created after it are DELETED, and files deleted after it are written back (full revert semantics). The isolated store never touches the project .git. Create a fresh snapshot_create first if you may need the current state. |
+| `snapshot_create` | 为扫描产物目录（artifacts、HAR、截图、debugger-sessions 等）创建 shadow-git 快照，便于日后回退。使用独立于目标目录的 git 对象库——绝不触碰项目 .git，也不会产生 commit。对象库保存完整文件内容，快照可能很大，请只对产物目录使用，不要对源码树使用。 |
+| `snapshot_list` | 列出某目录已记录的 shadow-git 快照，最新的在前。 |
+| `snapshot_restore` | 将目录还原到某个已记录的 shadow-git 快照。破坏性操作：快照之后被修改的文件会被覆盖、之后新建的文件会被删除、之后被删除的文件会被写回（完整回退语义）。独立对象库不会触碰项目 .git；若之后可能还需要当前状态，请先重新执行 snapshot_create。 |
 | `list_extensions` | 列出本地已加载的插件、工作流和扩展工具。 |
 | `reload_extensions` | 从已配置目录重新加载全部插件和工作流。 |
 | `browse_extension_registry` | 浏览远程 jshookmcp 扩展注册表以发现可用插件和工作流。 |

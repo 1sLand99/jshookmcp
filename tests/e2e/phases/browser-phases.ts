@@ -68,7 +68,7 @@ export const browserPhases: Phase[] = [
       'page_wait_for_selector',
       'page_evaluate',
       'page_inject_script',
-      'page_get_all_links',
+      'page_list_frames',
       'page_screenshot',
       'page_set_viewport',
       'page_emulate_device',

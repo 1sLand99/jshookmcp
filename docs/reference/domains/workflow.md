@@ -34,6 +34,6 @@
 | `workflow_run_inspect` | 检视全局工作流运行记录：列出最近的 run_extension_workflow / run_macro 运行；按 runId 获取单次运行的详情；获取某个工作流或宏的上一次成功执行的完整结果（stepResults / spans / metrics）。 |
 | `workflow_conditional_step` | 基于前序工作流步骤结果求值条件，执行两个工具分支之一。支持内置谓词：always_true、always_false、any_step_failed、success_rate_gte_N（N=0-100）、variable_equals_KEY_VALUE、variable_contains_KEY_VALUE、variable_matches_KEY_REGEX。当省略 stepResults 时，从给定 workflowId 的上一次成功工作流运行中读取。 |
 | `workflow_retry_policy` | 为工作流步骤配置带指数退避的全局重试策略。存储的策略在单个节点缺少显式 retry 配置时，由 run_extension_workflow / run_macro 应用。返回归一化后的策略。 |
-| `workflow_suggest` | 待补充中文：Suggest the next extension workflow to run from the chainsWith / prerequisites chain metadata declared by loaded workflows. Pass the workflow ids already executed in this session; the server stays stateless. Candidates chained from an executed workflow rank first (the reason names the chain), workflows with all prerequisites satisfied rank before those with missing ones, already-executed workflows are never suggested, and executed ids that match no loaded workflow are returned in unmatched. Workflows without chain metadata are never suggested, so an empty catalog of metadata yields empty suggestions. |
+| `workflow_suggest` | 根据已加载工作流声明的 chainsWith / prerequisites 链式元数据，推荐下一个应执行的扩展工作流。传入本会话已执行的工作流 id，服务端保持无状态：由已执行工作流链出的候选优先（reason 会指明来源链），前置条件全部满足的排在缺失的之前，已执行过的永不推荐，无法匹配任何已加载工作流的 id 在 unmatched 中返回；无链式元数据的工作流不会被推荐。 |
 | `run_macro` | 执行预设的自动化操作序列。 |
 | `list_macros` | 列出所有可用宏（内置和用户自定义），包含名称、描述、标签和步骤数。 |

@@ -47,7 +47,7 @@ const TOOLS = [
   ['page_wait_for_selector', { selector: 'body', timeout: 3000 }],
   ['page_evaluate', { code: 'document.title' }],
   ['page_inject_script', { script: 'window.__e2e_injected = true;' }],
-  ['page_get_all_links', {}],
+  ['page_list_frames', {}],
   ['page_screenshot', { selector: ['.VPNav', '.VPHero', '.VPFeatures'] }],
   ['page_set_viewport', { width: 1280, height: 720 }],
   ['page_emulate_device', { device: 'iPhone 14' }],
@@ -187,11 +187,15 @@ const TOOLS = [
     { code: 'function encrypt(d){return d}', functionName: 'encrypt', testInputs: ['test'] },
   ],
   ['antidebug_detect_protections', {}],
-  ['antidebug_bypass_all', {}],
-  ['antidebug_bypass_debugger_statement', {}],
-  ['antidebug_bypass_console_detect', {}],
-  ['antidebug_bypass_stack_trace', {}],
-  ['antidebug_bypass_timing', {}],
+  // There is ONE registered tool here: `antidebug_bypass`, which takes a
+  // `types` array. These five entries used to name `antidebug_bypass_<type>`
+  // tools that were never registered (git log -S finds no such names in
+  // definitions.ts), so every call below failed with "unknown tool".
+  ['antidebug_bypass', { types: ['all'] }],
+  ['antidebug_bypass', { types: ['debugger_statement'] }],
+  ['antidebug_bypass', { types: ['console_detect'] }],
+  ['antidebug_bypass', { types: ['stack_trace'] }],
+  ['antidebug_bypass', { types: ['timing'] }],
   ['sourcemap_discover', {}],
   ['sourcemap_fetch_and_parse', { sourceMapUrl: TARGET }],
   ['sourcemap_reconstruct_tree', { sourceMapUrl: TARGET }],

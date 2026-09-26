@@ -25,8 +25,8 @@ The global tool surface is gated by memory-resident strategies dictated by the `
 
 | Profile Target       | Resident Domains                                                                           | Behavioral Characteristics                                                                                               | RTT Tax |
 | -------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ------- |
-| `search`             | maintenance                                                                                | Stripped variant exposing only meta-tooling. All operational dependencies are lazily loaded via `route_tool`             | Maximum |
-| `workflow` (Default) | analysis, browser, coordination, debugger, encoding, graphql, network, streaming, workflow | Covers 90% of Web/RE workflows. Core suites held memory-resident.                                                        | Low     |
+| `search`             | (0 domains; meta-tools only)                                                                                | Stripped variant exposing only meta-tooling. All operational dependencies are lazily loaded via `route_tool`             | Maximum |
+| `workflow` (Default) | core, browser, canvas, coordination, debugger, encoding, graphql, maintenance, native-emulator, network, session, streaming, tasks, v8-inspector, webgpu, workflow | Covers 90% of Web/RE workflows. Core suites held memory-resident.                                                        | Low     |
 | `full`               | Static Preload (all domains)                                                               | Mounts all tools natively, eliminating JIT loading delay. Designed for heavy static analysis and full-stack audits. | Zero    |
 
 ---

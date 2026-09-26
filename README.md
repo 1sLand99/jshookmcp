@@ -80,12 +80,12 @@ English · [中文](./README.zh.md)
 
 ## What makes jshook different
 
-Most MCP servers for JS analysis expose a handful of hand-rolled tools or wrap a single browser engine. jshook is closer to an **operating system for front-end reverse engineering** — 34 self-discovered domains, a search-first meta-tool that keeps token cost under control, and runtime recovery that survives broken pages and dropped sessions:
+Most MCP servers for JS analysis expose a handful of hand-rolled tools or wrap a single browser engine. jshook is closer to an **operating system for front-end reverse engineering** — 36 self-discovered domains, a search-first meta-tool that keeps token cost under control, and runtime recovery that survives broken pages and dropped sessions:
 
-- **Search-first, profile-aware.** The `search` profile loads about 3K tokens of tool metadata; the `full` profile exposes all 723 tools at around 40K tokens. Agents move between them as the task grows — `search` → `workflow` → `full` — instead of drowning in schemas from the first turn.
+- **Search-first, profile-aware.** The `search` profile loads about 3K tokens of tool metadata; the `full` profile exposes all 733 tools at around 40K tokens. Agents move between them as the task grows — `search` → `workflow` → `full` — instead of drowning in schemas from the first turn.
 - **Runtime recovery and session isolation.** Streamable HTTP sessions restore activated domains, browser attach state, and coverage state after reconnects; per-client browser-side state stays isolated so two agents cannot trample each other's CDP sessions.
 - **Full-stack browser automation.** Chromium and Camoufox via CDP with anti-detection, an explicit-input CAPTCHA solver (no built-in page/feature probing), a self-signed HTTPS interception CA on demand, and HTTP/2 frame building.
-- **Real reverse engineering, not string searches.** WASM disassembly via Binaryen, Frida/Ghidra/IDA bridges, native FFI scanning, hardware breakpoints, PE introspection, GraphQL/Burp Suite proxy bridges, and AST transforms — not a single regex call wrapped as a tool.
+- **Real reverse engineering, not string searches.** WASM disassembly via wabt (`wasm2wat` / `wasm-decompile` / `wasm-objdump`), Frida/Ghidra/IDA bridges, native FFI scanning, hardware breakpoints, PE introspection, GraphQL/Burp Suite proxy bridges, and AST transforms — not a single regex call wrapped as a tool.
 - **Dynamic extensibility.** Hot-reload plugins, declarative workflows, and auto-discovery keep the server growing without a redeploy.
 
 ---
@@ -96,13 +96,14 @@ A scan of what's in the box. Each row links to the detailed [Capability overview
 
 | Area | Highlights |
 | --- | --- |
-| **Tool profiles** | `search` (~3K tokens, BM25 + hybrid vector ranking) · `workflow` (composite scripts) · `full` (all 723 tools) |
+| **Tool profiles** | `search` (~3K tokens, BM25 + hybrid vector ranking) · `workflow` (composite scripts) · `full` (all 733 tools) |
 | **Browser automation** | Chromium and Camoufox · CDP attach to existing targets · anti-detection presets · explicit-input CAPTCHA solver · popup, download, permission, and protocol interceptors |
 | **Network interception** | HTTP/1.1 + HTTP/2 frame building · MITM proxy with auto-generated CA · WebSocket capture · GraphQL introspection helpers · Burp Suite bridge |
 | **JS hooks and analysis** | LLM-powered deobfuscation · crypto routine detection · AST comprehension · source-map reconstruction · script/scriptlet extraction and replay |
-| **WASM reverse engineering** | Binaryen disassembly · module inspection · import/export analysis · cross-reference graphs · runtime instrumentation |
-| **Process and memory forensics** | Native FFI scanning · hardware breakpoints · PE introspection · live process attach · memory read/write with region guards |
-| **Binary instrumentation** | Frida bridge · Ghidra and IDA bridges · syscall hooking · BoringSSL inspector · BoringSSL/Mojo IPC analysis |
+| **WASM reverse engineering** | wabt disassembly / C transpilation (`wasm2wat` / `wasm-decompile` / `wasm-objdump` / `wasm2c`) · Binaryen `wasm-opt` · pure-TS section parser · import/export listing · section-grouped string extraction with name-section recovery · function-level binary diff · obfuscation detection · function- and basic-block-level instrumentation |
+| **Process and memory forensics** | Native FFI scanning · cross-reference graphs · hardware breakpoints · PE introspection · live process attach · memory read/write with region guards |
+| **Binary instrumentation** | Frida bridge · Ghidra and IDA bridges · syscall hooking · TLS keylog and session tooling · Mojo IPC analysis |
+| **Android and APK analysis** | APK static triage · manifest dump and query · apktool decode / build · jadx decompilation and code search · DEX scanning · native library listing · APK signing · unidbg emulation · runtime DEX dump |
 | **Native runtime** | Native emulator for foreign-architecture samples · platform introspection · Mojo IPC · Dart Inspector · ADB bridge for on-device traffic |
 | **Encoding and transform** | URL/Base64/Hex/JWT/Protobuf encoders · AST transforms · streaming decode pipelines |
 | **Coordination** | Background task queue with progress, cancellation, and async modes · multi-agent coordination · coverage reports |
@@ -115,14 +116,15 @@ A scan of what's in the box. Each row links to the detailed [Capability overview
 
 | Scenario | What you do | Domains involved |
 | --- | --- | --- |
-| Skim a minified bundle | `search_tools` → `deobfuscate` → `format` → `extract-endpoints` | `transform`, `core` |
+| Skim a minified bundle | `search_tools` → `deobfuscate` → `search_in_scripts` → `understand_code` | `core` |
 | Reverse a CAPTCHA challenge | Drive a Camoufox page → screenshot → solve with explicit input → replay | `browser`, `canvas` |
-| Capture and replay an OAuth flow | `proxy_start` (auto CA) → `network_capture` → `graph_dump` → replay | `proxy`, `network`, `graphql` |
-| Reverse a WASM crypto routine | `wasm_load` → `wasm_disassemble` → `binary-instrument.hook` → memory trace | `wasm`, `binary-instrument`, `memory` |
+| Capture and replay an OAuth flow | `proxy_start` (auto CA) → `network_get_requests` → `graphql_introspect` → `graphql_replay` | `proxy`, `network`, `graphql` |
+| Reverse a WASM crypto routine | `wasm_dump` → `wasm_disassemble` → `generate_hooks` → `memory_breakpoint` | `wasm`, `binary-instrument`, `memory` |
+| Triage a suspicious APK | `apk_static_triage` → `apk_manifest_dump` → `jadx_decompile` → `dex_scan_file` | `binary-instrument` |
 | Recover a dropped browser session | Reconnect Streamable HTTP → restore activated domains and browser state | `browser`, `coordination` |
-| Audit a Node process for credentials | `process.list` → `memory.scan` for sensitive patterns → export | `process`, `memory`, `encoding` |
-| Build a custom workflow | `workflow.register` with YAML steps → `workflow.run` | `workflow`, `extension-registry` |
-| Hook a function in a live process | Frida script → `binary-instrument.attach` → breakpoint → log calls | `binary-instrument`, `syscall-hook` |
+| Audit a Node process for credentials | `process_list` → `memory_scan_filtered` → `binary_strings_extract` | `process`, `memory`, `binary-instrument` |
+| Build a custom workflow | `list_extension_workflows` → `run_extension_workflow` | `workflow`, `extension-registry` |
+| Hook a function in a live process | `frida_spawn` → `frida_attach_interceptor` → `frida_run_script` → `frida_enumerate_functions` | `binary-instrument` |
 
 ---
 
@@ -191,7 +193,7 @@ when you need every tool. `coverage_report` shows the active set on demand.
 - **Meta tools.** `describe_tool` returns the JSON Schema; `call_tool` validates arguments before invocation; every tool ships with `readOnlyHint` / `destructiveHint` / `idempotentHint` / `openWorldHint`.
 - **Browser automation.** Chromium and Camoufox via CDP, attach to existing targets, anti-detection presets, popup/download/permission interceptors, explicit-input CAPTCHA solver, JS/CSS injection at three document phases, persisted coverage across reconnects.
 - **Network interception.** Auto-generated HTTPS interception CA, HTTP/1.1 + HTTP/2 frame building, WebSocket capture, GraphQL helpers, Burp Suite bridge — all on the same MCP tool surface.
-- **Reverse engineering.** Binaryen WASM disassembly, Frida/Ghidra/IDA bridges, hardware breakpoints, native FFI scanning, PE introspection, syscall hooking, AST transforms, source-map reconstruction.
+- **Reverse engineering.** wabt WASM disassembly (`wasm2wat` / `wasm-decompile` / `wasm-objdump`) and Binaryen `wasm-opt`, Frida/Ghidra/IDA bridges, hardware breakpoints, native FFI scanning, PE introspection, syscall hooking, AST transforms, source-map reconstruction.
 - **Session recovery.** Streamable HTTP transport restores activated domains, browser attach state, and coverage state after reconnects; browser-side state is isolated per client.
 - **Plugins and workflows.** Drop a directory, get a domain. Write a YAML pipeline, run it as one tool. The registry self-discovers.
 
@@ -228,8 +230,8 @@ The built-in surface below is generated from the runtime registry and checked in
 
 <!-- metadata-sync:start -->
 - Package version: `0.3.5`
-- Built-in tools: `732`
-- Domains: `adb-bridge`, `binary-instrument`, `boringssl-inspector`, `browser`, `canvas`, `coordination`, `core`, `cross-domain`, `dart-inspector`, `debugger`, `encoding`, `exploit-dev`, `extension-registry`, `graphql`, `instrumentation`, `maintenance`, `memory`, `mojo-ipc`, `native-bridge`, `native-emulator`, `network`, `platform`, `process`, `protocol-analysis`, `proxy`, `session`, `sourcemap`, `streaming`, `syscall-hook`, `tasks`, `trace`, `transform`, `v8-inspector`, `wasm`, `webgpu`, `workflow`
+- Built-in tools: `733`
+- Domains: `adb-bridge`, `binary-instrument`, `browser`, `canvas`, `coordination`, `core`, `cross-domain`, `dart-inspector`, `debugger`, `encoding`, `exploit-dev`, `extension-registry`, `graphql`, `instrumentation`, `maintenance`, `memory`, `mojo-ipc`, `native-bridge`, `native-emulator`, `network`, `platform`, `process`, `protocol-analysis`, `proxy`, `session`, `sourcemap`, `streaming`, `syscall-hook`, `tasks`, `tls-inspector`, `trace`, `transform`, `v8-inspector`, `wasm`, `webgpu`, `workflow`
 - Note: this snapshot is generated from the runtime registry; do not edit the counts by hand.
 <!-- metadata-sync:end -->
 
@@ -243,7 +245,7 @@ The built-in surface below is generated from the runtime registry and checked in
 - **Lazy initialization** — handlers instantiated on first call, not at startup.
 - **BM25 + vector search** — `search_tools` meta-tool with hybrid ranking and adaptive weights.
 - **MCP `ToolAnnotations`** — every tool carries `readOnlyHint` / `destructiveHint` / `idempotentHint` / `openWorldHint`.
-- **Profile ladder** — `search` (~3K tokens) → `workflow` (composite scripts) → `full` (all 723 tools).
+- **Profile ladder** — `search` (~3K tokens) → `workflow` (composite scripts) → `full` (all 733 tools).
 - **Transport symmetry** — stdio and Streamable HTTP expose the same surface; sessions are isolated per client.
 
 See the [Architecture guide](https://vmoranv.github.io/jshookmcp/guide/best-practices.html) and [Configuration reference](https://vmoranv.github.io/jshookmcp/guide/configuration.html) for the canonical details.
@@ -252,14 +254,14 @@ See the [Architecture guide](https://vmoranv.github.io/jshookmcp/guide/best-prac
 
 ## Build from source
 
-Requirements: Node.js 22.12+, pnpm 10.x.
+Requirements: Node.js 22.22.2+, pnpm 10.x.
 
 ```bash
 pnpm install
 pnpm build
 pnpm start           # run the built server from dist/
 pnpm dev             # run from source under tsx watch
-pnpm check           # metadata check + lint + format check + typecheck + unit tests
+pnpm check           # drift guards (metadata + openapi + domain + event contracts) + lint + format check + typecheck + unit tests
 pnpm test            # Vitest unit suites
 pnpm test:e2e        # end-to-end browser/tooling suites
 pnpm daemon          # run the Streamable HTTP daemon after build

@@ -20,7 +20,7 @@ Memory analysis domain for native scans, pointer-chain discovery, structure infe
 - memory + debugger
 - memory + workflow
 
-## Full tool list (74)
+## Full tool list (75)
 
 | Tool | Description |
 | --- | --- |
@@ -50,6 +50,7 @@ Memory analysis domain for native scans, pointer-chain discovery, structure infe
 | `memory_watch` | Poll a memory address until its value changes (like scanmem's "watch" command). Reads the current value, then polls at a configurable interval. Returns immediately with the old value, new value, and elapsed time when a change is detected. If no change occurs within the timeout, returns the unchanged value and a hint. Useful for "tell me when this variable changes" workflows. |
 | `memory_freeze` | Freeze or unfreeze a memory address. Freeze continuously writes a value to prevent changes; unfreeze stops it. |
 | `memory_dump` | Dump memory region as hex with ASCII column. Outputs a formatted hex dump similar to xxd. |
+| `memory_read_typed` | Read process memory as typed numeric values with explicit endianness. Decodes consecutive values starting at address via koffi endian-sensitive integer types (uint64_le / int32_be / …) — no manual byte swapping needed. 64-bit values are returned as decimal strings alongside two's-complement hex. float/double use IEEE-754 with the requested endianness. Supports up to 1024 consecutive values. Ideal for struct inspection, big-endian network payloads, and game memory analysis. |
 | `memory_speedhack` | Hook time APIs (GetTickCount64/GetTickCount/QueryPerformanceCounter/QueryPerformanceFrequency/timeGetTime/GetSystemTimeAsFileTime) to scale process time via an in-process SSE2 trampoline. time via an in-process SSE2 trampoline. Actions: apply (hook + set speed), set (adjust speed without re-hooking), restore (unhook and restore original functions). Speed range 0.01–100x; values outside this range are rejected to avoid destabilising the target. |
 | `memory_write_history` | Undo or redo the last memory write operation. Pass pid to scope the operation to a specific process — per-PID undo prevents reverting an unrelated process's write when multiple processes are being edited concurrently. |
 | `memory_heap_enumerate` | Enumerate all heaps and heap blocks in a process via Toolhelp32 snapshot. Returns heap list with block counts, sizes, and overall statistics. |

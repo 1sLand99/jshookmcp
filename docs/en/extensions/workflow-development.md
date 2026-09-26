@@ -179,7 +179,7 @@ Telemetric observation channels for distributed trace tracking and metric analys
 - `page_local_storage` with `action: 'get'`
 - `page_cookies` with `action: 'get'`
 - `network_get_requests`
-- `page_get_all_links`
+- `page_list_frames`
 - `console_get_logs`
 
 ### Strict Sequential Matrix (Mutating)

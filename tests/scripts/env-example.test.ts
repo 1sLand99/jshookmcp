@@ -95,7 +95,7 @@ const allowedRawProcessEnvironment = new Set([
   'src/modules/binary-instrument/GhidraAnalyzer.ts:ProgramFiles(x86)',
   'src/modules/binary-instrument/GhidraAnalyzer.ts:USERPROFILE',
   'src/modules/binary-instrument/UnidbgRunner.ts:JAVA_HOME',
-  'src/modules/boringssl-inspector/TLSKeyLogExtractor.ts:SSLKEYLOGFILE',
+  'src/modules/tls-inspector/TLSKeyLogExtractor.ts:SSLKEYLOGFILE',
   'src/modules/collector/CodeCollectorConnectionInternal.ts:LOCALAPPDATA',
   'src/modules/collector/CodeCollectorConnectionInternal.ts:XDG_CONFIG_HOME',
   'src/modules/external/ExternalToolRunner.ts:<dynamic>',

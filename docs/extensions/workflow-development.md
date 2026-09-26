@@ -87,7 +87,7 @@ import {
 
 ## 防重入拓扑规范
 
-- **安全并行读池**：`page_local_storage(action=get)`, `page_cookies(action=get)`, `network_get_requests`, `page_get_all_links`, `console_get_logs`。
+- **安全并行读池**：`page_local_storage(action=get)`, `page_cookies(action=get)`, `network_get_requests`, `page_list_frames`, `console_get_logs`。
 - **并发锁屏黑名单**：页面导航请求、坐标重定向、表单投毒注入以及一切涉及 Shared State 的关联副作用。必须回归由 `sequenceStep` 挂接的同步等待闭包中。
 
 ## 链式组合元数据

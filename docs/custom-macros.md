@@ -91,7 +91,7 @@ This takes the `code` field from `step_1`'s output and passes it as `code` input
   "steps": [
     {
       "id": "scan",
-      "toolName": "memory_scan_first",
+      "toolName": "memory_first_scan",
       "input": { "pid": 0, "valueType": "int32", "value": "100" }
     },
     {

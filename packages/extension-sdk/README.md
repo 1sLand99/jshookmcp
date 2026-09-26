@@ -131,7 +131,7 @@ export default defineWorkflow('workflow.capture.v1', 'Capture Workflow', (workfl
             .tool('collect-requests', 'network_get_requests', {
               input: { tail: 20 },
             })
-            .tool('collect-links', 'page_get_all_links');
+            .tool('collect-links', 'page_list_frames');
         });
         root.tool('extract-auth', 'network_extract_auth');
       });
