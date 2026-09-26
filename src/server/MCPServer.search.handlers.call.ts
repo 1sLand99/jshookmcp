@@ -305,7 +305,10 @@ export async function handleCallTool(
     );
     const response = await ctx.executeToolWithTracking(name, validatedArgs);
 
-    // Record feedback for vector weight tuning (Phase 8)
+    // Record feedback for vector weight tuning (Phase 8).
+    // call_tool has no search query in scope — the caller supplies only the
+    // tool name and args. Query→tool association for this path is handled by
+    // SearchQualityTracker.associateLastSearch from MCPServer.execution.
     try {
       const engine = await getSearchEngine(ctx);
       engine.recordToolCallFeedback(name, '');

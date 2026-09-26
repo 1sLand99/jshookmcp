@@ -1024,10 +1024,13 @@ export class ToolSearchEngine {
    * the vector-weight tolerance check (see `isCachedEntryFresh`).
    *
    * @param toolName The tool that was invoked
-   * @param _lastQuery The search query that led to this tool call (reserved for future use)
+   * @param lastQuery The search query that led to this tool call. Recorded by
+   *   FeedbackTracker for quality analysis (no learning is done from it yet);
+   *   the call_tool proxy path has no query in scope and passes an empty
+   *   string.
    */
-  recordToolCallFeedback(toolName: string, _lastQuery: string): void {
-    this.feedbackTracker.recordToolCallFeedback(toolName, !!this.embeddingEngine);
+  recordToolCallFeedback(toolName: string, lastQuery: string): void {
+    this.feedbackTracker.recordToolCallFeedback(toolName, !!this.embeddingEngine, lastQuery);
     // Move-to-end ensures LRU ordering via Map insertion-order semantics.
     this.recencyTracker.delete(toolName);
     this.recencyTracker.set(toolName, Date.now());
