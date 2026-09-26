@@ -304,7 +304,7 @@ describe('CrossDomainHandlers', () => {
 
     it('suggests the network/V8 workflow for request signing goals', async () => {
       const ctx = {
-        enabledDomains: new Set(['cross-domain', 'network', 'v8-inspector']),
+        enabledDomains: new Set(['cross-domain', 'network', 'v8-inspector', 'browser']),
         selectedTools: [],
         resolveEnabledDomains: () => new Set<string>(),
       };
@@ -316,13 +316,21 @@ describe('CrossDomainHandlers', () => {
       );
 
       expect(suggestion.id).toBe('network-v8-initiator');
-      expect(suggestion.requiredDomains).toEqual(['network', 'v8-inspector', 'cross-domain']);
+      // `js_heap_search` is registered by the `browser` domain, not by
+      // `v8-inspector` — required domains come from the registry, so `browser`
+      // has to be enabled for this workflow's steps to actually be callable.
+      expect(suggestion.requiredDomains).toEqual([
+        'network',
+        'v8-inspector',
+        'browser',
+        'cross-domain',
+      ]);
       expect(suggestion.coverage).toBe(1);
     });
 
     it('suggests the debugger/V8 workflow for breakpoint scope goals', async () => {
       const ctx = {
-        enabledDomains: new Set(['debugger', 'v8-inspector']),
+        enabledDomains: new Set(['debugger', 'browser']),
         selectedTools: [],
         resolveEnabledDomains: () => new Set<string>(),
       };
@@ -334,7 +342,9 @@ describe('CrossDomainHandlers', () => {
       );
 
       expect(suggestion.id).toBe('debugger-v8-pause-context');
-      expect(suggestion.requiredDomains).toEqual(['debugger', 'v8-inspector']);
+      // The final `js_heap_search` step belongs to `browser`, so `v8-inspector`
+      // is NOT required here even though the workflow is named for V8.
+      expect(suggestion.requiredDomains).toEqual(['debugger', 'browser']);
       expect(suggestion.coverage).toBe(1);
     });
   });

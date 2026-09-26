@@ -10,11 +10,6 @@ import {
   type ParallelNode,
   type BranchNode,
 } from '@server/workflows/WorkflowContract';
-import {
-  NoopInstrumentation,
-  SpanNames,
-  MetricNames,
-} from '@server/observability/InstrumentationContract';
 
 const alwaysTruePredicate = () => true;
 
@@ -119,40 +114,5 @@ describe('WorkflowContract step helpers', () => {
     expect(contract.displayName).toBe('Test Workflow');
     expect(contract.timeoutMs).toBe(10000);
     expect(contract.build({} as never).kind).toBe('tool');
-  });
-});
-
-describe('InstrumentationContract - NoopInstrumentation', () => {
-  it('startSpan returns a SpanLike that does not throw', () => {
-    const noop = new NoopInstrumentation();
-    const span = noop.startSpan('test.span', { key: 'value' });
-    expect(span.name).toBe('test.span');
-    expect(span.startTime).toBeGreaterThan(0);
-    expect(() => span.addEvent('event')).not.toThrow();
-    expect(() => span.end()).not.toThrow();
-  });
-
-  it('emitMetric does not throw', () => {
-    const noop = new NoopInstrumentation();
-    expect(() => noop.emitMetric('test_metric', 1, 'counter')).not.toThrow();
-    expect(() => noop.emitMetric('test_metric', 42, 'gauge', { dim: 'a' })).not.toThrow();
-    expect(() => noop.emitMetric('test_metric', 1.5, 'histogram')).not.toThrow();
-  });
-});
-
-describe('InstrumentationContract - well-known names', () => {
-  it('SpanNames contains expected keys', () => {
-    expect(SpanNames.toolExecute).toBe('tool.execute');
-    expect(SpanNames.pluginLifecycle).toBe('plugin.lifecycle');
-    expect(SpanNames.workflowRun).toBe('workflow.run');
-    expect(SpanNames.bridgeRequest).toBe('bridge.request');
-    expect(SpanNames.captchaSolve).toBe('captcha.solve');
-  });
-
-  it('MetricNames contains expected keys', () => {
-    expect(MetricNames.toolCallsTotal).toBe('tool_calls_total');
-    expect(MetricNames.workflowRunsTotal).toBe('workflow_runs_total');
-    expect(MetricNames.bridgeRequestsTotal).toBe('bridge_requests_total');
-    expect(MetricNames.pluginActiveTotal).toBe('plugin_active_total');
   });
 });

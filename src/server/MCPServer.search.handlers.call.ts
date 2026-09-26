@@ -92,7 +92,9 @@ async function dispatchMetaTool(
 ): Promise<ToolResponse> {
   if (name === 'call_tool') {
     // Self-reference would recurse infinitely — call_tool must be invoked
-    // directly as a top-level tool instead.
+    // directly as a top-level tool instead. Rejected before gating: the
+    // top-level registration wrapper already evaluated call_tool's rules,
+    // and a self-reference must never dispatch (or double-gate).
     return asTextResponse(
       JSON.stringify({
         success: false,
@@ -101,6 +103,16 @@ async function dispatchMetaTool(
         ...callMetadata,
       }),
     );
+  }
+
+  // Gate the dispatched meta tool under its own name before dispatch — the
+  // call_tool proxy path must not bypass the toolExecution rules or the
+  // doom-loop breaker (dynamic import keeps the graph acyclic; see
+  // registerSearchMetaTools for the ToolCallContextGuard cycle).
+  const { runToolExecutionGate } = await import('@server/ToolCallContextGuard');
+  const gateResponse = runToolExecutionGate(ctx, name, toolArgs);
+  if (gateResponse) {
+    return attachCallToolMetadata(gateResponse, callMetadata);
   }
 
   const handler = getMetaToolHandler(name);

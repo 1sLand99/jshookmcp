@@ -7,8 +7,15 @@
 //   - CVE-2026-47674 (GHSA-xrhx-7g5j-rcj5) IP restriction bypass for non-canonical IPv6
 //   - CVE-2026-47676 (GHSA-2gcr-mfcq-wcc3) app.mount() strips prefix from undecoded path
 //   - CVE-2026-47675 (GHSA-3hrh-pfw6-9m5x) cookie helper Set-Cookie injection
-// All four are fixed in hono 4.12.21. hono reaches us transitively via
-// @modelcontextprotocol/sdk (HTTP transport), so a pnpm override is the fix.
+// All four are fixed in hono 4.12.21. hono reaches us transitively through the
+// MCP transport packages, by two independent paths:
+//   - `@modelcontextprotocol/node` — the v2 HTTP transport, a direct root
+//     dependency — pulls `@hono/node-server`, which peer-depends on hono;
+//   - `@modelcontextprotocol/sdk` (declared by packages/extension-sdk) pulls
+//     `@hono/node-server` and hono directly.
+// Both are why a pnpm override is the fix. Do NOT drop the override on the
+// assumption that removing `@modelcontextprotocol/sdk` removes hono — the
+// `@modelcontextprotocol/node` path keeps it in the tree.
 
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';

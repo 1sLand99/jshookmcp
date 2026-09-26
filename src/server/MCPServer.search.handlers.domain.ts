@@ -43,7 +43,7 @@ export async function handleActivateDomain(
   }
 
   // Ensure the domain manifest is loaded before accessing tools/handlers
-  await ensureDomainLoaded(domain);
+  await ensureDomainLoaded(domain, ctx.eventBus);
 
   const ttlMinutes = typeof args.ttlMinutes === 'number' ? args.ttlMinutes : ACTIVATION_TTL_MINUTES;
 

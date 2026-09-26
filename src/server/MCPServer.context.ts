@@ -13,7 +13,7 @@ import type { ADBBridgeHandlers } from '@server/domains/adb-bridge/handlers';
 import type { ApkPackerHandlers } from '@server/domains/binary-instrument/apk-packer/handlers';
 import type { BinaryInstrumentHandlers } from '@server/domains/binary-instrument/handlers';
 import type { BinarySecretsHandlers } from '@server/domains/binary-instrument/secrets/handlers';
-import type { BoringsslInspectorHandlers } from '@server/domains/boringssl-inspector/handlers';
+import type { TlsInspectorHandlers } from '@server/domains/tls-inspector/handlers';
 import type { CrossDomainHandlers } from '@server/domains/cross-domain/handlers';
 import type { DartInspectorHandlers } from '@server/domains/dart-inspector/handlers';
 import type { ExtensionRegistryHandlers } from '@server/domains/extension-registry/handlers';
@@ -161,7 +161,7 @@ export interface DomainInstances {
   consoleMonitor?: import('@modules/monitor/ConsoleMonitor').ConsoleMonitor;
   browserHandlers?: import('@server/domains/browser/index').BrowserToolHandlers;
   v8InspectorHandlers?: V8InspectorHandlers;
-  boringsslInspectorHandlers?: BoringsslInspectorHandlers;
+  tlsInspectorHandlers?: TlsInspectorHandlers;
   skiaCaptureHandlers?: SkiaCaptureHandlers;
   binaryInstrumentHandlers?: BinaryInstrumentHandlers;
   nativeEmulatorHandlers?: NativeEmulatorHandlers;

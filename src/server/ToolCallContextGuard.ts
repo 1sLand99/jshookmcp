@@ -15,8 +15,9 @@ import { logger } from '@utils/logger';
 import { matchesWildcardPattern } from '@utils/matchesWildcardPattern';
 import { getToolRequestContext } from '@server/runtime/ToolRequestContext';
 import { META_TOOL_NAMES } from '@server/MCPServer.search';
+import { emitBusEvent, type EventBus, type ServerEventMap } from '@server/EventBus';
 import { MCP_DOOM_LOOP_THRESHOLD, TOOL_GATE_MAX_LISTED_RULES } from '@src/constants/server';
-import type { ToolExecutionRuleConfig } from '@internal-types/config';
+import type { ToolExecutionConfig, ToolExecutionRuleConfig } from '@internal-types/config';
 
 /** Minimal TabRegistry surface needed by the guard. */
 interface TabContextProvider {
@@ -676,3 +677,115 @@ export function buildDoomLoopErrorResponse(
  * context and garbage-collected with it; per-MCP-client-session scoping uses
  * the same ToolRequestContext sessionId key as repeat detection.
  */
+
+/* ================================================================== */
+/*  Shared gate entry for the meta-tool paths                          */
+/*                                                                     */
+/*  The domain-tool path composes its gate inline in                   */
+/*  MCPServer.execution.ts (checkToolExecutionGate). The meta tools     */
+/*  (search_tools, activate_tools, ..., call_tool) bypass that path    */
+/*  twice: once at their direct registration wrapper and once when     */
+/*  call_tool dispatches them. Both entry points call the single       */
+/*  runToolExecutionGate below, which composes the SAME single-source  */
+/*  pieces (compileToolRules / evaluateToolRules / recordDoomLoopCall  */
+/*  / response builders) so rule evaluation is never duplicated.       */
+/* ================================================================== */
+
+/** Minimal structural surface of MCPServerContext that the gate needs. */
+export interface ToolExecutionGateHost {
+  /**
+   * Server config. `toolExecution` may be absent entirely (partial test
+   * configs) — a missing section behaves exactly as before the gate existed
+   * (allow all).
+   */
+  config?: { toolExecution?: ToolExecutionConfig };
+  /** Event bus for deny telemetry. Absent/mock buses are tolerated (no-op). */
+  eventBus?: EventBus<ServerEventMap> | undefined | null;
+  /**
+   * Doom-loop tracker. Optional so partial test contexts can exercise the
+   * rule gate without a guard instance; production contexts always carry one.
+   */
+  contextGuard?: Pick<ToolCallContextGuard, 'recordDoomLoopCall'>;
+}
+
+export interface ToolExecutionGateOptions {
+  /**
+   * Whether this call participates in doom-loop accounting (default true).
+   * Proxy-style callers whose dispatched target is gated separately must opt
+   * out: recording call_tool's own key between the dispatched target's
+   * records would reset the inner streak on every physical call (the doom
+   * tracker keeps a single lastKey slot per session) and defeat accumulation
+   * entirely. call_tool's loop protection is carried by the dispatched name
+   * instead — executeToolWithTracking for domain tools, the dispatch gate
+   * for meta tools.
+   */
+  recordDoomLoop?: boolean;
+}
+
+/** Gate-blocked response shape — identical to the domain-path gate responses. */
+export type ToolGateBlockedResponse = ReturnType<typeof buildToolGateDenyResponse>;
+
+/**
+ * Resolve the MCP session id attached to a gate telemetry event: explicit
+ * `_meta.sessionId` wins over the per-request AsyncLocalStorage scope.
+ */
+function resolveGateSessionId(args: Record<string, unknown>): string | null {
+  const explicit = (args['_meta'] as { sessionId?: unknown } | undefined)?.sessionId;
+  if (typeof explicit === 'string' && explicit.trim().length > 0) return explicit.trim();
+  return getToolRequestContext()?.sessionId ?? null;
+}
+
+/**
+ * Tool-execution permission gate shared by the meta-tool entry points:
+ * ordered rules from config.toolExecution (legacy allowTools whitelist
+ * compiled as leading allow rules, last matching rule wins) followed by the
+ * doom-loop circuit breaker. Deny/doom telemetry mirrors the domain path.
+ *
+ * Returns the immediate error response, or null when the call may proceed.
+ */
+export function runToolExecutionGate(
+  host: ToolExecutionGateHost,
+  toolName: string,
+  args: Record<string, unknown>,
+  options: ToolExecutionGateOptions = {},
+): ToolGateBlockedResponse | null {
+  const argsJson = stableSerializeArgs(args);
+  const toolExecution = host.config?.toolExecution;
+  const compiledRules = compileToolRules(
+    toolExecution?.allowTools ?? [],
+    toolExecution?.rules ?? [],
+  );
+  const decision = evaluateToolRules(compiledRules, toolName, argsJson);
+  if (!decision.allowed && decision.matchedRule) {
+    // Metadata-only deny telemetry (rule is static config, never runtime args).
+    emitBusEvent(host.eventBus, 'tool.gate.denied', {
+      toolName,
+      source: decision.matchedRule.source ?? 'rules',
+      rule: {
+        tool: decision.matchedRule.tool,
+        ...(decision.matchedRule.pattern !== undefined
+          ? { pattern: decision.matchedRule.pattern }
+          : {}),
+        action: decision.matchedRule.action,
+      },
+      sessionId: resolveGateSessionId(args),
+      timestamp: new Date().toISOString(),
+    });
+    return buildToolGateDenyResponse(toolName, decision.matchedRule, compiledRules);
+  }
+  if (options.recordDoomLoop === false) return null;
+  const trip = host.contextGuard?.recordDoomLoopCall(toolName, argsJson, MCP_DOOM_LOOP_THRESHOLD);
+  if (trip) {
+    emitBusEvent(host.eventBus, 'tool.gate.denied', {
+      toolName,
+      source: 'doom-loop',
+      rule: null,
+      consecutiveCount: trip.count,
+      threshold: trip.threshold,
+      sessionId: resolveGateSessionId(args),
+      timestamp: new Date().toISOString(),
+    });
+    return buildDoomLoopErrorResponse(toolName, argsJson, trip);
+  }
+  return null;
+}

@@ -24,7 +24,6 @@ describe('CrossDomainConfig', () => {
     expect(config.unidbgEnabled).toBe(false);
     expect(config.unidbgJarPath).toBeNull();
     expect(config.mojoEnabled).toBe(true);
-    expect(config.boringsslEnabled).toBe(true);
     expect(['win32', 'linux', 'darwin']).toContain(config.platform);
   });
 

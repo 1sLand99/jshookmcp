@@ -72,7 +72,7 @@ const SEMANTIC_CASES = [
     topK: 10,
     expectations: [{ tool: 'tls_keylog_enable', gain: 3 }],
     idealTool: 'tls_keylog_enable',
-    tags: ['boringssl'],
+    tags: ['tls-inspector'],
   },
   {
     id: 'semantic-jadx',

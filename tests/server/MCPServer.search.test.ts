@@ -4,6 +4,7 @@ import { DEFAULT_SEARCH_CONFIG } from '@src/config/search-defaults';
 import { createToolHandlerMap } from '@server/ToolHandlerMap';
 import type { MCPServerContext } from '@server/MCPServer.context';
 import { estimateToolTokens } from '@server/MCPServer.search.helpers';
+import { ToolCallContextGuard } from '@server/ToolCallContextGuard';
 import { MCP_TOOL_ACTIVATION_BUDGET_TOKENS, MCP_TOOL_MAX_ACTIVE_TOOLS } from '@src/constants';
 
 function tool(name: string, description = `desc_${name}`): Tool {
@@ -1368,5 +1369,80 @@ describe('MCPServer.search', () => {
       expect(ctx.registeredToolsForTest.has(name)).toBe(true);
       expect(ctx.metaToolsByName.has(name)).toBe(true);
     }
+  });
+
+  it('denies a meta tool through the toolExecution rules without running its handler', async () => {
+    const emitted: Array<{ event: string; payload: Record<string, unknown> }> = [];
+    const ctx = createCtx({
+      config: {
+        toolExecution: { allowTools: [], rules: [{ tool: 'activate_tools', action: 'deny' }] },
+      },
+      eventBus: {
+        emit: (event: string, payload: unknown) => {
+          emitted.push({ event, payload: payload as Record<string, unknown> });
+          return Promise.resolve();
+        },
+      },
+    });
+    registerSearchMetaTools(ctx);
+    const activateHandler = ctx.registeredToolsForTest.get('activate_tools')!.handler;
+
+    const response = await activateHandler({ names: ['network_get_requests'] });
+
+    expect(response.isError).toBe(true);
+    const payload = JSON.parse(response.content[0].text) as Record<string, unknown>;
+    expect(payload.success).toBe(false);
+    expect(payload.deniedBy).toEqual({ tool: 'activate_tools', action: 'deny' });
+    expect(payload.activeRules).toEqual(['tool=activate_tools action=deny']);
+    // The denied call must not have reached the activation machinery.
+    expect(ctx.activatedToolNames.size).toBe(0);
+    expect(ctx.registerSingleTool).not.toHaveBeenCalled();
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]).toMatchObject({
+      event: 'tool.gate.denied',
+      payload: { toolName: 'activate_tools', source: 'rules' },
+    });
+  });
+
+  it('applies the doom-loop breaker to repeated identical direct meta tool calls', async () => {
+    const ctx = createCtx({ contextGuard: new ToolCallContextGuard(() => null) });
+    registerSearchMetaTools(ctx);
+    const searchHandler = ctx.registeredToolsForTest.get('search_tools')!.handler;
+
+    for (let i = 0; i < 4; i++) {
+      const passing = await searchHandler({ query: 'page' });
+      expect(passing.isError).not.toBe(true);
+    }
+    const blocked = await searchHandler({ query: 'page' });
+    expect(blocked.isError).toBe(true);
+    const payload = JSON.parse(blocked.content[0].text) as Record<string, any>;
+    expect(payload.success).toBe(false);
+    expect(payload.doomLoop).toEqual({
+      toolName: 'search_tools',
+      consecutiveCount: 5,
+      threshold: 5,
+    });
+    // Different arguments reset the streak instead of tripping.
+    const varied = await searchHandler({ query: 'different' });
+    expect(varied.isError).not.toBe(true);
+  });
+
+  it('gates call_tool-dispatched meta tools while keeping call_tool out of doom accounting', async () => {
+    const ctx = createCtx({ contextGuard: new ToolCallContextGuard(() => null) });
+    registerSearchMetaTools(ctx);
+    const callToolHandler = ctx.registeredToolsForTest.get('call_tool')!.handler;
+
+    for (let i = 0; i < 4; i++) {
+      const passing = await callToolHandler({ name: 'coverage_report', args: {} });
+      expect(passing.isError).not.toBe(true);
+    }
+    // Trips on the 5th identical invocation under the DISPATCHED name —
+    // only possible because the call_tool wrapper skips its own doom record
+    // (recording call_tool's key would reset the inner streak every call).
+    const blocked = await callToolHandler({ name: 'coverage_report', args: {} });
+    expect(blocked.isError).toBe(true);
+    const payload = JSON.parse(blocked.content[0].text) as Record<string, any>;
+    expect(payload.doomLoop.toolName).toBe('coverage_report');
+    expect(payload.wasAutoActivated).toBe(false);
   });
 });

@@ -23,43 +23,21 @@ import {
   extractSyscallEvents,
 } from './handlers/input-extractors';
 import { WORKFLOWS, type CrossDomainWorkflowDefinition } from './workflows/missions';
+// Both the domain list and the tool -> domain mapping come from the generated
+// registry rather than being hand-maintained here. A hand-maintained copy rots
+// silently: renaming a tool or a domain breaks workflow coverage without
+// failing a single test. `pnpm audit:domains` guards this invariant.
+import {
+  GENERATED_DOMAIN_NAMES,
+  GENERATED_TOOL_DOMAIN_MAP,
+} from '@server/registry/generated-tool-domains.js';
 
-const V5_DOMAIN_NAMES = [
-  'adb-bridge',
-  'analysis',
-  'binary-instrument',
-  'boringssl-inspector',
-  'browser',
-  'network',
-  'canvas',
-  'coordination',
-  'cross-domain',
-  'dart-inspector',
-  'debugger',
-  'encoding',
-  'exploit-dev',
-  'extension-registry',
-  'graphql',
-  'instrumentation',
-  'maintenance',
-  'memory',
-  'v8-inspector',
-  'mojo-ipc',
-  'native-bridge',
-  'native-emulator',
-  'platform',
-  'process',
-  'protocol-analysis',
-  'proxy',
-  'sourcemap',
-  'streaming',
-  'syscall-hook',
-  'trace',
-  'transform',
-  'wasm',
-  'webgpu',
-  'workflow',
-];
+// A Map rather than direct property access: the generated map is a plain object
+// literal, so `GENERATED_TOOL_DOMAIN_MAP[name]` would answer for inherited keys
+// such as `constructor` or `toString` and attribute a bogus domain to them.
+const TOOL_DOMAIN_INDEX: ReadonlyMap<string, string> = new Map(
+  Object.entries(GENERATED_TOOL_DOMAIN_MAP),
+);
 
 export class CrossDomainWorkflowClassifier {
   private readonly ctx: MCPServerContext;
@@ -85,7 +63,7 @@ export class CrossDomainWorkflowClassifier {
     }>;
   } {
     const availableDomains = this.getAvailableDomains();
-    const missingDomains = V5_DOMAIN_NAMES.filter((d) => !availableDomains.includes(d));
+    const missingDomains = GENERATED_DOMAIN_NAMES.filter((d) => !availableDomains.includes(d));
 
     const workflows = Object.entries(WORKFLOWS).map(([workflowKey, workflow]) => {
       const evaluation = this.evaluateWorkflow(workflow);
@@ -98,7 +76,12 @@ export class CrossDomainWorkflowClassifier {
       };
     });
 
-    return { availableDomains, missingDomains, supportedDomains: [...V5_DOMAIN_NAMES], workflows };
+    return {
+      availableDomains,
+      missingDomains,
+      supportedDomains: [...GENERATED_DOMAIN_NAMES],
+      workflows,
+    };
   }
 
   suggestWorkflow(
@@ -159,7 +142,7 @@ export class CrossDomainWorkflowClassifier {
       evidenceBridgeReady: this.evidenceBridgeReady,
       orchestratorReady: true,
       availableDomains,
-      missingDomains: V5_DOMAIN_NAMES.filter((d) => !availableDomains.includes(d)),
+      missingDomains: GENERATED_DOMAIN_NAMES.filter((d) => !availableDomains.includes(d)),
     };
   }
 
@@ -170,7 +153,7 @@ export class CrossDomainWorkflowClassifier {
         : this.ctx.resolveEnabledDomains(this.ctx.selectedTools);
 
     const available: string[] = [];
-    for (const d of V5_DOMAIN_NAMES) {
+    for (const d of GENERATED_DOMAIN_NAMES) {
       if (currentEnabledDomains.has(d)) {
         available.push(d);
       }
@@ -197,83 +180,16 @@ export class CrossDomainWorkflowClassifier {
     return { requiredDomains, availableDomains: available, missingDomains: missing, coverage };
   }
 
+  /**
+   * Resolve the domain that owns a tool.
+   *
+   * Backed by the generated registry map rather than a hand-maintained prefix
+   * table. Every built-in tool resolves to the domain that actually registers
+   * it — which is the domain that must be enabled for the tool to run.
+   */
   private inferDomainsForTool(toolName: string): string[] {
-    if (toolName.startsWith('deobfuscate') || toolName.startsWith('advanced_deobfuscate')) {
-      return ['analysis'];
-    }
-    if (toolName.startsWith('adb_')) return ['adb-bridge'];
-    if (toolName.startsWith('js_heap')) {
-      return ['v8-inspector'];
-    }
-    if (toolName.startsWith('v8_')) return ['v8-inspector'];
-    if (toolName.startsWith('webgpu_')) return ['webgpu'];
-    if (toolName.startsWith('wasm_')) return ['wasm'];
-    if (toolName.startsWith('transform_')) return ['transform'];
-    if (toolName.startsWith('sourcemap_')) return ['sourcemap'];
-    if (toolName.startsWith('debugger_')) return ['debugger'];
-    if (
-      toolName === 'breakpoint' ||
-      toolName === 'get_call_stack' ||
-      toolName === 'get_scope_variables_enhanced' ||
-      toolName === 'get_object_properties'
-    ) {
-      return ['debugger'];
-    }
-    if (toolName.startsWith('memory_')) return ['memory'];
-    if (toolName.startsWith('process_')) return ['process'];
-    if (toolName.startsWith('protocol_') || toolName.startsWith('proto_'))
-      return ['protocol-analysis'];
-    if (toolName.startsWith('proxy_')) return ['proxy'];
-    if (toolName.startsWith('graphql_')) return ['graphql'];
-    if (toolName.startsWith('encoding_') || toolName.startsWith('encode_')) return ['encoding'];
-    if (toolName.startsWith('coordinate_') || toolName.startsWith('coordination_'))
-      return ['coordination'];
-    if (toolName.startsWith('dart_')) return ['dart-inspector'];
-    if (toolName.startsWith('native_emulate_') || toolName.startsWith('native_emulator_'))
-      return ['native-emulator'];
-    if (toolName.startsWith('native_bridge_')) return ['native-bridge'];
-    if (toolName.startsWith('platform_')) return ['platform'];
-    if (toolName.startsWith('stream_') || toolName.startsWith('streaming_')) return ['streaming'];
-    if (
-      toolName.startsWith('trace_') ||
-      toolName.startsWith('start_trace_') ||
-      toolName.startsWith('stop_trace_')
-    ) {
-      return ['trace'];
-    }
-    if (toolName.startsWith('workflow_')) return ['workflow'];
-    if (toolName.startsWith('exploit_')) return ['exploit-dev'];
-    if (toolName.startsWith('maintenance_')) return ['maintenance'];
-    if (toolName.startsWith('network_')) return ['network'];
-    if (toolName.startsWith('console_') || toolName.startsWith('page_')) return ['browser'];
-    if (toolName.startsWith('tls_') || toolName.startsWith('net_raw_'))
-      return ['boringssl-inspector'];
-    if (toolName.startsWith('canvas_')) return ['canvas'];
-    if (toolName.startsWith('skia_')) return ['canvas'];
-    if (toolName.startsWith('mojo_')) return ['mojo-ipc'];
-    if (toolName.startsWith('syscall_')) return ['syscall-hook'];
-    if (
-      toolName.startsWith('ghidra_') ||
-      toolName.startsWith('frida_') ||
-      toolName.startsWith('generate_hooks') ||
-      toolName.startsWith('unidbg_') ||
-      toolName.startsWith('export_hook_script')
-    ) {
-      return ['binary-instrument'];
-    }
-    if (toolName.startsWith('extension_') || toolName === 'webhook') {
-      return ['extension-registry'];
-    }
-    if (toolName.startsWith('cross_domain_')) {
-      return ['cross-domain'];
-    }
-    if (toolName.startsWith('evidence_') || toolName.startsWith('instrument_')) {
-      return ['instrumentation'];
-    }
-    if (toolName.startsWith('boringssl_')) {
-      return ['boringssl-inspector'];
-    }
-    return [];
+    const domain = TOOL_DOMAIN_INDEX.get(toolName);
+    return domain === undefined ? [] : [domain];
   }
 
   private scoreWorkflowGoal(

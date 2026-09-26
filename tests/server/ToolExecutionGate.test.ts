@@ -24,11 +24,14 @@ import {
   describeRule,
   evaluateToolRules,
   ruleMatchesTool,
+  runToolExecutionGate,
   stableSerializeArgs,
   ToolCallContextGuard,
+  type ToolExecutionGateHost,
   type ToolPermissionRule,
 } from '@server/ToolCallContextGuard';
 import { runWithToolRequestContext } from '@server/runtime/ToolRequestContext';
+import type { EventBus, ServerEventMap } from '@server/EventBus';
 import { TOOL_GATE_MAX_LISTED_RULES } from '@src/constants/server';
 
 interface GateErrorResponse {
@@ -39,6 +42,22 @@ interface GateErrorResponse {
 function parseGateError(response: GateErrorResponse): Record<string, unknown> {
   expect(response.isError).toBe(true);
   return JSON.parse(response.content[0]!.text) as Record<string, unknown>;
+}
+
+/**
+ * Duck-typed event bus that records emitted events for telemetry assertions.
+ * emitBusEvent tolerates partial buses by design (emit-presence duck typing);
+ * the cast only bridges the narrow test double to the full EventBus type.
+ */
+function recordingBus() {
+  const emitted: Array<{ event: string; payload: Record<string, unknown> }> = [];
+  const bus = {
+    emit: (event: string, payload: unknown) => {
+      emitted.push({ event, payload: payload as Record<string, unknown> });
+      return Promise.resolve();
+    },
+  };
+  return { emitted, bus: bus as unknown as EventBus<ServerEventMap> };
 }
 
 describe('stableSerializeArgs', () => {
@@ -393,6 +412,155 @@ describe('describeRule', () => {
     expect(describeRule({ tool: 'page/*', pattern: '*x*', action: 'allow' })).toBe(
       'tool=page/* pattern="*x*" action=allow',
     );
+  });
+});
+
+describe('runToolExecutionGate (shared meta-tool gate entry)', () => {
+  const denyActivateTools: ToolPermissionRule[] = [{ tool: 'activate_tools', action: 'deny' }];
+
+  it('denies a matching rule and returns the domain-path deny response shape', () => {
+    const { bus, emitted } = recordingBus();
+    const host: ToolExecutionGateHost = {
+      config: { toolExecution: { allowTools: [], rules: denyActivateTools } },
+      eventBus: bus,
+      contextGuard: new ToolCallContextGuard(() => null),
+    };
+
+    const response = runToolExecutionGate(host, 'activate_tools', { names: ['page_navigate'] });
+
+    expect(response).not.toBeNull();
+    const payload = parseGateError(response!);
+    expect(payload.success).toBe(false);
+    expect(payload.deniedBy).toEqual({ tool: 'activate_tools', action: 'deny' });
+    expect(payload.activeRules).toEqual(['tool=activate_tools action=deny']);
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]!.event).toBe('tool.gate.denied');
+    expect(emitted[0]!.payload).toMatchObject({
+      toolName: 'activate_tools',
+      source: 'rules',
+      rule: { tool: 'activate_tools', action: 'deny' },
+    });
+  });
+
+  it('carries the ALS session id on deny telemetry when _meta.sessionId is absent', () => {
+    const { bus, emitted } = recordingBus();
+    const host: ToolExecutionGateHost = {
+      config: { toolExecution: { allowTools: [], rules: denyActivateTools } },
+      eventBus: bus,
+    };
+
+    return runWithToolRequestContext({ sessionId: 'meta-session' }, async () => {
+      runToolExecutionGate(host, 'activate_tools', {});
+      expect(emitted[0]!.payload.sessionId).toBe('meta-session');
+    });
+  });
+
+  it('applies rule patterns against the stable args JSON', () => {
+    const host: ToolExecutionGateHost = {
+      config: {
+        toolExecution: {
+          allowTools: [],
+          rules: [{ tool: 'search_tools', pattern: '*secret*', action: 'deny' }],
+        },
+      },
+    };
+
+    expect(
+      runToolExecutionGate(host, 'search_tools', { query: 'read secret keys' }),
+    ).not.toBeNull();
+    expect(runToolExecutionGate(host, 'search_tools', { query: 'page' })).toBeNull();
+  });
+
+  it('applies the doom-loop breaker on the 5th consecutive identical call', () => {
+    const { bus, emitted } = recordingBus();
+    const host: ToolExecutionGateHost = {
+      config: { toolExecution: { allowTools: [], rules: [] } },
+      eventBus: bus,
+      contextGuard: new ToolCallContextGuard(() => null),
+    };
+
+    for (let i = 0; i < 4; i++) {
+      expect(runToolExecutionGate(host, 'search_tools', { query: 'hook' })).toBeNull();
+    }
+    const response = runToolExecutionGate(host, 'search_tools', { query: 'hook' });
+    expect(response).not.toBeNull();
+    const payload = parseGateError(response!);
+    expect(payload.doomLoop).toEqual({
+      toolName: 'search_tools',
+      consecutiveCount: 5,
+      threshold: 5,
+    });
+    expect(emitted[0]!.payload).toMatchObject({
+      toolName: 'search_tools',
+      source: 'doom-loop',
+      rule: null,
+      consecutiveCount: 5,
+      threshold: 5,
+    });
+  });
+
+  it('resets the doom streak when arguments change between calls', () => {
+    const host: ToolExecutionGateHost = {
+      contextGuard: new ToolCallContextGuard(() => null),
+    };
+
+    for (let i = 0; i < 4; i++) {
+      expect(runToolExecutionGate(host, 'search_tools', { query: 'hook' })).toBeNull();
+    }
+    expect(runToolExecutionGate(host, 'search_tools', { query: 'other' })).toBeNull();
+    for (let i = 0; i < 3; i++) {
+      expect(runToolExecutionGate(host, 'search_tools', { query: 'other' })).toBeNull();
+    }
+    expect(runToolExecutionGate(host, 'search_tools', { query: 'other' })?.isError).toBe(true);
+  });
+
+  it('recordDoomLoop=false skips doom accounting while rules still apply (call_tool proxy)', () => {
+    const guard = new ToolCallContextGuard(() => null);
+    const denyCallTool: ToolPermissionRule[] = [{ tool: 'call_tool', action: 'deny' }];
+    const host: ToolExecutionGateHost = {
+      config: { toolExecution: { allowTools: [], rules: [] } },
+      contextGuard: guard,
+    };
+
+    for (let i = 0; i < 10; i++) {
+      expect(
+        runToolExecutionGate(
+          host,
+          'call_tool',
+          { name: 'page_navigate' },
+          { recordDoomLoop: false },
+        ),
+      ).toBeNull();
+    }
+    // The skipped streak must not have touched the guard's tracker.
+    expect(guard.recordDoomLoopCall('call_tool', '{"name":"page_navigate"}')).toBeNull();
+
+    // Rule evaluation still runs when doom accounting is skipped.
+    const denyingHost: ToolExecutionGateHost = {
+      config: { toolExecution: { allowTools: [], rules: denyCallTool } },
+    };
+    expect(
+      runToolExecutionGate(denyingHost, 'call_tool', {}, { recordDoomLoop: false }),
+    ).not.toBeNull();
+  });
+
+  it('keeps default behavior unchanged: no config, no rules, no guard means allow-all', () => {
+    const emptyHost: ToolExecutionGateHost = {};
+    expect(runToolExecutionGate(emptyHost, 'search_tools', {})).toBeNull();
+    expect(runToolExecutionGate(emptyHost, 'activate_tools', { names: ['x'] })).toBeNull();
+
+    const emptySectionHost: ToolExecutionGateHost = {
+      config: { toolExecution: { allowTools: [], rules: [] } },
+    };
+    expect(runToolExecutionGate(emptySectionHost, 'call_tool', {})).toBeNull();
+  });
+
+  it('tolerates a missing contextGuard: rules still evaluate, doom-loop is skipped', () => {
+    const host: ToolExecutionGateHost = {
+      config: { toolExecution: { allowTools: [], rules: denyActivateTools } },
+    };
+    expect(runToolExecutionGate(host, 'activate_tools', {})).not.toBeNull();
+    expect(runToolExecutionGate(host, 'search_tools', {})).toBeNull();
   });
 });
 

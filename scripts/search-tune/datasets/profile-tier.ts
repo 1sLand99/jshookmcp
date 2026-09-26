@@ -34,7 +34,7 @@ const PROFILE_CASES: readonly ProfileTierCase[] = [
     expectations: [{ tool: 'tls_keylog_enable', gain: 3 }],
     baseTier: 'search',
     visibleDomains: ['browser'],
-    tags: ['boringssl', 'explicit-name'],
+    tags: ['tls-inspector', 'explicit-name'],
   },
   {
     id: 'profile-search-frida-lexical',

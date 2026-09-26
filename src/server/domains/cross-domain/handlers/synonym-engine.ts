@@ -260,24 +260,30 @@ const SYNONYM_GROUPS: SynonymGroup[] = [
   {
     concept: 'mojo-ipc',
     synonyms: ['mojo', 'ipc', 'message', 'interface', 'channel', 'interprocess'],
-    tools: ['mojo_send_message', 'mojo_get_messages', 'mojo_intercept'],
+    // Renamed at the registry: `mojo_send_message` -> `mojo_encode_message`,
+    // `mojo_get_messages` -> `mojo_messages_get`, `mojo_intercept` -> `mojo_monitor`.
+    // `node scripts/audit-domain-integrity.mjs` now fails if this list drifts again.
+    tools: ['mojo_encode_message', 'mojo_messages_get', 'mojo_monitor'],
     confidence: 0.9,
-    description: 'Send, capture, or intercept Mojo IPC messages',
+    description: 'Encode, capture, or monitor Mojo IPC messages',
   },
   {
     concept: 'binary-analysis',
     synonyms: ['binary', 'native', 'frida', 'ghidra', 'hook', 'instrument', 'unidbg', 'emulate'],
-    tools: ['ghidra_analyze', 'generate_hooks', 'native_emulator_launch', 'binary_decode'],
+    // `native_emulator_launch` was renamed to `nemu_create_session`; the
+    // `native-emulator` domain exposes its whole surface under the `nemu_` prefix.
+    tools: ['ghidra_analyze', 'generate_hooks', 'nemu_create_session', 'binary_decode'],
     confidence: 0.85,
     description: 'Analyze native binaries, generate hooks, emulate ARM64',
   },
   {
     concept: 'syscall',
     synonyms: ['syscall', 'systemcall', 'kernel', 'process', 'file', 'registry'],
+    // `syscall_get_events` was renamed to `syscall_capture_events`.
     tools: [
       'syscall_start_monitor',
       'syscall_stop_monitor',
-      'syscall_get_events',
+      'syscall_capture_events',
       'syscall_correlate_js',
     ],
     confidence: 0.9,
@@ -354,6 +360,19 @@ export function querySynonyms(query: string, maxResults = 10): SynonymMatchResul
   });
 
   return results.slice(0, maxResults);
+}
+
+/**
+ * Return the raw synonym graph.
+ *
+ * Exists so `scripts/audit-domain-integrity.mjs` can assert that every tool
+ * name in the graph is still registered. This list has already rotted once:
+ * three `mojo_*` tools, `native_emulator_launch` and `syscall_get_events` were
+ * renamed upstream while the graph kept recommending the old names, so
+ * `cross_domain_synonyms` answered with tools that could not be called.
+ */
+export function getSynonymGraphGroups(): readonly SynonymGroup[] {
+  return SYNONYM_GROUPS;
 }
 
 /**

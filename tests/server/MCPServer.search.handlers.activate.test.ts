@@ -110,6 +110,7 @@ function createCtx(overrides: Record<string, unknown> = {}) {
       sendToolListChanged: vi.fn(async () => undefined),
     },
     registerSingleTool: vi.fn(() => ({ remove: vi.fn() })),
+    eventBus: { emit: vi.fn() },
     ...overrides,
   } as any;
 }
@@ -146,7 +147,7 @@ describe('MCPServer.search.handlers.activate', () => {
     );
     expect(ctx.activatedToolNames.has('page_navigate')).toBe(true);
     expect(ctx.enabledDomains.has('browser')).toBe(true);
-    expect(state.ensureDomainLoaded).toHaveBeenCalledWith('browser');
+    expect(state.ensureDomainLoaded).toHaveBeenCalledWith('browser', ctx.eventBus);
     expect((await import('@server/registry/index')).ensureAllDomainsLoaded).not.toHaveBeenCalled();
     expect(state.createToolHandlerMap).toHaveBeenCalledWith(
       ctx.handlerDeps,
@@ -515,6 +516,154 @@ describe('MCPServer.search.handlers.activate', () => {
       expect(result.budgetExceeded).toEqual([]);
       expect(result.activated).toEqual(['page_navigate', 'network_get_requests']);
       expect(result.totalActive).toBe(3);
+    });
+  });
+
+  describe('per-tool lifecycle events', () => {
+    function emittedPayloads(bus: { emit: ReturnType<typeof vi.fn> }, event: string): any[] {
+      return bus.emit.mock.calls
+        .filter((call: any[]) => call[0] === event)
+        .map((call: any[]) => call[1]);
+    }
+
+    it('emits exactly one tool:activated per newly activated tool, carrying its domain', async () => {
+      const ctx = createCtx();
+
+      const result = await activateToolNames(ctx, ['page_navigate', 'network_get_requests']);
+
+      expect(result.activated).toEqual(['page_navigate', 'network_get_requests']);
+      // The batch event is still emitted once, unchanged in shape.
+      expect(emittedPayloads(ctx.eventBus, 'tool.activation.changed')).toEqual([
+        {
+          action: 'activated',
+          toolNames: ['page_navigate', 'network_get_requests'],
+          timestamp: expect.any(String),
+        },
+      ]);
+      // ...and one per-tool event per transition, each with its own domain.
+      const events = emittedPayloads(ctx.eventBus, 'tool:activated');
+      expect(events).toHaveLength(2);
+      expect(events).toEqual([
+        { toolName: 'page_navigate', domain: 'browser', timestamp: expect.any(String) },
+        { toolName: 'network_get_requests', domain: 'network', timestamp: expect.any(String) },
+      ]);
+    });
+
+    it('emits no tool:activated for already-active, missing, or budget-rejected tools', async () => {
+      const pageTokens = estimateToolTokens(tool('page_navigate'));
+      const ctx = createCtx({
+        baseTier: 'search',
+        activatedToolNames: new Set(['page_navigate']),
+        config: { mcp: { toolActivationBudgetTokens: pageTokens, toolActivationMaxTools: 50 } },
+      });
+
+      const result = await activateToolNames(ctx, [
+        'page_navigate',
+        'missing_tool',
+        'network_get_requests',
+      ]);
+
+      expect(result.activated).toEqual([]);
+      expect(result.alreadyActive).toEqual(['page_navigate']);
+      expect(result.notFound).toEqual(['missing_tool']);
+      expect(result.budgetExceeded).toEqual(['network_get_requests']);
+      // Only the batch budget-rejected event may fire — no per-tool transition.
+      expect(emittedPayloads(ctx.eventBus, 'tool:activated')).toHaveLength(0);
+      expect(emittedPayloads(ctx.eventBus, 'tool.activation.changed')).toEqual([
+        {
+          action: 'budget-rejected',
+          toolNames: ['network_get_requests'],
+          timestamp: expect.any(String),
+        },
+      ]);
+    });
+
+    it('emits tool:activated with the extension domain for extension tools', async () => {
+      const ctx = createCtx({
+        extensionToolsByName: new Map([
+          [
+            'custom_tool',
+            {
+              name: 'custom_tool',
+              domain: 'workflow',
+              tool: tool('custom_tool', 'Custom workflow'),
+              handler: vi.fn(async () => ({ ok: true })),
+            },
+          ],
+        ]),
+      });
+
+      await activateToolNames(ctx, ['mcp__jshook__custom_tool']);
+
+      expect(emittedPayloads(ctx.eventBus, 'tool:activated')).toEqual([
+        { toolName: 'custom_tool', domain: 'workflow', timestamp: expect.any(String) },
+      ]);
+    });
+
+    it('emits exactly one tool:deactivated per newly deactivated tool, carrying its domain', async () => {
+      const ctx = createCtx({
+        activatedToolNames: new Set(['page_navigate', 'network_get_requests']),
+        activatedRegisteredTools: new Map([
+          ['page_navigate', { remove: vi.fn() }],
+          ['network_get_requests', { remove: vi.fn() }],
+        ]),
+      });
+
+      const response = parseResponse(
+        await handleDeactivateTools(ctx, {
+          names: ['page_navigate', 'network_get_requests', 'missing_tool'],
+        }),
+      );
+
+      expect(response.deactivated).toEqual(['page_navigate', 'network_get_requests']);
+      expect(response.notActivated).toEqual(['missing_tool']);
+      expect(emittedPayloads(ctx.eventBus, 'tool.activation.changed')).toEqual([
+        {
+          action: 'deactivated',
+          toolNames: ['page_navigate', 'network_get_requests'],
+          timestamp: expect.any(String),
+        },
+      ]);
+      const events = emittedPayloads(ctx.eventBus, 'tool:deactivated');
+      expect(events).toHaveLength(2);
+      expect(events).toEqual([
+        { toolName: 'page_navigate', domain: 'browser', timestamp: expect.any(String) },
+        { toolName: 'network_get_requests', domain: 'network', timestamp: expect.any(String) },
+      ]);
+    });
+
+    it('emits tool:deactivated with the extension domain for extension tools', async () => {
+      const remove = vi.fn();
+      const ctx = createCtx({
+        activatedToolNames: new Set(['custom_tool']),
+        activatedRegisteredTools: new Map([['custom_tool', { remove }]]),
+        extensionToolsByName: new Map([
+          [
+            'custom_tool',
+            {
+              name: 'custom_tool',
+              domain: 'workflow',
+              tool: tool('custom_tool', 'Custom workflow'),
+              registeredTool: { remove },
+            },
+          ],
+        ]),
+      });
+
+      await handleDeactivateTools(ctx, { names: ['custom_tool'] });
+
+      expect(emittedPayloads(ctx.eventBus, 'tool:deactivated')).toEqual([
+        { toolName: 'custom_tool', domain: 'workflow', timestamp: expect.any(String) },
+      ]);
+    });
+
+    it('emits no tool:deactivated when nothing transitions', async () => {
+      const ctx = createCtx();
+
+      await handleDeactivateTools(ctx, { names: ['missing_tool'] });
+
+      expect(emittedPayloads(ctx.eventBus, 'tool:deactivated')).toHaveLength(0);
+      expect(emittedPayloads(ctx.eventBus, 'tool.activation.changed')).toHaveLength(0);
     });
   });
 });

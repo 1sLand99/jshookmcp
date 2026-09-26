@@ -81,6 +81,7 @@ vi.mock('@server/ToolRouter.probe', () => ({
 }));
 
 import { handleCallTool } from '@server/MCPServer.search.handlers.call';
+import { ToolCallContextGuard } from '@server/ToolCallContextGuard';
 
 function createCtx(overrides: Record<string, unknown> = {}) {
   return {
@@ -505,5 +506,82 @@ describe('MCPServer.search.handlers.call', () => {
     const textResult = JSON.parse(response.content[1].text);
     expect(textResult.data).toBe('test');
     expect(textResult.wasAutoActivated).toBe(false);
+  });
+
+  it('gates dispatched meta tools through the toolExecution rules before dispatch', async () => {
+    const emit = vi.fn(async () => undefined);
+    const ctx = createCtx({
+      config: {
+        toolExecution: { allowTools: [], rules: [{ tool: 'deactivate_tools', action: 'deny' }] },
+      },
+      eventBus: { emit },
+    });
+    state.handleDeactivateTools.mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ success: true, deactivated: [] }) }],
+    });
+
+    const response = await handleCallTool(ctx, {
+      name: 'deactivate_tools',
+      args: { names: ['page_navigate'] },
+    });
+
+    expect(response.isError).toBe(true);
+    const result = parseResponse(response);
+    expect(result.success).toBe(false);
+    expect(result.deniedBy).toEqual({ tool: 'deactivate_tools', action: 'deny' });
+    // call_tool carries its dispatch metadata on the gate denial too.
+    expect(result.wasAutoActivated).toBe(false);
+    expect(state.handleDeactivateTools).not.toHaveBeenCalled();
+    expect(ctx.executeToolWithTracking).not.toHaveBeenCalled();
+    expect(emit).toHaveBeenCalledWith(
+      'tool.gate.denied',
+      expect.objectContaining({ toolName: 'deactivate_tools', source: 'rules' }),
+    );
+  });
+
+  it('applies the doom-loop breaker to repeated identical dispatched meta calls', async () => {
+    state.handleDeactivateTools.mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ success: true, deactivated: [] }) }],
+    });
+    const ctx = createCtx({ contextGuard: new ToolCallContextGuard(() => null) });
+
+    for (let i = 0; i < 4; i++) {
+      const response = await handleCallTool(ctx, {
+        name: 'deactivate_tools',
+        args: { names: ['page_navigate'] },
+      });
+      expect(response.isError).not.toBe(true);
+    }
+    const blocked = await handleCallTool(ctx, {
+      name: 'deactivate_tools',
+      args: { names: ['page_navigate'] },
+    });
+
+    expect(blocked.isError).toBe(true);
+    const result = parseResponse(blocked);
+    expect(result.doomLoop).toEqual({
+      toolName: 'deactivate_tools',
+      consecutiveCount: 5,
+      threshold: 5,
+    });
+    expect(state.handleDeactivateTools).toHaveBeenCalledTimes(4);
+  });
+
+  it('keeps the call_tool self-reference rejection ahead of the gate', async () => {
+    const ctx = createCtx({
+      config: {
+        toolExecution: { allowTools: [], rules: [{ tool: 'deactivate_tools', action: 'deny' }] },
+      },
+    });
+
+    const response = await handleCallTool(ctx, {
+      name: 'call_tool',
+      args: { name: 'deactivate_tools' },
+    });
+    const result = parseResponse(response);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('directly as a top-level tool');
+    expect(state.handleDeactivateTools).not.toHaveBeenCalled();
   });
 });

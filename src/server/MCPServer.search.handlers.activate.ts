@@ -56,6 +56,12 @@ export async function activateToolNames(
   const alreadyActive: string[] = [];
   const notFound: string[] = [];
   const budgetExceeded: string[] = [];
+  /**
+   * Owning domain of each newly activated tool, keyed by name. Filled at the
+   * same point as `activated` (see below), so its keys are exactly that list,
+   * in order — never the whole request, only the tools that transitioned.
+   */
+  const activatedDomains = new Map<string, string>();
   const budget = await createActivationBudgetTracker(ctx);
 
   for (const rawName of names) {
@@ -73,6 +79,12 @@ export async function activateToolNames(
       continue;
     }
 
+    /**
+     * Owning domain of this tool, resolved on whichever branch registers it.
+     * Both branches assign it before falling through to the push below; every
+     * path that skips registration `continue`s out first.
+     */
+    let domain: string;
     const extensionRecord = ctx.extensionToolsByName.get(name);
     if (extensionRecord) {
       if (!budget.admit(extensionRecord.tool)) {
@@ -80,6 +92,7 @@ export async function activateToolNames(
         continue;
       }
       registerExtensionToolRecord(ctx, extensionRecord, 'activate_tools');
+      domain = extensionRecord.domain;
     } else {
       const catalog = await loadSearchCatalog();
       const catalogEntry = catalog.entryByName.get(name);
@@ -93,7 +106,7 @@ export async function activateToolNames(
         budgetExceeded.push(name);
         continue;
       }
-      await ensureDomainLoaded(catalogEntry.domain);
+      await ensureDomainLoaded(catalogEntry.domain, ctx.eventBus);
       const toolDef = getRegistrationByName(name)?.tool;
       if (!toolDef) {
         notFound.push(name);
@@ -103,12 +116,14 @@ export async function activateToolNames(
       ctx.activatedToolNames.add(name);
       ctx.activatedRegisteredTools.set(name, registeredTool);
       ctx.enabledDomains.add(catalogEntry.domain);
+      domain = catalogEntry.domain;
       const newToolNames = new Set([name]);
       const newHandlers = createToolHandlerMap(ctx.handlerDeps, newToolNames);
       ctx.router.addHandlers(newHandlers);
     }
 
     activated.push(name);
+    activatedDomains.set(name, domain);
     activeNames.add(name);
   }
 
@@ -120,11 +135,20 @@ export async function activateToolNames(
   );
 
   if (activated.length > 0) {
+    const timestamp = new Date().toISOString();
     emitBusEvent(ctx.eventBus, 'tool.activation.changed', {
       action: 'activated',
       toolNames: activated,
-      timestamp: new Date().toISOString(),
+      timestamp,
     });
+    // Per-tool companion to the batch event above. `tool.activation.changed`
+    // reports the whole batch and carries no domain; `tool:activated` reports
+    // each tool that actually transitioned, with the domain it belongs to.
+    // `activatedDomains` is filled at the same point as `activated`, so the two
+    // cannot drift — one event per transition, never one per request.
+    for (const [toolName, domain] of activatedDomains) {
+      emitBusEvent(ctx.eventBus, 'tool:activated', { toolName, domain, timestamp });
+    }
   }
   if (budgetExceeded.length > 0) {
     emitBusEvent(ctx.eventBus, 'tool.activation.changed', {
@@ -202,12 +226,32 @@ export async function handleDeactivateTools(
 
   const deactivated: string[] = [];
   const notActivated: string[] = [];
+  /**
+   * Owning domain of each newly deactivated tool. Filled only for tools that
+   * actually transitioned, so `tool:deactivated` is per-transition, never per
+   * request.
+   */
+  const deactivatedDomains = new Map<string, string>();
+  const catalog = await loadSearchCatalog();
 
   for (const rawName of names) {
     const name = normalizeToolName(rawName);
     if (!ctx.activatedToolNames.has(name)) {
       notActivated.push(name);
       continue;
+    }
+
+    // Resolve the domain before any removal mutates the extension registry, so
+    // the event reports the domain the tool actually belonged to.
+    const domain =
+      ctx.extensionToolsByName.get(name)?.domain ?? catalog.entryByName.get(name)?.domain;
+    if (domain) {
+      deactivatedDomains.set(name, domain);
+    } else {
+      logger.warn(
+        `deactivate_tools: could not resolve a domain for active tool "${name}"; ` +
+          'no tool:deactivated event will be emitted for it',
+      );
     }
 
     const registeredTool = ctx.activatedRegisteredTools.get(name);
@@ -244,11 +288,18 @@ export async function handleDeactivateTools(
   );
 
   if (deactivated.length > 0) {
+    const timestamp = new Date().toISOString();
     emitBusEvent(ctx.eventBus, 'tool.activation.changed', {
       action: 'deactivated',
       toolNames: deactivated,
-      timestamp: new Date().toISOString(),
+      timestamp,
     });
+    // Per-tool companion to the batch event above — see the activation site.
+    for (const name of deactivated) {
+      const domain = deactivatedDomains.get(name);
+      if (domain === undefined) continue;
+      emitBusEvent(ctx.eventBus, 'tool:deactivated', { toolName: name, domain, timestamp });
+    }
   }
 
   return asTextResponse(

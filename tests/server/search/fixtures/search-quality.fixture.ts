@@ -21,7 +21,7 @@ export type SearchCaseTag =
   | 'protocol'
   | 'evidence'
   | 'v8-inspector'
-  | 'boringssl'
+  | 'tls-inspector'
   | 'binary-instrument'
   | 'adb-bridge'
   | 'mojo-ipc'
@@ -124,7 +124,7 @@ export function resolveSearchQualityToolDomain(name: string): string | null {
   if (name.startsWith('canvas_')) return 'canvas';
   if (name.startsWith('shared_state_') || name.startsWith('state_board')) return 'coordination';
   if (name.startsWith('v8_')) return 'v8-inspector';
-  if (name.startsWith('boringssl_') || name.startsWith('tls_')) return 'boringssl-inspector';
+  if (name.startsWith('tls_')) return 'tls-inspector';
   if (name.startsWith('skia_')) return 'canvas';
   if (
     name.startsWith('frida_') ||
@@ -234,8 +234,8 @@ const TOOLS: readonly Tool[] = [
   makeTool('v8_heap_snapshot_analyze', 'Analyze V8 heap snapshot for leaks'),
   makeTool('v8_bytecode_extract', 'Attempt V8 bytecode extraction for a script'),
   makeTool('v8_turbofan_inspect', 'Inspect JIT/TurboFan status and optimization'),
-  // boringssl-inspector
-  makeTool('tls_keylog_enable', 'Enable TLS key logging via BoringSSL'),
+  // tls-inspector
+  makeTool('tls_keylog_enable', 'Enable TLS key logging'),
   makeTool('tls_cert_extract', 'Extract TLS certificates from connections'),
   makeTool('tls_parse_handshake', 'Parse TLS handshake messages'),
   // skia-capture
@@ -437,15 +437,15 @@ const CASES: readonly SearchEvalCase[] = [
     idealTool: 'v8_bytecode_extract',
     tags: ['v8-inspector'],
   },
-  // boringssl-inspector
+  // tls-inspector
   {
-    id: 'boringssl-tls-keylog',
-    title: 'boringssl: "TLS key log" → tls_keylog_enable in top-3',
+    id: 'tls-keylog',
+    title: 'tls: "TLS key log" → tls_keylog_enable in top-3',
     query: 'enable TLS key logging',
     topK: 10,
     expectations: [{ tool: 'tls_keylog_enable', gain: 3 }],
     idealTool: 'tls_keylog_enable',
-    tags: ['boringssl'],
+    tags: ['tls-inspector'],
   },
   // binary-instrument
   {
