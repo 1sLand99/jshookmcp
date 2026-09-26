@@ -22,7 +22,7 @@ import { objectTool } from './support';
  *   environment variable capture (tls_keylog_enable) for passive keylog
  *   collection.
  *
- * See research/honest-boundaries-boringssl.md for the full bound.
+ * See research/honest-boundaries-tls.md for the full bound.
  */
 export const fridaTools: Tool[] = [
   objectTool(

@@ -1,5 +1,5 @@
 /**
- * BoringsslInspectorTlsProbeHandlers — active TLS probe handler.
+ * TlsInspectorTlsProbeHandlers — active TLS probe handler.
  */
 
 import { isIP } from 'node:net';
@@ -23,11 +23,11 @@ import {
   TLS_VERSION_SET,
   validateNetworkTarget,
 } from './shared';
-import { BoringsslInspectorTlsHandlers } from './tls-handlers';
+import { TlsInspectorTlsHandlers } from './tls-handlers';
 
 const TLS_VERSION_ORDER: ProbeTlsVersion[] = ['TLSv1', 'TLSv1.1', 'TLSv1.2', 'TLSv1.3'];
 
-export class BoringsslInspectorTlsProbeHandlers extends BoringsslInspectorTlsHandlers {
+export class TlsInspectorTlsProbeHandlers extends TlsInspectorTlsHandlers {
   async handleTlsProbeEndpoint(args: Record<string, unknown>): Promise<unknown> {
     const host = argString(args, 'host')?.trim() ?? null;
     if (!host) {

@@ -88,7 +88,7 @@ export const DEFAULT_QUERY_CATEGORY_PROFILE_CONFIGS = [
     pattern: '(?:tls|ssl|boringssl|cert(?:ificate)?|pinning|handshake|keylog|nss)',
     flags: 'i',
     domainBoosts: [
-      { domain: 'boringssl-inspector', weight: 1.6 },
+      { domain: 'tls-inspector', weight: 1.6 },
       { domain: 'network', weight: 1.1 },
     ],
   },

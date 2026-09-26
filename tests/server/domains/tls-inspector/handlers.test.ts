@@ -1,5 +1,5 @@
 /**
- * BoringSSL Inspector domain handler tests.
+ * TLS Inspector domain handler tests.
  */
 
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -14,13 +14,13 @@ import {
   type Socket as NetSocket,
 } from 'node:net';
 import { describe, expect, it, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
-import { BoringsslInspectorHandlers } from '@server/domains/boringssl-inspector/index';
-import { disableKeyLog } from '@modules/boringssl-inspector/TLSKeyLogExtractor';
+import { TlsInspectorHandlers } from '@server/domains/tls-inspector/index';
+import { disableKeyLog } from '@modules/tls-inspector/TLSKeyLogExtractor';
 import { parseJson } from '@tests/server/domains/shared/mock-factories';
 import { TEST_HOSTS } from '@tests/shared/test-urls';
 
-describe('BoringsslInspectorHandlers', () => {
-  let handlers: BoringsslInspectorHandlers;
+describe('TlsInspectorHandlers', () => {
+  let handlers: TlsInspectorHandlers;
   const eventBus = { emit: vi.fn() } as any;
   let tcpServer: NetServer;
   let tcpPort: number;
@@ -137,7 +137,7 @@ describe('BoringsslInspectorHandlers', () => {
   });
 
   beforeEach(() => {
-    handlers = new BoringsslInspectorHandlers();
+    handlers = new TlsInspectorHandlers();
     handlers.setEventBus(eventBus);
     eventBus.emit.mockClear();
   });

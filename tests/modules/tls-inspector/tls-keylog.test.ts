@@ -18,7 +18,7 @@ import {
   classifyKeyLogSecrets,
   classifySecretLabel,
   TLSKeyLogExtractor,
-} from '@modules/boringssl-inspector/TLSKeyLogExtractor';
+} from '@modules/tls-inspector/TLSKeyLogExtractor';
 
 describe('TLSKeyLogExtractor', () => {
   describe('enableKeyLog', () => {

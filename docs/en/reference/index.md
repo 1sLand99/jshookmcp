@@ -14,7 +14,6 @@ The following tool domains are available:
 | --- | --- | --- | --- |
 | `adb-bridge` | ADB Bridge | full | Android Debug Bridge integration domain for device management, application analysis, and remote debugging. |
 | `binary-instrument` | Binary Instrument | full | Binary instrumentation domain providing binary analysis, runtime instrumentation, APK packer identification, and hardcoded key candidate scanning. |
-| `boringssl-inspector` | BoringSSL Inspector | workflow, full | BoringSSL/TLS inspection domain supporting TLS traffic analysis and certificate inspection. |
 | `browser` | Browser | workflow, full | Primary browser control and DOM interaction domain; the usual entry point for most workflows. |
 | `canvas` | Canvas | workflow, full | Canvas game engine reverse analysis domain plus Skia rendering capture, supporting Laya, Pixi, Phaser, Cocos, and Unity engines for fingerprinting, scene tree dumping, object picking, and Skia GPU backend detection and scene extraction. |
 | `coordination` | Coordination | workflow, full | Coordination domain for session insights, MCP Task Handoff, and cross-agent shared state board, bridging the planning and execution boundaries of LLMs. |
@@ -42,6 +41,7 @@ The following tool domains are available:
 | `streaming` | Streaming | workflow, full | WebSocket and SSE monitoring domain. |
 | `syscall-hook` | Syscall Hook | full | System call hooking domain providing system call monitoring and mapping capabilities. |
 | `tasks` | Background Tasks | workflow, full | MCP 2.0 Tasks protocol domain for querying, polling and cancelling background tasks created by long-running tools. |
+| `tls-inspector` | TLS Inspector | workflow, full | TLS inspection domain supporting TLS traffic analysis and certificate inspection. |
 | `trace` | Trace | full | Time-travel debugging domain that records CDP events into SQLite for SQL-based querying and heap snapshot comparison. |
 | `transform` | Transform | full | AST/string transform domain plus crypto extraction, harnessing, and comparison tooling. |
 | `v8-inspector` | V8 Inspector | workflow, full | V8 inspector domain providing heap snapshot analysis, CPU profiling, and memory inspection. |

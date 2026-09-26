@@ -70,7 +70,7 @@ export function capabilityFailure(
  * @example
  * // Limited functionality
  * return createStub({
- *   tool: 'canvas_dump_scene',
+ *   tool: 'canvas_scene_dump',
  *   stubType: 'partial',
  *   reason: 'No canvas engine detected',
  *   data: { domMetadata: {...} }

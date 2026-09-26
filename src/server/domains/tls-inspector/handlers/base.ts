@@ -1,8 +1,8 @@
 /**
- * BoringsslInspectorBaseHandlers — shared state and transport helpers.
+ * TlsInspectorBaseHandlers — shared state and transport helpers.
  */
 
-import { TLSKeyLogExtractor } from '@modules/boringssl-inspector';
+import { TLSKeyLogExtractor } from '@modules/tls-inspector';
 import { argBool, argNumber, argString } from '@server/domains/shared/parse-args';
 import type { EventBus, ServerEventMap } from '@server/EventBus';
 import type {
@@ -22,7 +22,7 @@ import {
   waitForSessionActivity,
 } from './shared';
 
-export class BoringsslInspectorBaseHandlers {
+export class TlsInspectorBaseHandlers {
   protected keyLogExtractor: TLSKeyLogExtractor;
   protected extensionInvoke?: (...args: unknown[]) => Promise<unknown>;
   protected eventBus?: EventBus<ServerEventMap>;

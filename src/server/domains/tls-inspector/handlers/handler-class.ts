@@ -1,11 +1,11 @@
 /**
- * BoringsslInspectorHandlers — thin facade over the split handler chain.
+ * TlsInspectorHandlers — thin facade over the split handler chain.
  */
 
-import { BoringsslInspectorRawSocketHandlers } from './raw-socket-handlers';
+import { TlsInspectorRawSocketHandlers } from './raw-socket-handlers';
 import { handleSafe, type ToolResponse } from '@server/domains/shared/ResponseBuilder';
 
-export class BoringsslInspectorHandlers extends BoringsslInspectorRawSocketHandlers {
+export class TlsInspectorHandlers extends TlsInspectorRawSocketHandlers {
   handleTlsKeylogEnableTool(args: Record<string, unknown>): Promise<ToolResponse> {
     return handleSafe(async () => await this.handleTlsKeylogEnable(args));
   }

@@ -33,7 +33,7 @@ export interface SealedKeyLogResult {
   entryCount: number;
 }
 
-const DEFAULT_KEYLOG_PREFIX = 'jshook-boringssl';
+const DEFAULT_KEYLOG_PREFIX = 'jshook-tls';
 
 function normalizeHex(value: string): string {
   return value.replace(/\s+/g, '').toUpperCase();

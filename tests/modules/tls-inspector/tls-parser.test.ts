@@ -10,7 +10,7 @@ import {
   lookupCipherSuite,
   parseTLSRecord,
   describeCipherSuite,
-} from '@modules/boringssl-inspector/TLSPacketParser';
+} from '@modules/tls-inspector/TLSPacketParser';
 import { TEST_HOSTS } from '@tests/shared/test-urls';
 
 describe('TLSPacketParser', () => {

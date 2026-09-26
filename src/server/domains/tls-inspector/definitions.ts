@@ -5,7 +5,7 @@ import { sessionTools } from './definitions/session-tools';
 import { tlsAnalysisTools } from './definitions/tls-analysis-tools';
 import { websocketTools } from './definitions/websocket-tools';
 
-export const boringsslInspectorTools: Tool[] = [
+export const tlsInspectorTools: Tool[] = [
   ...tlsAnalysisTools,
   ...sessionTools,
   ...websocketTools,

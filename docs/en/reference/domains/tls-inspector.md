@@ -1,8 +1,8 @@
-# BoringSSL Inspector
+# TLS Inspector
 
-Domain: `boringssl-inspector`
+Domain: `tls-inspector`
 
-BoringSSL/TLS inspection domain supporting TLS traffic analysis and certificate inspection.
+TLS inspection domain supporting TLS traffic analysis and certificate inspection.
 
 ## Profiles
 
@@ -17,8 +17,8 @@ BoringSSL/TLS inspection domain supporting TLS traffic analysis and certificate 
 
 ## Common combinations
 
-- boringssl-inspector + network
-- boringssl-inspector + browser
+- tls-inspector + network
+- tls-inspector + browser
 
 ## Full tool list (29)
 

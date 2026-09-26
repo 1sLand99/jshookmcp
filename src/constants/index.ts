@@ -48,7 +48,7 @@ export * from './streaming.js';
 export * from './proxy.js';
 export * from './coordination.js';
 export * from './mojo.js';
-export * from './boringssl.js';
+export * from './tls.js';
 export * from './process.js';
 export * from './syscall-hook.js';
 export * from './hypervisor.js';

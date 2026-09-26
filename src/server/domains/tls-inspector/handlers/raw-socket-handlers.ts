@@ -1,14 +1,14 @@
 /**
- * BoringsslInspectorRawSocketHandlers — stateless raw TCP/UDP helpers.
+ * TlsInspectorRawSocketHandlers — stateless raw TCP/UDP helpers.
  */
 
 import { createSocket as createUdpSocket } from 'node:dgram';
 import { createServer as createNetServer, Socket as NetSocket } from 'node:net';
 import { argNumber, argString } from '@server/domains/shared/parse-args';
 import { normalizeHex, validateNetworkTarget } from './shared';
-import { BoringsslInspectorWebSocketHandlers } from './websocket-handlers';
+import { TlsInspectorWebSocketHandlers } from './websocket-handlers';
 
-export class BoringsslInspectorRawSocketHandlers extends BoringsslInspectorWebSocketHandlers {
+export class TlsInspectorRawSocketHandlers extends TlsInspectorWebSocketHandlers {
   async handleRawTcpSend(args: Record<string, unknown>): Promise<unknown> {
     const host = argString(args, 'host') ?? '127.0.0.1';
     const port = argNumber(args, 'port');

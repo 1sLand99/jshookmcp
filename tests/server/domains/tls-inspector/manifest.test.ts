@@ -1,7 +1,7 @@
-import manifest from '@server/domains/boringssl-inspector/manifest';
+import manifest from '@server/domains/tls-inspector/manifest';
 import { describe, expect, it } from 'vitest';
 
-describe('BoringSSL Inspector Domain Manifest', () => {
+describe('TLS Inspector Domain Manifest', () => {
   it('registers tls_probe_endpoint', async () => {
     const toolNames = manifest.registrations.map((registration) => registration.tool.name);
     expect(toolNames).toContain('tls_probe_endpoint');
@@ -52,7 +52,7 @@ describe('BoringSSL Inspector Domain Manifest', () => {
       (entry) => entry.tool.name === 'tls_probe_endpoint',
     );
     expect(registration).toBeDefined();
-    expect(registration?.domain).toBe('boringssl-inspector');
+    expect(registration?.domain).toBe('tls-inspector');
     expect(registration?.bind).toBeDefined();
   });
 

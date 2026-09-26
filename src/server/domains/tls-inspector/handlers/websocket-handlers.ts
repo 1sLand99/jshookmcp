@@ -1,5 +1,5 @@
 /**
- * BoringsslInspectorWebSocketHandlers — WebSocket upgrade/open handlers and bypass helpers.
+ * TlsInspectorWebSocketHandlers — WebSocket upgrade/open handlers and bypass helpers.
  */
 
 import { randomBytes } from 'node:crypto';
@@ -37,11 +37,11 @@ import {
   TLS_VERSION_SET,
   validateNetworkTarget,
 } from './shared';
-import { BoringsslInspectorWebSocketFrameHandlers } from './websocket-frame-handlers';
+import { TlsInspectorWebSocketFrameHandlers } from './websocket-frame-handlers';
 
 const TLS_VERSION_ORDER: ProbeTlsVersion[] = ['TLSv1', 'TLSv1.1', 'TLSv1.2', 'TLSv1.3'];
 
-export class BoringsslInspectorWebSocketHandlers extends BoringsslInspectorWebSocketFrameHandlers {
+export class TlsInspectorWebSocketHandlers extends TlsInspectorWebSocketFrameHandlers {
   async handleWebSocketOpen(args: Record<string, unknown>): Promise<unknown> {
     const rawUrl = argString(args, 'url')?.trim() ?? null;
     const rawHost = argString(args, 'host')?.trim() ?? null;

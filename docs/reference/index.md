@@ -14,7 +14,6 @@
 | --- | --- | --- | --- |
 | `adb-bridge` | ADB 桥接 | full | Android Debug Bridge 集成域，用于设备管理、应用分析和远程调试。 |
 | `binary-instrument` | 二进制插桩 | full | 二进制插桩域，提供二进制分析、运行时插桩、APK 加固识别与密钥候选扫描能力。 |
-| `boringssl-inspector` | BoringSSL 检查 | workflow, full | BoringSSL/TLS 检查域，支持 TLS 流量分析和证书检查。 |
 | `browser` | 浏览器 | workflow, full | 浏览器控制与 DOM 交互主域，也是大多数工作流的入口。 |
 | `canvas` | 画布引擎 | workflow, full | 游戏引擎 Canvas 逆向分析域与 Skia 渲染引擎捕获域，支持 Laya/Pixi/Phaser/Cocos/Unity 等主流游戏引擎的指纹识别、场景树导出、对象拾取，以及 Skia GPU 后端检测与场景提取。 |
 | `coordination` | 协调 | workflow, full | 用于会话洞察记录、MCP Task Handoff 与跨 Agent 共享状态板的协调域，衔接大语言模型的规划与执行。 |
@@ -42,6 +41,7 @@
 | `streaming` | 流式 | workflow, full | WebSocket 与 SSE 监控域。 |
 | `syscall-hook` | 系统调用挂钩 | full | 系统调用挂钩域，提供系统调用监控和映射能力。 |
 | `tasks` | 后台任务 | workflow, full | MCP 2.0 Tasks 协议域：查询、轮询、取消由长耗时工具创建的后台任务。 |
+| `tls-inspector` | TLS 检查 | workflow, full | TLS 检查域，支持 TLS 流量分析和证书检查。 |
 | `trace` | 追踪 | full | 时间旅行调试域，录制 CDP 事件并写入 SQLite，支持 SQL 查询与堆快照对比。 |
 | `transform` | 变换 | full | AST/字符串变换与加密实现抽取、测试、对比域。 |
 | `v8-inspector` | V8 检查器 | workflow, full | V8 检查器域，提供堆快照分析、CPU 分析和内存检查。 |

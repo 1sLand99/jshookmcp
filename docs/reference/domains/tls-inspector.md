@@ -1,8 +1,8 @@
-# BoringSSL 检查
+# TLS 检查
 
-域名：`boringssl-inspector`
+域名：`tls-inspector`
 
-BoringSSL/TLS 检查域，支持 TLS 流量分析和证书检查。
+TLS 检查域，支持 TLS 流量分析和证书检查。
 
 ## Profile
 
@@ -17,8 +17,8 @@ BoringSSL/TLS 检查域，支持 TLS 流量分析和证书检查。
 
 ## 常见组合
 
-- boringssl-inspector + network
-- boringssl-inspector + browser
+- tls-inspector + network
+- tls-inspector + browser
 
 ## 工具清单（29）
 

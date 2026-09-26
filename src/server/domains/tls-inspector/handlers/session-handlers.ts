@@ -1,5 +1,5 @@
 /**
- * BoringsslInspectorSessionHandlers — stateful TCP and TLS session handlers.
+ * TlsInspectorSessionHandlers — stateful TCP and TLS session handlers.
  */
 
 import { isIP, Socket as NetSocket } from 'node:net';
@@ -33,11 +33,11 @@ import {
   TLS_VERSION_SET,
   validateNetworkTarget,
 } from './shared';
-import { BoringsslInspectorTlsProbeHandlers } from './tls-probe-handlers';
+import { TlsInspectorTlsProbeHandlers } from './tls-probe-handlers';
 
 const TLS_VERSION_ORDER: ProbeTlsVersion[] = ['TLSv1', 'TLSv1.1', 'TLSv1.2', 'TLSv1.3'];
 
-export class BoringsslInspectorSessionHandlers extends BoringsslInspectorTlsProbeHandlers {
+export class TlsInspectorSessionHandlers extends TlsInspectorTlsProbeHandlers {
   async handleTcpOpen(args: Record<string, unknown>): Promise<unknown> {
     const host = argString(args, 'host') ?? '127.0.0.1';
     const port = argNumber(args, 'port');

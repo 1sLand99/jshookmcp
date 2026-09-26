@@ -1,5 +1,5 @@
 /**
- * TLS keylog / boringssl-inspector configuration.
+ * TLS keylog / tls-inspector configuration.
  * Prefixes: TLS_*
  */
 

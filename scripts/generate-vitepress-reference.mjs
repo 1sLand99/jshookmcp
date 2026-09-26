@@ -369,16 +369,15 @@ const META = {
     ],
     enCombos: ['binary-instrument + memory', 'binary-instrument + process'],
   },
-  'boringssl-inspector': {
-    zhTitle: 'BoringSSL 检查',
-    zhSummary: 'BoringSSL/TLS 检查域，支持 TLS 流量分析和证书检查。',
+  'tls-inspector': {
+    zhTitle: 'TLS 检查',
+    zhSummary: 'TLS 检查域，支持 TLS 流量分析和证书检查。',
     zhScenarios: ['TLS 流量分析', '证书解析', '密钥日志捕获'],
-    zhCombos: ['boringssl-inspector + network', 'boringssl-inspector + browser'],
-    enTitle: 'BoringSSL Inspector',
-    enSummary:
-      'BoringSSL/TLS inspection domain supporting TLS traffic analysis and certificate inspection.',
+    zhCombos: ['tls-inspector + network', 'tls-inspector + browser'],
+    enTitle: 'TLS Inspector',
+    enSummary: 'TLS inspection domain supporting TLS traffic analysis and certificate inspection.',
     enScenarios: ['TLS traffic analysis', 'Certificate parsing', 'Key log capture'],
-    enCombos: ['boringssl-inspector + network', 'boringssl-inspector + browser'],
+    enCombos: ['tls-inspector + network', 'tls-inspector + browser'],
   },
   'dart-inspector': {
     zhTitle: 'Dart 检查',

@@ -1,5 +1,5 @@
 /**
- * BoringsslInspectorTlsHandlers — keylog and TLS parsing helpers.
+ * TlsInspectorTlsHandlers — keylog and TLS parsing helpers.
  */
 
 import {
@@ -13,8 +13,8 @@ import {
   lookupSecret as lookupSecretEntry,
   parseKeyLog as parseKeyLogEntries,
   summarizeKeyLog as summarizeKeyLogEntries,
-} from '@modules/boringssl-inspector';
-import type { KeyLogEntry } from '@modules/boringssl-inspector';
+} from '@modules/tls-inspector';
+import type { KeyLogEntry } from '@modules/tls-inspector';
 import { argEnum, argString } from '@server/domains/shared/parse-args';
 import { asJsonResponse } from '@server/domains/shared/response';
 import type { ToolResponse } from '@server/types';
@@ -26,11 +26,11 @@ import {
   tlsVersionName,
 } from './shared';
 import { TLS_KEYLOG_PATH } from '@src/constants';
-import { BoringsslInspectorBaseHandlers } from './base';
+import { TlsInspectorBaseHandlers } from './base';
 
 const CIPHER_PROTOCOL_FILTERS = new Set(['all', '1.3', '1.2'] as const);
 
-export class BoringsslInspectorTlsHandlers extends BoringsslInspectorBaseHandlers {
+export class TlsInspectorTlsHandlers extends TlsInspectorBaseHandlers {
   async handleTlsKeylogEnable(_args: Record<string, unknown>): Promise<unknown> {
     const keyLogPath = await this.keyLogExtractor.enableKeyLog();
     return {

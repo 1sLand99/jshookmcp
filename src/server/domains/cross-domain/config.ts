@@ -17,8 +17,6 @@ export interface CrossDomainConfig {
   etwSessionName: string;
   mojoEnabled: boolean;
   mojoInterfaceRegistryPath: string | null;
-  boringsslEnabled: boolean;
-  boringsslCertPath: string | null;
   platform: string;
 }
 
@@ -32,7 +30,6 @@ function buildConfig(): CrossDomainConfig {
     'MOJO_INTERFACE_REGISTRY_PATH',
     pathOptions,
   );
-  const boringsslCertPath = readEnvNullableString('BORINGSSL_CERT_PATH', pathOptions);
   const platform = process.platform;
 
   return {
@@ -47,8 +44,6 @@ function buildConfig(): CrossDomainConfig {
     etwSessionName: readEnvString('ETW_SESSION_NAME', 'jshookmcp_etw', { trim: true }),
     mojoEnabled: readEnvBoolean('MOJO_ENABLED', true),
     mojoInterfaceRegistryPath,
-    boringsslEnabled: readEnvBoolean('BORINGSSL_ENABLED', true),
-    boringsslCertPath,
     platform,
   };
 }

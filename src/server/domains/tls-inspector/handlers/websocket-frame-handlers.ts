@@ -1,5 +1,5 @@
 /**
- * BoringsslInspectorWebSocketFrameHandlers — WebSocket session/frame operations.
+ * TlsInspectorWebSocketFrameHandlers — WebSocket session/frame operations.
  */
 
 import { argBool, argEnum, argNumber, argString } from '@server/domains/shared/parse-args';
@@ -15,9 +15,9 @@ import {
   waitForWebSocketActivity,
   wakeWebSocketWaiters,
 } from './shared';
-import { BoringsslInspectorSessionHandlers } from './session-handlers';
+import { TlsInspectorSessionHandlers } from './session-handlers';
 
-export class BoringsslInspectorWebSocketFrameHandlers extends BoringsslInspectorSessionHandlers {
+export class TlsInspectorWebSocketFrameHandlers extends TlsInspectorSessionHandlers {
   protected emitWebSocketEvent<K extends WebSocketEventName>(
     event: K,
     payload: ServerEventMap[K],
