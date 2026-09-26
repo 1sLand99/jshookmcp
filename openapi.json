@@ -1539,681 +1539,6 @@
         "required": ["sessionId"],
         "type": "object"
       },
-      "boringssl_inspector_net_raw_tcp_listen": {
-        "properties": {
-          "port": {
-            "description": "Local port to listen on (1-65535)",
-            "type": "number"
-          },
-          "timeout": {
-            "default": 10000,
-            "description": "Listen timeout in ms",
-            "type": "number"
-          }
-        },
-        "required": ["port"],
-        "type": "object"
-      },
-      "boringssl_inspector_net_raw_tcp_send": {
-        "properties": {
-          "dataHex": {
-            "description": "Hex-encoded data to send",
-            "type": "string"
-          },
-          "dataText": {
-            "description": "Text data to send (alternative to dataHex)",
-            "type": "string"
-          },
-          "host": {
-            "default": "127.0.0.1",
-            "description": "Target host address",
-            "type": "string"
-          },
-          "port": {
-            "description": "Target port number (1-65535)",
-            "type": "number"
-          },
-          "timeout": {
-            "default": 5000,
-            "description": "Connection timeout in ms",
-            "type": "number"
-          }
-        },
-        "required": ["port"],
-        "type": "object"
-      },
-      "boringssl_inspector_net_raw_udp_listen": {
-        "properties": {
-          "port": {
-            "description": "Local port to listen on (1-65535)",
-            "type": "number"
-          },
-          "timeout": {
-            "default": 10000,
-            "description": "Listen timeout in ms",
-            "type": "number"
-          }
-        },
-        "required": ["port"],
-        "type": "object"
-      },
-      "boringssl_inspector_net_raw_udp_send": {
-        "properties": {
-          "dataHex": {
-            "description": "Hex-encoded data to send",
-            "type": "string"
-          },
-          "dataText": {
-            "description": "Text data to send (alternative to dataHex)",
-            "type": "string"
-          },
-          "host": {
-            "default": "127.0.0.1",
-            "description": "Target host address",
-            "type": "string"
-          },
-          "port": {
-            "description": "Target port number (1-65535)",
-            "type": "number"
-          },
-          "timeout": {
-            "default": 5000,
-            "description": "Response timeout in ms",
-            "type": "number"
-          }
-        },
-        "required": ["port"],
-        "type": "object"
-      },
-      "boringssl_inspector_tcp_close": {
-        "properties": {
-          "force": {
-            "default": false,
-            "description": "Destroy the socket immediately instead of sending FIN first",
-            "type": "boolean"
-          },
-          "sessionId": {
-            "description": "TCP session ID",
-            "type": "string"
-          },
-          "timeoutMs": {
-            "default": 1000,
-            "description": "Close wait timeout in milliseconds before forcing socket destruction",
-            "type": "number"
-          }
-        },
-        "required": ["sessionId"],
-        "type": "object"
-      },
-      "boringssl_inspector_tcp_open": {
-        "properties": {
-          "host": {
-            "default": "127.0.0.1",
-            "description": "Target host name or IP address",
-            "type": "string"
-          },
-          "noDelay": {
-            "default": true,
-            "description": "Enable TCP_NODELAY on the socket after connect",
-            "type": "boolean"
-          },
-          "port": {
-            "description": "Target TCP port",
-            "type": "number"
-          },
-          "timeoutMs": {
-            "default": 5000,
-            "description": "Connection timeout in milliseconds",
-            "type": "number"
-          }
-        },
-        "required": ["port"],
-        "type": "object"
-      },
-      "boringssl_inspector_tcp_read_until": {
-        "properties": {
-          "delimiterHex": {
-            "description": "Hex-encoded delimiter to stop at",
-            "type": "string"
-          },
-          "delimiterText": {
-            "description": "UTF-8 delimiter to stop at",
-            "type": "string"
-          },
-          "includeDelimiter": {
-            "default": true,
-            "description": "Include the delimiter bytes in the returned payload",
-            "type": "boolean"
-          },
-          "maxBytes": {
-            "description": "Optional maximum number of bytes to return even if no delimiter matches",
-            "type": "number"
-          },
-          "sessionId": {
-            "description": "TCP session ID",
-            "type": "string"
-          },
-          "timeoutMs": {
-            "default": 5000,
-            "description": "Read timeout in milliseconds",
-            "type": "number"
-          }
-        },
-        "required": ["sessionId"],
-        "type": "object"
-      },
-      "boringssl_inspector_tcp_write": {
-        "properties": {
-          "dataHex": {
-            "description": "Hex-encoded payload to write",
-            "type": "string"
-          },
-          "dataText": {
-            "description": "UTF-8 text payload to write",
-            "type": "string"
-          },
-          "sessionId": {
-            "description": "TCP session ID",
-            "type": "string"
-          },
-          "timeoutMs": {
-            "default": 5000,
-            "description": "Write timeout in milliseconds",
-            "type": "number"
-          }
-        },
-        "required": ["sessionId"],
-        "type": "object"
-      },
-      "boringssl_inspector_tls_cert_pin_bypass": {
-        "properties": {
-          "target": {
-            "description": "Target platform for bypass strategy",
-            "enum": ["android", "ios", "desktop"],
-            "type": "string"
-          }
-        },
-        "required": ["target"],
-        "type": "object"
-      },
-      "boringssl_inspector_tls_cert_pin_bypass_frida": {
-        "properties": {},
-        "required": [],
-        "type": "object"
-      },
-      "boringssl_inspector_tls_cipher_suites": {
-        "properties": {
-          "filter": {
-            "description": "Keyword filter for cipher suite names (substring match)",
-            "type": "string"
-          },
-          "protocol": {
-            "default": "all",
-            "description": "Filter by TLS protocol version",
-            "enum": ["all", "1.3", "1.2"],
-            "type": "string"
-          }
-        },
-        "required": [],
-        "type": "object"
-      },
-      "boringssl_inspector_tls_close": {
-        "properties": {
-          "force": {
-            "default": false,
-            "description": "Destroy the TLS socket immediately instead of sending close_notify/FIN first",
-            "type": "boolean"
-          },
-          "sessionId": {
-            "description": "TLS session ID",
-            "type": "string"
-          },
-          "timeoutMs": {
-            "default": 1000,
-            "description": "Close wait timeout in milliseconds before forcing socket destruction",
-            "type": "number"
-          }
-        },
-        "required": ["sessionId"],
-        "type": "object"
-      },
-      "boringssl_inspector_tls_decrypt_payload": {
-        "properties": {
-          "algorithm": {
-            "default": "aes-256-gcm",
-            "description": "Cipher algorithm",
-            "type": "string"
-          },
-          "authTagHex": {
-            "description": "Hex-encoded authentication tag",
-            "type": "string"
-          },
-          "encryptedHex": {
-            "description": "Hex-encoded encrypted payload",
-            "type": "string"
-          },
-          "keyHex": {
-            "description": "Hex-encoded decryption key",
-            "type": "string"
-          },
-          "nonceHex": {
-            "description": "Hex-encoded nonce/IV",
-            "type": "string"
-          }
-        },
-        "required": ["encryptedHex", "keyHex", "nonceHex"],
-        "type": "object"
-      },
-      "boringssl_inspector_tls_keylog_disable": {
-        "properties": {
-          "path": {
-            "description": "Path to disable",
-            "type": "string"
-          }
-        },
-        "required": [],
-        "type": "object"
-      },
-      "boringssl_inspector_tls_keylog_enable": {
-        "properties": {},
-        "required": [],
-        "type": "object"
-      },
-      "boringssl_inspector_tls_keylog_lookup_secret": {
-        "properties": {
-          "clientRandom": {
-            "description": "Hex-encoded client random",
-            "type": "string"
-          },
-          "label": {
-            "description": "Optional label filter",
-            "type": "string"
-          }
-        },
-        "required": ["clientRandom"],
-        "type": "object"
-      },
-      "boringssl_inspector_tls_keylog_parse": {
-        "properties": {
-          "path": {
-            "description": "Path to SSLKEYLOGFILE",
-            "type": "string"
-          }
-        },
-        "required": [],
-        "type": "object"
-      },
-      "boringssl_inspector_tls_keylog_seal": {
-        "properties": {},
-        "required": [],
-        "type": "object"
-      },
-      "boringssl_inspector_tls_keylog_summarize": {
-        "properties": {
-          "content": {
-            "description": "Inline keylog content to summarize",
-            "type": "string"
-          },
-          "path": {
-            "description": "Path to a keylog file to summarize (used when content is not provided)",
-            "type": "string"
-          }
-        },
-        "required": [],
-        "type": "object"
-      },
-      "boringssl_inspector_tls_open": {
-        "properties": {
-          "allowInvalidCertificates": {
-            "default": false,
-            "description": "Allow untrusted certificate chains while still reporting the failure",
-            "type": "boolean"
-          },
-          "alpnProtocols": {
-            "description": "Optional ALPN protocols to offer",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "caPath": {
-            "description": "Optional path to a PEM-encoded CA bundle",
-            "type": "string"
-          },
-          "caPem": {
-            "description": "Optional PEM-encoded CA bundle",
-            "type": "string"
-          },
-          "host": {
-            "description": "Target host name or IP address",
-            "type": "string"
-          },
-          "maxVersion": {
-            "description": "Optional maximum TLS version",
-            "enum": ["TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3"],
-            "type": "string"
-          },
-          "minVersion": {
-            "description": "Optional minimum TLS version",
-            "enum": ["TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3"],
-            "type": "string"
-          },
-          "port": {
-            "default": 443,
-            "description": "Target TLS port",
-            "type": "number"
-          },
-          "servername": {
-            "description": "Optional SNI and hostname validation override",
-            "type": "string"
-          },
-          "skipHostnameCheck": {
-            "default": false,
-            "description": "Skip hostname verification while still reporting the requested target",
-            "type": "boolean"
-          },
-          "timeoutMs": {
-            "default": 5000,
-            "description": "Connection timeout in milliseconds",
-            "type": "number"
-          }
-        },
-        "required": ["host"],
-        "type": "object"
-      },
-      "boringssl_inspector_tls_parse_certificate": {
-        "properties": {
-          "rawHex": {
-            "description": "Hex-encoded certificate data",
-            "type": "string"
-          }
-        },
-        "required": ["rawHex"],
-        "type": "object"
-      },
-      "boringssl_inspector_tls_parse_handshake": {
-        "properties": {
-          "rawHex": {
-            "description": "Hex-encoded TLS handshake record",
-            "type": "string"
-          }
-        },
-        "required": ["rawHex"],
-        "type": "object"
-      },
-      "boringssl_inspector_tls_probe_endpoint": {
-        "properties": {
-          "allowInvalidCertificates": {
-            "default": false,
-            "description": "Allow untrusted certificate chains while still reporting the failure",
-            "type": "boolean"
-          },
-          "alpnProtocols": {
-            "description": "Optional ALPN protocols to offer",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "caPath": {
-            "description": "Optional path to a PEM-encoded CA bundle",
-            "type": "string"
-          },
-          "caPem": {
-            "description": "Optional PEM-encoded CA bundle",
-            "type": "string"
-          },
-          "host": {
-            "description": "Target host name or IP address",
-            "type": "string"
-          },
-          "maxVersion": {
-            "description": "Optional maximum TLS version",
-            "enum": ["TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3"],
-            "type": "string"
-          },
-          "minVersion": {
-            "description": "Optional minimum TLS version",
-            "enum": ["TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3"],
-            "type": "string"
-          },
-          "port": {
-            "default": 443,
-            "description": "Target TLS port",
-            "type": "number"
-          },
-          "servername": {
-            "description": "Optional SNI and hostname validation override",
-            "type": "string"
-          },
-          "skipHostnameCheck": {
-            "default": false,
-            "description": "Skip hostname verification while still reporting the requested target",
-            "type": "boolean"
-          },
-          "timeoutMs": {
-            "default": 5000,
-            "description": "Probe timeout in milliseconds",
-            "type": "number"
-          }
-        },
-        "required": ["host"],
-        "type": "object"
-      },
-      "boringssl_inspector_tls_read_until": {
-        "properties": {
-          "delimiterHex": {
-            "description": "Hex-encoded delimiter to stop at",
-            "type": "string"
-          },
-          "delimiterText": {
-            "description": "UTF-8 delimiter to stop at",
-            "type": "string"
-          },
-          "includeDelimiter": {
-            "default": true,
-            "description": "Include the delimiter bytes in the returned payload",
-            "type": "boolean"
-          },
-          "maxBytes": {
-            "description": "Optional maximum number of bytes to return even if no delimiter matches",
-            "type": "number"
-          },
-          "sessionId": {
-            "description": "TLS session ID",
-            "type": "string"
-          },
-          "timeoutMs": {
-            "default": 5000,
-            "description": "Read timeout in milliseconds",
-            "type": "number"
-          }
-        },
-        "required": ["sessionId"],
-        "type": "object"
-      },
-      "boringssl_inspector_tls_write": {
-        "properties": {
-          "dataHex": {
-            "description": "Hex-encoded payload to write",
-            "type": "string"
-          },
-          "dataText": {
-            "description": "UTF-8 text payload to write",
-            "type": "string"
-          },
-          "sessionId": {
-            "description": "TLS session ID",
-            "type": "string"
-          },
-          "timeoutMs": {
-            "default": 5000,
-            "description": "Write timeout in milliseconds",
-            "type": "number"
-          }
-        },
-        "required": ["sessionId"],
-        "type": "object"
-      },
-      "boringssl_inspector_websocket_close": {
-        "properties": {
-          "closeCode": {
-            "description": "Optional close status code",
-            "type": "number"
-          },
-          "closeReason": {
-            "description": "Optional close reason",
-            "type": "string"
-          },
-          "force": {
-            "default": false,
-            "description": "Destroy the underlying socket immediately without sending a close frame first",
-            "type": "boolean"
-          },
-          "sessionId": {
-            "description": "WebSocket session ID",
-            "type": "string"
-          },
-          "timeoutMs": {
-            "default": 1000,
-            "description": "Close wait timeout in milliseconds before forcing socket destruction",
-            "type": "number"
-          }
-        },
-        "required": ["sessionId"],
-        "type": "object"
-      },
-      "boringssl_inspector_websocket_open": {
-        "properties": {
-          "allowInvalidCertificates": {
-            "default": false,
-            "description": "Allow untrusted certificate chains",
-            "type": "boolean"
-          },
-          "alpnProtocols": {
-            "description": "Optional ALPN protocols to offer",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "caPath": {
-            "description": "Optional path to a PEM-encoded CA bundle",
-            "type": "string"
-          },
-          "caPem": {
-            "description": "Optional PEM-encoded CA bundle",
-            "type": "string"
-          },
-          "host": {
-            "description": "Target host name or IP address",
-            "type": "string"
-          },
-          "maxVersion": {
-            "description": "Optional maximum TLS version",
-            "enum": ["TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3"],
-            "type": "string"
-          },
-          "minVersion": {
-            "description": "Optional minimum TLS version",
-            "enum": ["TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3"],
-            "type": "string"
-          },
-          "path": {
-            "default": "/",
-            "description": "Request path",
-            "type": "string"
-          },
-          "port": {
-            "description": "Target port",
-            "type": "number"
-          },
-          "scheme": {
-            "default": "ws",
-            "description": "WebSocket transport scheme",
-            "enum": ["ws", "wss"],
-            "type": "string"
-          },
-          "servername": {
-            "description": "Optional SNI and hostname validation override",
-            "type": "string"
-          },
-          "skipHostnameCheck": {
-            "default": false,
-            "description": "Skip hostname verification",
-            "type": "boolean"
-          },
-          "subprotocols": {
-            "description": "Optional subprotocols to offer",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "timeoutMs": {
-            "default": 5000,
-            "description": "Handshake timeout in milliseconds",
-            "type": "number"
-          },
-          "url": {
-            "description": "WebSocket URL",
-            "type": "string"
-          }
-        },
-        "required": [],
-        "type": "object"
-      },
-      "boringssl_inspector_websocket_read_frame": {
-        "properties": {
-          "sessionId": {
-            "description": "WebSocket session ID",
-            "type": "string"
-          },
-          "timeoutMs": {
-            "default": 5000,
-            "description": "Read timeout in milliseconds",
-            "type": "number"
-          }
-        },
-        "required": ["sessionId"],
-        "type": "object"
-      },
-      "boringssl_inspector_websocket_send_frame": {
-        "properties": {
-          "closeCode": {
-            "description": "Optional close status code",
-            "type": "number"
-          },
-          "closeReason": {
-            "description": "Optional close reason",
-            "type": "string"
-          },
-          "dataHex": {
-            "description": "Hex-encoded payload for binary/ping/pong/close frames",
-            "type": "string"
-          },
-          "dataText": {
-            "description": "UTF-8 payload for text/ping/pong/close frames",
-            "type": "string"
-          },
-          "frameType": {
-            "description": "Outgoing frame opcode",
-            "enum": ["text", "binary", "ping", "pong", "close"],
-            "type": "string"
-          },
-          "sessionId": {
-            "description": "WebSocket session ID",
-            "type": "string"
-          },
-          "timeoutMs": {
-            "default": 5000,
-            "description": "Write timeout in milliseconds",
-            "type": "number"
-          }
-        },
-        "required": ["sessionId", "frameType"],
-        "type": "object"
-      },
       "browser_browser_attach": {
         "properties": {
           "autoConnect": {
@@ -10091,6 +9416,45 @@
         "required": ["address", "size", "protection"],
         "type": "object"
       },
+      "memory_memory_read_typed": {
+        "properties": {
+          "address": {
+            "description": "Starting memory address (hex, e.g. \"0x1A2B3C\")",
+            "type": "string"
+          },
+          "count": {
+            "description": "Number of consecutive values to read (default: 1, max: 1024)",
+            "type": "number"
+          },
+          "endian": {
+            "description": "Byte order (default: little)",
+            "enum": ["little", "big"],
+            "type": "string"
+          },
+          "pid": {
+            "description": "Target process ID (optional when a browser session is attached)",
+            "type": "string"
+          },
+          "type": {
+            "description": "Numeric type to read",
+            "enum": [
+              "uint8",
+              "int8",
+              "uint16",
+              "int16",
+              "uint32",
+              "int32",
+              "uint64",
+              "int64",
+              "float",
+              "double"
+            ],
+            "type": "string"
+          }
+        },
+        "required": ["address", "type"],
+        "type": "object"
+      },
       "memory_memory_region_compare": {
         "properties": {
           "address1": {
@@ -17270,6 +16634,681 @@
         "required": ["taskId"],
         "type": "object"
       },
+      "tls_inspector_net_raw_tcp_listen": {
+        "properties": {
+          "port": {
+            "description": "Local port to listen on (1-65535)",
+            "type": "number"
+          },
+          "timeout": {
+            "default": 10000,
+            "description": "Listen timeout in ms",
+            "type": "number"
+          }
+        },
+        "required": ["port"],
+        "type": "object"
+      },
+      "tls_inspector_net_raw_tcp_send": {
+        "properties": {
+          "dataHex": {
+            "description": "Hex-encoded data to send",
+            "type": "string"
+          },
+          "dataText": {
+            "description": "Text data to send (alternative to dataHex)",
+            "type": "string"
+          },
+          "host": {
+            "default": "127.0.0.1",
+            "description": "Target host address",
+            "type": "string"
+          },
+          "port": {
+            "description": "Target port number (1-65535)",
+            "type": "number"
+          },
+          "timeout": {
+            "default": 5000,
+            "description": "Connection timeout in ms",
+            "type": "number"
+          }
+        },
+        "required": ["port"],
+        "type": "object"
+      },
+      "tls_inspector_net_raw_udp_listen": {
+        "properties": {
+          "port": {
+            "description": "Local port to listen on (1-65535)",
+            "type": "number"
+          },
+          "timeout": {
+            "default": 10000,
+            "description": "Listen timeout in ms",
+            "type": "number"
+          }
+        },
+        "required": ["port"],
+        "type": "object"
+      },
+      "tls_inspector_net_raw_udp_send": {
+        "properties": {
+          "dataHex": {
+            "description": "Hex-encoded data to send",
+            "type": "string"
+          },
+          "dataText": {
+            "description": "Text data to send (alternative to dataHex)",
+            "type": "string"
+          },
+          "host": {
+            "default": "127.0.0.1",
+            "description": "Target host address",
+            "type": "string"
+          },
+          "port": {
+            "description": "Target port number (1-65535)",
+            "type": "number"
+          },
+          "timeout": {
+            "default": 5000,
+            "description": "Response timeout in ms",
+            "type": "number"
+          }
+        },
+        "required": ["port"],
+        "type": "object"
+      },
+      "tls_inspector_tcp_close": {
+        "properties": {
+          "force": {
+            "default": false,
+            "description": "Destroy the socket immediately instead of sending FIN first",
+            "type": "boolean"
+          },
+          "sessionId": {
+            "description": "TCP session ID",
+            "type": "string"
+          },
+          "timeoutMs": {
+            "default": 1000,
+            "description": "Close wait timeout in milliseconds before forcing socket destruction",
+            "type": "number"
+          }
+        },
+        "required": ["sessionId"],
+        "type": "object"
+      },
+      "tls_inspector_tcp_open": {
+        "properties": {
+          "host": {
+            "default": "127.0.0.1",
+            "description": "Target host name or IP address",
+            "type": "string"
+          },
+          "noDelay": {
+            "default": true,
+            "description": "Enable TCP_NODELAY on the socket after connect",
+            "type": "boolean"
+          },
+          "port": {
+            "description": "Target TCP port",
+            "type": "number"
+          },
+          "timeoutMs": {
+            "default": 5000,
+            "description": "Connection timeout in milliseconds",
+            "type": "number"
+          }
+        },
+        "required": ["port"],
+        "type": "object"
+      },
+      "tls_inspector_tcp_read_until": {
+        "properties": {
+          "delimiterHex": {
+            "description": "Hex-encoded delimiter to stop at",
+            "type": "string"
+          },
+          "delimiterText": {
+            "description": "UTF-8 delimiter to stop at",
+            "type": "string"
+          },
+          "includeDelimiter": {
+            "default": true,
+            "description": "Include the delimiter bytes in the returned payload",
+            "type": "boolean"
+          },
+          "maxBytes": {
+            "description": "Optional maximum number of bytes to return even if no delimiter matches",
+            "type": "number"
+          },
+          "sessionId": {
+            "description": "TCP session ID",
+            "type": "string"
+          },
+          "timeoutMs": {
+            "default": 5000,
+            "description": "Read timeout in milliseconds",
+            "type": "number"
+          }
+        },
+        "required": ["sessionId"],
+        "type": "object"
+      },
+      "tls_inspector_tcp_write": {
+        "properties": {
+          "dataHex": {
+            "description": "Hex-encoded payload to write",
+            "type": "string"
+          },
+          "dataText": {
+            "description": "UTF-8 text payload to write",
+            "type": "string"
+          },
+          "sessionId": {
+            "description": "TCP session ID",
+            "type": "string"
+          },
+          "timeoutMs": {
+            "default": 5000,
+            "description": "Write timeout in milliseconds",
+            "type": "number"
+          }
+        },
+        "required": ["sessionId"],
+        "type": "object"
+      },
+      "tls_inspector_tls_cert_pin_bypass": {
+        "properties": {
+          "target": {
+            "description": "Target platform for bypass strategy",
+            "enum": ["android", "ios", "desktop"],
+            "type": "string"
+          }
+        },
+        "required": ["target"],
+        "type": "object"
+      },
+      "tls_inspector_tls_cert_pin_bypass_frida": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "tls_inspector_tls_cipher_suites": {
+        "properties": {
+          "filter": {
+            "description": "Keyword filter for cipher suite names (substring match)",
+            "type": "string"
+          },
+          "protocol": {
+            "default": "all",
+            "description": "Filter by TLS protocol version",
+            "enum": ["all", "1.3", "1.2"],
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "tls_inspector_tls_close": {
+        "properties": {
+          "force": {
+            "default": false,
+            "description": "Destroy the TLS socket immediately instead of sending close_notify/FIN first",
+            "type": "boolean"
+          },
+          "sessionId": {
+            "description": "TLS session ID",
+            "type": "string"
+          },
+          "timeoutMs": {
+            "default": 1000,
+            "description": "Close wait timeout in milliseconds before forcing socket destruction",
+            "type": "number"
+          }
+        },
+        "required": ["sessionId"],
+        "type": "object"
+      },
+      "tls_inspector_tls_decrypt_payload": {
+        "properties": {
+          "algorithm": {
+            "default": "aes-256-gcm",
+            "description": "Cipher algorithm",
+            "type": "string"
+          },
+          "authTagHex": {
+            "description": "Hex-encoded authentication tag",
+            "type": "string"
+          },
+          "encryptedHex": {
+            "description": "Hex-encoded encrypted payload",
+            "type": "string"
+          },
+          "keyHex": {
+            "description": "Hex-encoded decryption key",
+            "type": "string"
+          },
+          "nonceHex": {
+            "description": "Hex-encoded nonce/IV",
+            "type": "string"
+          }
+        },
+        "required": ["encryptedHex", "keyHex", "nonceHex"],
+        "type": "object"
+      },
+      "tls_inspector_tls_keylog_disable": {
+        "properties": {
+          "path": {
+            "description": "Path to disable",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "tls_inspector_tls_keylog_enable": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "tls_inspector_tls_keylog_lookup_secret": {
+        "properties": {
+          "clientRandom": {
+            "description": "Hex-encoded client random",
+            "type": "string"
+          },
+          "label": {
+            "description": "Optional label filter",
+            "type": "string"
+          }
+        },
+        "required": ["clientRandom"],
+        "type": "object"
+      },
+      "tls_inspector_tls_keylog_parse": {
+        "properties": {
+          "path": {
+            "description": "Path to SSLKEYLOGFILE",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "tls_inspector_tls_keylog_seal": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "tls_inspector_tls_keylog_summarize": {
+        "properties": {
+          "content": {
+            "description": "Inline keylog content to summarize",
+            "type": "string"
+          },
+          "path": {
+            "description": "Path to a keylog file to summarize (used when content is not provided)",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "tls_inspector_tls_open": {
+        "properties": {
+          "allowInvalidCertificates": {
+            "default": false,
+            "description": "Allow untrusted certificate chains while still reporting the failure",
+            "type": "boolean"
+          },
+          "alpnProtocols": {
+            "description": "Optional ALPN protocols to offer",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "caPath": {
+            "description": "Optional path to a PEM-encoded CA bundle",
+            "type": "string"
+          },
+          "caPem": {
+            "description": "Optional PEM-encoded CA bundle",
+            "type": "string"
+          },
+          "host": {
+            "description": "Target host name or IP address",
+            "type": "string"
+          },
+          "maxVersion": {
+            "description": "Optional maximum TLS version",
+            "enum": ["TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3"],
+            "type": "string"
+          },
+          "minVersion": {
+            "description": "Optional minimum TLS version",
+            "enum": ["TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3"],
+            "type": "string"
+          },
+          "port": {
+            "default": 443,
+            "description": "Target TLS port",
+            "type": "number"
+          },
+          "servername": {
+            "description": "Optional SNI and hostname validation override",
+            "type": "string"
+          },
+          "skipHostnameCheck": {
+            "default": false,
+            "description": "Skip hostname verification while still reporting the requested target",
+            "type": "boolean"
+          },
+          "timeoutMs": {
+            "default": 5000,
+            "description": "Connection timeout in milliseconds",
+            "type": "number"
+          }
+        },
+        "required": ["host"],
+        "type": "object"
+      },
+      "tls_inspector_tls_parse_certificate": {
+        "properties": {
+          "rawHex": {
+            "description": "Hex-encoded certificate data",
+            "type": "string"
+          }
+        },
+        "required": ["rawHex"],
+        "type": "object"
+      },
+      "tls_inspector_tls_parse_handshake": {
+        "properties": {
+          "rawHex": {
+            "description": "Hex-encoded TLS handshake record",
+            "type": "string"
+          }
+        },
+        "required": ["rawHex"],
+        "type": "object"
+      },
+      "tls_inspector_tls_probe_endpoint": {
+        "properties": {
+          "allowInvalidCertificates": {
+            "default": false,
+            "description": "Allow untrusted certificate chains while still reporting the failure",
+            "type": "boolean"
+          },
+          "alpnProtocols": {
+            "description": "Optional ALPN protocols to offer",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "caPath": {
+            "description": "Optional path to a PEM-encoded CA bundle",
+            "type": "string"
+          },
+          "caPem": {
+            "description": "Optional PEM-encoded CA bundle",
+            "type": "string"
+          },
+          "host": {
+            "description": "Target host name or IP address",
+            "type": "string"
+          },
+          "maxVersion": {
+            "description": "Optional maximum TLS version",
+            "enum": ["TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3"],
+            "type": "string"
+          },
+          "minVersion": {
+            "description": "Optional minimum TLS version",
+            "enum": ["TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3"],
+            "type": "string"
+          },
+          "port": {
+            "default": 443,
+            "description": "Target TLS port",
+            "type": "number"
+          },
+          "servername": {
+            "description": "Optional SNI and hostname validation override",
+            "type": "string"
+          },
+          "skipHostnameCheck": {
+            "default": false,
+            "description": "Skip hostname verification while still reporting the requested target",
+            "type": "boolean"
+          },
+          "timeoutMs": {
+            "default": 5000,
+            "description": "Probe timeout in milliseconds",
+            "type": "number"
+          }
+        },
+        "required": ["host"],
+        "type": "object"
+      },
+      "tls_inspector_tls_read_until": {
+        "properties": {
+          "delimiterHex": {
+            "description": "Hex-encoded delimiter to stop at",
+            "type": "string"
+          },
+          "delimiterText": {
+            "description": "UTF-8 delimiter to stop at",
+            "type": "string"
+          },
+          "includeDelimiter": {
+            "default": true,
+            "description": "Include the delimiter bytes in the returned payload",
+            "type": "boolean"
+          },
+          "maxBytes": {
+            "description": "Optional maximum number of bytes to return even if no delimiter matches",
+            "type": "number"
+          },
+          "sessionId": {
+            "description": "TLS session ID",
+            "type": "string"
+          },
+          "timeoutMs": {
+            "default": 5000,
+            "description": "Read timeout in milliseconds",
+            "type": "number"
+          }
+        },
+        "required": ["sessionId"],
+        "type": "object"
+      },
+      "tls_inspector_tls_write": {
+        "properties": {
+          "dataHex": {
+            "description": "Hex-encoded payload to write",
+            "type": "string"
+          },
+          "dataText": {
+            "description": "UTF-8 text payload to write",
+            "type": "string"
+          },
+          "sessionId": {
+            "description": "TLS session ID",
+            "type": "string"
+          },
+          "timeoutMs": {
+            "default": 5000,
+            "description": "Write timeout in milliseconds",
+            "type": "number"
+          }
+        },
+        "required": ["sessionId"],
+        "type": "object"
+      },
+      "tls_inspector_websocket_close": {
+        "properties": {
+          "closeCode": {
+            "description": "Optional close status code",
+            "type": "number"
+          },
+          "closeReason": {
+            "description": "Optional close reason",
+            "type": "string"
+          },
+          "force": {
+            "default": false,
+            "description": "Destroy the underlying socket immediately without sending a close frame first",
+            "type": "boolean"
+          },
+          "sessionId": {
+            "description": "WebSocket session ID",
+            "type": "string"
+          },
+          "timeoutMs": {
+            "default": 1000,
+            "description": "Close wait timeout in milliseconds before forcing socket destruction",
+            "type": "number"
+          }
+        },
+        "required": ["sessionId"],
+        "type": "object"
+      },
+      "tls_inspector_websocket_open": {
+        "properties": {
+          "allowInvalidCertificates": {
+            "default": false,
+            "description": "Allow untrusted certificate chains",
+            "type": "boolean"
+          },
+          "alpnProtocols": {
+            "description": "Optional ALPN protocols to offer",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "caPath": {
+            "description": "Optional path to a PEM-encoded CA bundle",
+            "type": "string"
+          },
+          "caPem": {
+            "description": "Optional PEM-encoded CA bundle",
+            "type": "string"
+          },
+          "host": {
+            "description": "Target host name or IP address",
+            "type": "string"
+          },
+          "maxVersion": {
+            "description": "Optional maximum TLS version",
+            "enum": ["TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3"],
+            "type": "string"
+          },
+          "minVersion": {
+            "description": "Optional minimum TLS version",
+            "enum": ["TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3"],
+            "type": "string"
+          },
+          "path": {
+            "default": "/",
+            "description": "Request path",
+            "type": "string"
+          },
+          "port": {
+            "description": "Target port",
+            "type": "number"
+          },
+          "scheme": {
+            "default": "ws",
+            "description": "WebSocket transport scheme",
+            "enum": ["ws", "wss"],
+            "type": "string"
+          },
+          "servername": {
+            "description": "Optional SNI and hostname validation override",
+            "type": "string"
+          },
+          "skipHostnameCheck": {
+            "default": false,
+            "description": "Skip hostname verification",
+            "type": "boolean"
+          },
+          "subprotocols": {
+            "description": "Optional subprotocols to offer",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "timeoutMs": {
+            "default": 5000,
+            "description": "Handshake timeout in milliseconds",
+            "type": "number"
+          },
+          "url": {
+            "description": "WebSocket URL",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "tls_inspector_websocket_read_frame": {
+        "properties": {
+          "sessionId": {
+            "description": "WebSocket session ID",
+            "type": "string"
+          },
+          "timeoutMs": {
+            "default": 5000,
+            "description": "Read timeout in milliseconds",
+            "type": "number"
+          }
+        },
+        "required": ["sessionId"],
+        "type": "object"
+      },
+      "tls_inspector_websocket_send_frame": {
+        "properties": {
+          "closeCode": {
+            "description": "Optional close status code",
+            "type": "number"
+          },
+          "closeReason": {
+            "description": "Optional close reason",
+            "type": "string"
+          },
+          "dataHex": {
+            "description": "Hex-encoded payload for binary/ping/pong/close frames",
+            "type": "string"
+          },
+          "dataText": {
+            "description": "UTF-8 payload for text/ping/pong/close frames",
+            "type": "string"
+          },
+          "frameType": {
+            "description": "Outgoing frame opcode",
+            "enum": ["text", "binary", "ping", "pong", "close"],
+            "type": "string"
+          },
+          "sessionId": {
+            "description": "WebSocket session ID",
+            "type": "string"
+          },
+          "timeoutMs": {
+            "default": 5000,
+            "description": "Write timeout in milliseconds",
+            "type": "number"
+          }
+        },
+        "required": ["sessionId", "frameType"],
+        "type": "object"
+      },
       "trace_diff_heap_snapshots": {
         "properties": {
           "dbPath": {
@@ -17574,11 +17613,30 @@
                 "string_decrypt",
                 "dead_code_remove",
                 "control_flow_flatten",
-                "rename_vars"
+                "rename_vars",
+                "beautify"
               ],
               "type": "string"
             },
             "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "transform_ast_transform_beautify": {
+        "properties": {
+          "code": {
+            "description": "Direct source code input.",
+            "type": "string"
+          },
+          "includeDiff": {
+            "default": false,
+            "description": "Include a line diff between input and output.",
+            "type": "boolean"
+          },
+          "scriptId": {
+            "description": "Target script ID from page debugger context (used when code is not provided).",
+            "type": "string"
           }
         },
         "type": "object"
@@ -17601,7 +17659,8 @@
                 "string_decrypt",
                 "dead_code_remove",
                 "control_flow_flatten",
-                "rename_vars"
+                "rename_vars",
+                "beautify"
               ],
               "type": "string"
             },
@@ -17630,7 +17689,8 @@
                 "string_decrypt",
                 "dead_code_remove",
                 "control_flow_flatten",
-                "rename_vars"
+                "rename_vars",
+                "beautify"
               ],
               "type": "string"
             },
@@ -21220,905 +21280,6 @@
         "summary": "Get execution trace from Unidbg session with configurable detail.",
         "tags": ["binary-instrument"],
         "x-domain": "binary-instrument"
-      }
-    },
-    "/boringssl-inspector/net_raw_tcp_listen": {
-      "post": {
-        "description": "Listen on a local TCP port for one incoming connection.",
-        "operationId": "net_raw_tcp_listen",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_net_raw_tcp_listen"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Listen on a local TCP port for one incoming connection.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/net_raw_tcp_send": {
-      "post": {
-        "description": "Send raw TCP data to a remote host; accepts hex or text input.",
-        "operationId": "net_raw_tcp_send",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_net_raw_tcp_send"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Send raw TCP data to a remote host; accepts hex or text input.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/net_raw_udp_listen": {
-      "post": {
-        "description": "Listen on a local UDP port for an incoming datagram.",
-        "operationId": "net_raw_udp_listen",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_net_raw_udp_listen"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Listen on a local UDP port for an incoming datagram.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/net_raw_udp_send": {
-      "post": {
-        "description": "Send a raw UDP datagram and wait for a response.",
-        "operationId": "net_raw_udp_send",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_net_raw_udp_send"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Send a raw UDP datagram and wait for a response.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tcp_close": {
-      "post": {
-        "description": "Close an open TCP session.",
-        "operationId": "tcp_close",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tcp_close"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Close an open TCP session.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tcp_open": {
-      "post": {
-        "description": "Open a TCP session.",
-        "operationId": "tcp_open",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tcp_open"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Open a TCP session.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tcp_read_until": {
-      "post": {
-        "description": "Read from an open TCP session until a delimiter or byte limit is reached.",
-        "operationId": "tcp_read_until",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tcp_read_until"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Read from an open TCP session until a delimiter or byte limit is reached.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tcp_write": {
-      "post": {
-        "description": "Write data to an open TCP session.",
-        "operationId": "tcp_write",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tcp_write"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Write data to an open TCP session.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tls_cert_pin_bypass": {
-      "post": {
-        "description": "Return a certificate pinning bypass strategy for the selected platform.",
-        "operationId": "tls_cert_pin_bypass",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tls_cert_pin_bypass"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Return a certificate pinning bypass strategy for the selected platform.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tls_cert_pin_bypass_frida": {
-      "post": {
-        "description": "Bypass certificate pinning via Frida injection (supports the target TLS library and HTTP client frameworks).",
-        "operationId": "tls_cert_pin_bypass_frida",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tls_cert_pin_bypass_frida"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Bypass certificate pinning via Frida injection (supports the target TLS library and HTTP client frameworks).",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tls_cipher_suites": {
-      "post": {
-        "description": "List TLS cipher suites with IANA id, protocol, key-exchange / authentication / encryption / MAC split, and AEAD flag (each dimension derived from the suite name).",
-        "operationId": "tls_cipher_suites",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tls_cipher_suites"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "List TLS cipher suites with IANA id, protocol, key-exchange / authentication / encryption / MAC split, and AEAD flag ...",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tls_close": {
-      "post": {
-        "description": "Close an open TLS session.",
-        "operationId": "tls_close",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tls_close"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Close an open TLS session.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tls_decrypt_payload": {
-      "post": {
-        "description": "Decrypt a TLS payload using a provided key, nonce, and algorithm.",
-        "operationId": "tls_decrypt_payload",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tls_decrypt_payload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Decrypt a TLS payload using a provided key, nonce, and algorithm.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tls_keylog_disable": {
-      "post": {
-        "description": "Disable SSLKEYLOGFILE capture and unset the environment variable.",
-        "operationId": "tls_keylog_disable",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tls_keylog_disable"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Disable SSLKEYLOGFILE capture and unset the environment variable.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tls_keylog_enable": {
-      "post": {
-        "description": "Enable SSLKEYLOGFILE output for TLS library clients.",
-        "operationId": "tls_keylog_enable",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tls_keylog_enable"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Enable SSLKEYLOGFILE output for TLS library clients.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tls_keylog_lookup_secret": {
-      "post": {
-        "description": "Look up a TLS secret by client random hex from the parsed keylog.",
-        "operationId": "tls_keylog_lookup_secret",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tls_keylog_lookup_secret"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Look up a TLS secret by client random hex from the parsed keylog.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tls_keylog_parse": {
-      "post": {
-        "description": "Parse an SSLKEYLOGFILE and summarize available key material.",
-        "operationId": "tls_keylog_parse",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tls_keylog_parse"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Parse an SSLKEYLOGFILE and summarize available key material.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tls_keylog_seal": {
-      "post": {
-        "description": "Encrypt the current keylog file in place with a fresh ephemeral key and securely wipe the plaintext source. Mitigates disk-forensics exposure (pagefile/hibernation/TEMP scraping) of captured TLS secrets. The returned keyHex is not persisted anywhere — hold onto it to decrypt the sealed envelope later, or it is unrecoverable once the process exits.",
-        "operationId": "tls_keylog_seal",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tls_keylog_seal"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Encrypt the current keylog file in place with a fresh ephemeral key and securely wipe the plaintext source.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tls_keylog_summarize": {
-      "post": {
-        "description": "Summarize an SSLKEYLOGFILE: per-label distribution, secret-type classification (TLS 1.2 master-secret vs TLS 1.3 traffic-secret kinds), TLS version inference, and unique session (client_random) count.",
-        "operationId": "tls_keylog_summarize",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tls_keylog_summarize"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Summarize an SSLKEYLOGFILE: per-label distribution, secret-type classification (TLS 1.2 master-secret vs TLS 1.3 traf...",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tls_open": {
-      "post": {
-        "description": "Open a TLS session.",
-        "operationId": "tls_open",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tls_open"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Open a TLS session.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tls_parse_certificate": {
-      "post": {
-        "description": "Parse a TLS Certificate message from raw hex and extract X.509 details (subject/issuer/SAN/validity/keyUsage), SHA-256 fingerprint, and SPKI pin hash (Android Network Security Config / HPKP format).",
-        "operationId": "tls_parse_certificate",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tls_parse_certificate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Parse a TLS Certificate message from raw hex and extract X.509 details (subject/issuer/SAN/validity/keyUsage), SHA-25...",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tls_parse_handshake": {
-      "post": {
-        "description": "Parse TLS handshake metadata from raw hex. For payload decryption, use tls_decrypt_payload with explicit keyHex/nonceHex/authTagHex.",
-        "operationId": "tls_parse_handshake",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tls_parse_handshake"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Parse TLS handshake metadata from raw hex.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tls_probe_endpoint": {
-      "post": {
-        "description": "Probe a TLS endpoint and report handshake and certificate details.",
-        "operationId": "tls_probe_endpoint",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tls_probe_endpoint"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Probe a TLS endpoint and report handshake and certificate details.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tls_read_until": {
-      "post": {
-        "description": "Read from an open TLS session until a delimiter or byte limit is reached.",
-        "operationId": "tls_read_until",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tls_read_until"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Read from an open TLS session until a delimiter or byte limit is reached.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/tls_write": {
-      "post": {
-        "description": "Write data to an open TLS session.",
-        "operationId": "tls_write",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_tls_write"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Write data to an open TLS session.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/websocket_close": {
-      "post": {
-        "description": "Close an open WebSocket session.",
-        "operationId": "websocket_close",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_websocket_close"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Close an open WebSocket session.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/websocket_open": {
-      "post": {
-        "description": "Open a WebSocket session.",
-        "operationId": "websocket_open",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_websocket_open"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Open a WebSocket session.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/websocket_read_frame": {
-      "post": {
-        "description": "Read the next queued WebSocket frame from an open session.",
-        "operationId": "websocket_read_frame",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_websocket_read_frame"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Read the next queued WebSocket frame from an open session.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
-      }
-    },
-    "/boringssl-inspector/websocket_send_frame": {
-      "post": {
-        "description": "Send a WebSocket frame.",
-        "operationId": "websocket_send_frame",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/boringssl_inspector_websocket_send_frame"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Tool execution result returned as MCP tool result text content."
-          }
-        },
-        "summary": "Send a WebSocket frame.",
-        "tags": ["boringssl-inspector"],
-        "x-domain": "boringssl-inspector"
       }
     },
     "/browser/browser_attach": {
@@ -31484,6 +30645,37 @@
         "x-domain": "memory"
       }
     },
+    "/memory/memory_read_typed": {
+      "post": {
+        "description": "Read process memory as typed numeric values with explicit endianness. Decodes consecutive values starting at address via koffi endian-sensitive integer types (uint64_le / int32_be / …) — no manual byte swapping needed. 64-bit values are returned as decimal strings alongside two's-complement hex. float/double use IEEE-754 with the requested endianness. Supports up to 1024 consecutive values. Ideal for struct inspection, big-endian network payloads, and game memory analysis.",
+        "operationId": "memory_read_typed",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/memory_memory_read_typed"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Read process memory as typed numeric values with explicit endianness.",
+        "tags": ["memory"],
+        "x-domain": "memory"
+      }
+    },
     "/memory/memory_region_compare": {
       "post": {
         "description": "Compare two memory regions byte-by-byte and return a diff summary. Equivalent to Cheat Engine's compareMemory(). Returns identical flag, diff count, and per-offset differences (byte1, byte2). Max compare size: 64KB.",
@@ -32137,7 +31329,7 @@
     },
     "/meta/activate_domain": {
       "post": {
-        "description": "Activate all tools in a domain at once. Domains: adb-bridge, core, binary-instrument, boringssl-inspector, browser, canvas, coordination, cross-domain, dart-inspector, debugger, encoding, exploit-dev, extension-registry, graphql, instrumentation, maintenance, memory, mojo-ipc, native-bridge, native-emulator, network, platform, process, protocol-analysis, proxy, session, sourcemap, streaming, syscall-hook, tasks, trace, transform, v8-inspector, wasm, webgpu, workflow. Use reload_extensions first to include external plugin/workflow domains.",
+        "description": "Activate all tools in a domain at once. Domains: adb-bridge, core, binary-instrument, browser, canvas, coordination, cross-domain, dart-inspector, debugger, encoding, exploit-dev, extension-registry, graphql, instrumentation, maintenance, memory, mojo-ipc, native-bridge, native-emulator, network, platform, process, protocol-analysis, proxy, session, sourcemap, streaming, syscall-hook, tasks, tls-inspector, trace, transform, v8-inspector, wasm, webgpu, workflow. Use reload_extensions first to include external plugin/workflow domains.",
         "operationId": "activate_domain",
         "requestBody": {
           "content": {
@@ -32347,7 +31539,7 @@
     },
     "/meta/search_tools": {
       "post": {
-        "description": "Search 731 tools across 36 capability domains. This includes built-in tools plus any loaded plugin/workflow tools (0 currently loaded). In search-tier sessions, call this before assuming a capability is unavailable. Use activate_tools for exact matches, activate_domain for an entire domain. Domains: browser (85) | memory (74) | native-emulator (57) | binary-instrument (44) | network (38) | boringssl-inspector (29) | process (28) | adb-bridge (26) | core (25) | debugger (21) | exploit-dev (21) | v8-inspector (21) | protocol-analysis (20) | platform (18) | maintenance (17) | streaming (17) | wasm (17) | dart-inspector (16) | syscall-hook (15) | instrumentation (13) | workflow (13) | coordination (12) | canvas (11) | proxy (11) | trace (10) | webgpu (10) | cross-domain (8) | mojo-ipc (8) | extension-registry (7) | graphql (7) | sourcemap (7) | transform (7) | native-bridge (6) | encoding (5) | tasks (4) | session (3). Query tip: before searching, distill your intent into key concepts (action verb + target + domain). The engine combines token matching, fuzzy names, profile context, and optional static embeddings.",
+        "description": "Search 733 tools across 36 capability domains. This includes built-in tools plus any loaded plugin/workflow tools (0 currently loaded). In search-tier sessions, call this before assuming a capability is unavailable. Use activate_tools for exact matches, activate_domain for an entire domain. Domains: browser (85) | memory (75) | native-emulator (57) | binary-instrument (44) | network (38) | tls-inspector (29) | process (28) | adb-bridge (26) | core (25) | debugger (21) | exploit-dev (21) | v8-inspector (21) | protocol-analysis (20) | platform (18) | maintenance (17) | streaming (17) | wasm (17) | dart-inspector (16) | syscall-hook (15) | instrumentation (13) | workflow (13) | coordination (12) | canvas (11) | proxy (11) | trace (10) | webgpu (10) | cross-domain (8) | mojo-ipc (8) | transform (8) | extension-registry (7) | graphql (7) | sourcemap (7) | native-bridge (6) | encoding (5) | tasks (4) | session (3). Query tip: before searching, distill your intent into key concepts (action verb + target + domain). The engine combines token matching, fuzzy names, profile context, and optional static embeddings.",
         "operationId": "search_tools",
         "requestBody": {
           "content": {
@@ -32371,7 +31563,7 @@
             "description": "Tool execution result returned as MCP tool result text content."
           }
         },
-        "summary": "Search 731 tools across 36 capability domains.",
+        "summary": "Search 733 tools across 36 capability domains.",
         "tags": ["meta"]
       }
     },
@@ -39567,6 +38759,905 @@
         "x-domain": "tasks"
       }
     },
+    "/tls-inspector/net_raw_tcp_listen": {
+      "post": {
+        "description": "Listen on a local TCP port for one incoming connection.",
+        "operationId": "net_raw_tcp_listen",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_net_raw_tcp_listen"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Listen on a local TCP port for one incoming connection.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/net_raw_tcp_send": {
+      "post": {
+        "description": "Send raw TCP data to a remote host; accepts hex or text input.",
+        "operationId": "net_raw_tcp_send",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_net_raw_tcp_send"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Send raw TCP data to a remote host; accepts hex or text input.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/net_raw_udp_listen": {
+      "post": {
+        "description": "Listen on a local UDP port for an incoming datagram.",
+        "operationId": "net_raw_udp_listen",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_net_raw_udp_listen"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Listen on a local UDP port for an incoming datagram.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/net_raw_udp_send": {
+      "post": {
+        "description": "Send a raw UDP datagram and wait for a response.",
+        "operationId": "net_raw_udp_send",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_net_raw_udp_send"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Send a raw UDP datagram and wait for a response.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tcp_close": {
+      "post": {
+        "description": "Close an open TCP session.",
+        "operationId": "tcp_close",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tcp_close"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Close an open TCP session.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tcp_open": {
+      "post": {
+        "description": "Open a TCP session.",
+        "operationId": "tcp_open",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tcp_open"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Open a TCP session.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tcp_read_until": {
+      "post": {
+        "description": "Read from an open TCP session until a delimiter or byte limit is reached.",
+        "operationId": "tcp_read_until",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tcp_read_until"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Read from an open TCP session until a delimiter or byte limit is reached.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tcp_write": {
+      "post": {
+        "description": "Write data to an open TCP session.",
+        "operationId": "tcp_write",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tcp_write"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Write data to an open TCP session.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tls_cert_pin_bypass": {
+      "post": {
+        "description": "Return a certificate pinning bypass strategy for the selected platform.",
+        "operationId": "tls_cert_pin_bypass",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tls_cert_pin_bypass"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Return a certificate pinning bypass strategy for the selected platform.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tls_cert_pin_bypass_frida": {
+      "post": {
+        "description": "Bypass certificate pinning via Frida injection (supports the target TLS library and HTTP client frameworks).",
+        "operationId": "tls_cert_pin_bypass_frida",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tls_cert_pin_bypass_frida"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Bypass certificate pinning via Frida injection (supports the target TLS library and HTTP client frameworks).",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tls_cipher_suites": {
+      "post": {
+        "description": "List TLS cipher suites with IANA id, protocol, key-exchange / authentication / encryption / MAC split, and AEAD flag (each dimension derived from the suite name).",
+        "operationId": "tls_cipher_suites",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tls_cipher_suites"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "List TLS cipher suites with IANA id, protocol, key-exchange / authentication / encryption / MAC split, and AEAD flag ...",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tls_close": {
+      "post": {
+        "description": "Close an open TLS session.",
+        "operationId": "tls_close",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tls_close"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Close an open TLS session.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tls_decrypt_payload": {
+      "post": {
+        "description": "Decrypt a TLS payload using a provided key, nonce, and algorithm.",
+        "operationId": "tls_decrypt_payload",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tls_decrypt_payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Decrypt a TLS payload using a provided key, nonce, and algorithm.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tls_keylog_disable": {
+      "post": {
+        "description": "Disable SSLKEYLOGFILE capture and unset the environment variable.",
+        "operationId": "tls_keylog_disable",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tls_keylog_disable"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Disable SSLKEYLOGFILE capture and unset the environment variable.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tls_keylog_enable": {
+      "post": {
+        "description": "Enable SSLKEYLOGFILE output for TLS library clients.",
+        "operationId": "tls_keylog_enable",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tls_keylog_enable"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Enable SSLKEYLOGFILE output for TLS library clients.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tls_keylog_lookup_secret": {
+      "post": {
+        "description": "Look up a TLS secret by client random hex from the parsed keylog.",
+        "operationId": "tls_keylog_lookup_secret",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tls_keylog_lookup_secret"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Look up a TLS secret by client random hex from the parsed keylog.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tls_keylog_parse": {
+      "post": {
+        "description": "Parse an SSLKEYLOGFILE and summarize available key material.",
+        "operationId": "tls_keylog_parse",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tls_keylog_parse"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Parse an SSLKEYLOGFILE and summarize available key material.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tls_keylog_seal": {
+      "post": {
+        "description": "Encrypt the current keylog file in place with a fresh ephemeral key and securely wipe the plaintext source. Mitigates disk-forensics exposure (pagefile/hibernation/TEMP scraping) of captured TLS secrets. The returned keyHex is not persisted anywhere — hold onto it to decrypt the sealed envelope later, or it is unrecoverable once the process exits.",
+        "operationId": "tls_keylog_seal",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tls_keylog_seal"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Encrypt the current keylog file in place with a fresh ephemeral key and securely wipe the plaintext source.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tls_keylog_summarize": {
+      "post": {
+        "description": "Summarize an SSLKEYLOGFILE: per-label distribution, secret-type classification (TLS 1.2 master-secret vs TLS 1.3 traffic-secret kinds), TLS version inference, and unique session (client_random) count.",
+        "operationId": "tls_keylog_summarize",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tls_keylog_summarize"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Summarize an SSLKEYLOGFILE: per-label distribution, secret-type classification (TLS 1.2 master-secret vs TLS 1.3 traf...",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tls_open": {
+      "post": {
+        "description": "Open a TLS session.",
+        "operationId": "tls_open",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tls_open"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Open a TLS session.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tls_parse_certificate": {
+      "post": {
+        "description": "Parse a TLS Certificate message from raw hex and extract X.509 details (subject/issuer/SAN/validity/keyUsage), SHA-256 fingerprint, and SPKI pin hash (Android Network Security Config / HPKP format).",
+        "operationId": "tls_parse_certificate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tls_parse_certificate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Parse a TLS Certificate message from raw hex and extract X.509 details (subject/issuer/SAN/validity/keyUsage), SHA-25...",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tls_parse_handshake": {
+      "post": {
+        "description": "Parse TLS handshake metadata from raw hex. For payload decryption, use tls_decrypt_payload with explicit keyHex/nonceHex/authTagHex.",
+        "operationId": "tls_parse_handshake",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tls_parse_handshake"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Parse TLS handshake metadata from raw hex.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tls_probe_endpoint": {
+      "post": {
+        "description": "Probe a TLS endpoint and report handshake and certificate details.",
+        "operationId": "tls_probe_endpoint",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tls_probe_endpoint"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Probe a TLS endpoint and report handshake and certificate details.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tls_read_until": {
+      "post": {
+        "description": "Read from an open TLS session until a delimiter or byte limit is reached.",
+        "operationId": "tls_read_until",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tls_read_until"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Read from an open TLS session until a delimiter or byte limit is reached.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/tls_write": {
+      "post": {
+        "description": "Write data to an open TLS session.",
+        "operationId": "tls_write",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_tls_write"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Write data to an open TLS session.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/websocket_close": {
+      "post": {
+        "description": "Close an open WebSocket session.",
+        "operationId": "websocket_close",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_websocket_close"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Close an open WebSocket session.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/websocket_open": {
+      "post": {
+        "description": "Open a WebSocket session.",
+        "operationId": "websocket_open",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_websocket_open"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Open a WebSocket session.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/websocket_read_frame": {
+      "post": {
+        "description": "Read the next queued WebSocket frame from an open session.",
+        "operationId": "websocket_read_frame",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_websocket_read_frame"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Read the next queued WebSocket frame from an open session.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
+    "/tls-inspector/websocket_send_frame": {
+      "post": {
+        "description": "Send a WebSocket frame.",
+        "operationId": "websocket_send_frame",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/tls_inspector_websocket_send_frame"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Send a WebSocket frame.",
+        "tags": ["tls-inspector"],
+        "x-domain": "tls-inspector"
+      }
+    },
     "/trace/diff_heap_snapshots": {
       "post": {
         "description": "Compare two heap snapshots from a trace.",
@@ -39904,6 +39995,37 @@
           }
         },
         "summary": "Apply transforms to input code or a live page scriptId.",
+        "tags": ["transform"],
+        "x-domain": "transform"
+      }
+    },
+    "/transform/ast_transform_beautify": {
+      "post": {
+        "description": "Pretty-print minified or obfuscated JavaScript: re-emit the parsed source with standard 2-space indentation and normalised spacing. Formatting only — the AST is preserved, so program semantics do not change. Unparseable input is returned unchanged.",
+        "operationId": "ast_transform_beautify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/transform_ast_transform_beautify"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tool execution result returned as MCP tool result text content."
+          }
+        },
+        "summary": "Pretty-print minified or obfuscated JavaScript: re-emit the parsed source with standard 2-space indentation and norma...",
         "tags": ["transform"],
         "x-domain": "transform"
       }
@@ -42013,9 +42135,6 @@
       "name": "binary-instrument"
     },
     {
-      "name": "boringssl-inspector"
-    },
-    {
       "name": "browser"
     },
     {
@@ -42095,6 +42214,9 @@
     },
     {
       "name": "tasks"
+    },
+    {
+      "name": "tls-inspector"
     },
     {
       "name": "trace"

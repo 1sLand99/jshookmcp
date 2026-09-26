@@ -13,9 +13,10 @@
  */
 
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -119,7 +120,7 @@ export async function computeOpenApiState() {
     catalogEntries: surface.catalog,
     metaTools: surface.metaTools,
   });
-  const expected = serializeDocument(document);
+  const expected = formatDocumentText(serializeDocument(document));
 
   let actual = null;
   try {
@@ -137,6 +138,50 @@ export async function computeOpenApiState() {
     expected,
     actual,
   };
+}
+
+/**
+ * serializeDocument() emits raw JSON.stringify output, which is not
+ * oxfmt-style: oxfmt collapses arrays that fit the line width (`"tags": ["x"]`
+ * rather than one element per line). Lefthook's pre-commit hook runs
+ * `oxfmt {staged_files} --write` over any staged `*.json`, so a raw-generator
+ * openapi.json would be rewritten the moment it is committed and every
+ * subsequent `--check` would fail on formatting alone.
+ *
+ * Formatting here — rather than excluding openapi.json from the hook — keeps
+ * the committed artifact and the check's expectation identical, and matches
+ * what scripts/generate-domains-index.mjs already does for its three
+ * generated .ts files. Verified byte-identical to the file-based
+ * `oxfmt --write` path, so the hook becomes a no-op on this file.
+ */
+function formatDocumentText(text) {
+  const bin = resolve(
+    projectRoot,
+    'node_modules',
+    '.bin',
+    process.platform === 'win32' ? 'oxfmt.cmd' : 'oxfmt',
+  );
+  if (!existsSync(bin)) {
+    console.warn(
+      '[openapi] oxfmt not found; openapi.json left unformatted. Lefthook will reformat it on commit and `--check` will then report a formatting-only difference.',
+    );
+    return text;
+  }
+  const result = spawnSync(bin, ['--stdin-filepath=openapi.json'], {
+    cwd: projectRoot,
+    input: text,
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (result.status !== 0 || typeof result.stdout !== 'string' || !result.stdout) {
+    const details = [result.stderr, result.stdout].filter(Boolean).join('\n').trim();
+    console.warn(
+      `[openapi] oxfmt failed (status=${result.status}); openapi.json left unformatted.${details ? `\n${details}` : ''}`,
+    );
+    return text;
+  }
+  return result.stdout;
 }
 
 function describeDifference(actual, expected) {
