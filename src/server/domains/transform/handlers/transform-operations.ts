@@ -1,11 +1,16 @@
 /**
- * Standalone transform operations extracted from TransformToolHandlersOps.
+ * Standalone transform operations for the transform domain.
+ *
+ * These were extracted from the legacy `TransformToolHandlersOps` monolith
+ * (since removed) and are now the only implementation: the production chain is
+ * `handlers.impl.core.ts` -> `handlers/*`.
  */
 
 import type { TransformKind, ApplyResult, TransformChainDefinition } from './shared';
 import { TransformLimit, parseTransforms } from './shared';
 import { buildLineDiff } from './diff';
 import {
+  transformBeautifyAst,
   transformConstantFoldAst,
   transformControlFlowFlattenAst,
   transformDeadCodeRemoveAst,
@@ -37,23 +42,6 @@ export function applyTransforms(code: string, transforms: TransformKind[]): Appl
   return { transformed, appliedTransforms };
 }
 
-function applySingleTransform(code: string, transform: TransformKind): string {
-  switch (transform) {
-    case 'constant_fold':
-      return transformConstantFold(code);
-    case 'string_decrypt':
-      return transformStringDecrypt(code);
-    case 'dead_code_remove':
-      return transformDeadCodeRemove(code);
-    case 'control_flow_flatten':
-      return transformControlFlowFlatten(code);
-    case 'rename_vars':
-      return transformRenameVars(code);
-    default:
-      return code;
-  }
-}
-
 function transformConstantFold(code: string): string {
   return transformConstantFoldAst(code);
 }
@@ -72,6 +60,32 @@ function transformControlFlowFlatten(code: string): string {
 
 function transformRenameVars(code: string): string {
   return transformRenameVarsAst(code);
+}
+
+function transformBeautify(code: string): string {
+  return transformBeautifyAst(code);
+}
+
+/**
+ * Exhaustive dispatch table.
+ *
+ * Typing this as `Record<TransformKind, ...>` turns "a member was added to
+ * `TransformKind` but its implementation was not wired up" into a compile
+ * error. The `switch` this replaced ended in `default: return code`, so the
+ * same mistake instead produced a silent no-op: the tool accepted the new kind,
+ * reported success, and changed nothing.
+ */
+const TRANSFORM_IMPLS: Record<TransformKind, (code: string) => string> = {
+  constant_fold: transformConstantFold,
+  string_decrypt: transformStringDecrypt,
+  dead_code_remove: transformDeadCodeRemove,
+  control_flow_flatten: transformControlFlowFlatten,
+  rename_vars: transformRenameVars,
+  beautify: transformBeautify,
+};
+
+function applySingleTransform(code: string, transform: TransformKind): string {
+  return TRANSFORM_IMPLS[transform](code);
 }
 
 export function buildDiff(original: string, transformed: string): string {

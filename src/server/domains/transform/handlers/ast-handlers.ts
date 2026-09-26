@@ -13,6 +13,12 @@ import {
 } from './shared';
 import { resolveTransformsForApply, applyTransforms, buildDiff } from './transform-operations';
 
+/** Line count for the beautify stats: 0 for empty input, otherwise the number
+ *  of `\n`-separated segments. */
+function countLines(value: string): number {
+  return value.length === 0 ? 0 : value.split('\n').length;
+}
+
 export class AstHandlers {
   private state: TransformSharedState;
 
@@ -97,6 +103,41 @@ export class AstHandlers {
       });
     } catch (error) {
       return fail('ast_transform_apply', error);
+    }
+  }
+
+  async handleAstTransformBeautify(args: Record<string, unknown>) {
+    try {
+      const inlineCode = typeof args.code === 'string' ? args.code : '';
+      const scriptId = typeof args.scriptId === 'string' ? args.scriptId.trim() : '';
+
+      const sourceCode =
+        inlineCode.length > 0
+          ? inlineCode
+          : scriptId.length > 0
+            ? await resolveScriptSource(this.state.collector, scriptId)
+            : '';
+
+      if (sourceCode.length === 0) throw new Error('Either code or scriptId must be provided');
+
+      // Goes through the shared apply path so the tool and the `beautify`
+      // transform kind can never diverge.
+      const result = applyTransforms(sourceCode, ['beautify']);
+      const includeDiff = parseBoolean(args.includeDiff, false);
+
+      return toTextResponse({
+        beautified: result.transformed,
+        changed: result.appliedTransforms.length > 0,
+        stats: {
+          originalSize: sourceCode.length,
+          beautifiedSize: result.transformed.length,
+          originalLines: countLines(sourceCode),
+          beautifiedLines: countLines(result.transformed),
+        },
+        ...(includeDiff ? { diff: buildDiff(sourceCode, result.transformed) } : {}),
+      });
+    } catch (error) {
+      return fail('ast_transform_beautify', error);
     }
   }
 }

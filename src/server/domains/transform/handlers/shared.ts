@@ -14,12 +14,12 @@ import {
   TRANSFORM_CRYPTO_POOL_MAX_YOUNG_GEN_MB,
 } from '@src/constants';
 
-export type TransformKind =
-  | 'constant_fold'
-  | 'string_decrypt'
-  | 'dead_code_remove'
-  | 'control_flow_flatten'
-  | 'rename_vars';
+import {
+  SUPPORTED_TRANSFORMS,
+  type TransformKind,
+} from '@server/domains/transform/transform-kinds';
+
+export { SUPPORTED_TRANSFORMS, type TransformKind };
 
 export interface ApplyResult {
   transformed: string;
@@ -59,14 +59,6 @@ export interface CryptoExtractResult {
   dependencies: string[];
   dependencySnippets: string[];
 }
-
-export const SUPPORTED_TRANSFORMS = [
-  'constant_fold',
-  'string_decrypt',
-  'dead_code_remove',
-  'control_flow_flatten',
-  'rename_vars',
-] as const satisfies readonly TransformKind[];
 
 export const SUPPORTED_TRANSFORM_SET: ReadonlySet<string> = new Set(SUPPORTED_TRANSFORMS);
 

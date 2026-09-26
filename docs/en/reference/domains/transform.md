@@ -18,13 +18,14 @@ AST/string transform domain plus crypto extraction, harnessing, and comparison t
 
 - core + transform
 
-## Full tool list (7)
+## Full tool list (8)
 
 | Tool | Description |
 | --- | --- |
 | `ast_transform_preview` | Preview lightweight AST-like transforms (string/regex based) and return before/after diff. |
 | `ast_transform_chain` | Create and store an in-memory transform chain. |
 | `ast_transform_apply` | Apply transforms to input code or a live page scriptId. |
+| `ast_transform_beautify` | Pretty-print minified or obfuscated JavaScript: re-emit the parsed source with standard 2-space indentation and normalised spacing. Formatting only — the AST is preserved, so program semantics do not change. Unparseable input is returned unchanged. |
 | `crypto_extract_standalone` | Extract crypto/sign/encrypt function from current page and generate standalone runnable code. |
 | `crypto_test_harness` | Run extracted crypto code in worker_threads + vm sandbox and return deterministic test results. |
 | `crypto_compare` | Compare two crypto implementations against identical test vectors. |

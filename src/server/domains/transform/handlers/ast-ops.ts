@@ -655,3 +655,40 @@ export function transformRenameVarsAst(code: string): string {
   if (!changed) return code;
   return normalizeGeneratedCode(code, ast);
 }
+
+/**
+ * Pretty-print (beautify) minified or obfuscated source.
+ *
+ * Unlike every other transform in this module, `beautify` is formatting-only:
+ * it must not change program semantics, so instead of rewriting nodes it
+ * re-emits the parsed AST through the generator's pretty-printer. The return
+ * contract still matches the rest of the module (see `transformOnce`):
+ *
+ *   - unparseable input -> return the original string untouched;
+ *   - input the generator already round-trips byte-for-byte -> return the
+ *     original string, so `applyTransforms`'s `transformed !== before` check
+ *     does not report a no-op as "applied".
+ *
+ * Two generator behaviours this relies on, both measured against
+ * `@babel/generator` 8 rather than assumed:
+ *
+ *   - `retainLines` must stay off. It is what the node-rewriting transforms use
+ *     to hold untouched lines in place, and it suppresses the re-indentation
+ *     that is the entire point of this transform.
+ *   - the output never carries a trailing newline, not even when the input ends
+ *     with one. A trailing newline in the input is therefore normalised away
+ *     and reported as a change; the other transforms here behave the same way,
+ *     since they all return generator-canonical output too.
+ */
+export function transformBeautifyAst(code: string): string {
+  const ast = parseTransformCode(code);
+  if (!ast) return code;
+  const beautified = generateWithOptions(ast, {
+    retainLines: false,
+    compact: false,
+    concise: false,
+    comments: true,
+    jsescOption: { quotes: preferredQuote(code) },
+  }).code;
+  return beautified === code ? code : beautified;
+}

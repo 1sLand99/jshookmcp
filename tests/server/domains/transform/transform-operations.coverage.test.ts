@@ -208,6 +208,24 @@ describe('transform-operations', () => {
       expect(result.transformed).not.toContain('i++');
     });
 
+    it('declines to flatten when a case body reassigns the dispatcher or cursor', async () => {
+      // Regression guard for `loopBodyReferencesControlVars` in ast-ops.ts.
+      // Flattening removes the dispatcher/cursor declarations, so a goto-style
+      // `order[i] = "b"` reassignment inside a case body would be left
+      // referencing two variables that no longer exist — output that throws
+      // ReferenceError at runtime. The transform must decline instead.
+      const code =
+        'var order=["a","b"];var i=0;while(true){switch(order[i++]){case"a":order[i]="b";a();continue;case"b":b();break;}}';
+      const result = applyTransforms(code, ['control_flow_flatten']);
+
+      expect(result.transformed, 'goto-style reassignment must not be linearized').toContain(
+        'while',
+      );
+      expect(result.appliedTransforms).toEqual([]);
+      // The dangerous reference is still intact and self-consistent.
+      expect(result.transformed).toContain('order[i]="b"');
+    });
+
     it('removes dead branches guarded by if(!1) / if(!true) (negated-literal falsy)', async () => {
       const r1 = applyTransforms('if(!1){dead();}else{alive();}', ['dead_code_remove']);
       expect(r1.transformed).not.toContain('dead');

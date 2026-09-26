@@ -15,6 +15,7 @@ const registrations = defineMethodRegistrations<H, (typeof transformTools)[numbe
     { tool: 'ast_transform_preview', method: 'handleAstTransformPreviewTool' },
     { tool: 'ast_transform_chain', method: 'handleAstTransformChainTool' },
     { tool: 'ast_transform_apply', method: 'handleAstTransformApplyTool' },
+    { tool: 'ast_transform_beautify', method: 'handleAstTransformBeautifyTool' },
     { tool: 'crypto_extract_standalone', method: 'handleCryptoExtractStandaloneTool' },
     { tool: 'crypto_test_harness', method: 'handleCryptoTestHarnessTool' },
     { tool: 'crypto_compare', method: 'handleCryptoCompareTool' },

@@ -63,6 +63,10 @@ export class TransformToolHandlers {
     return handleSafe(async () => await this.handleAstTransformApply(args));
   }
 
+  async handleAstTransformBeautifyTool(args: Record<string, unknown>): Promise<ToolResponse> {
+    return handleSafe(async () => await this.handleAstTransformBeautify(args));
+  }
+
   async handleCryptoExtractStandaloneTool(args: Record<string, unknown>): Promise<ToolResponse> {
     return handleSafe(async () => await this.handleCryptoExtractStandalone(args));
   }
@@ -85,6 +89,8 @@ export class TransformToolHandlers {
     this.ast.handleAstTransformChain(args);
   handleAstTransformApply = (args: Record<string, unknown>) =>
     this.ast.handleAstTransformApply(args);
+  handleAstTransformBeautify = (args: Record<string, unknown>) =>
+    this.ast.handleAstTransformBeautify(args);
   handleCryptoExtractStandalone = (args: Record<string, unknown>) =>
     this.crypto.handleCryptoExtractStandalone(args);
   handleCryptoTestHarness = (args: Record<string, unknown>) =>

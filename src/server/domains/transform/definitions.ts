@@ -1,13 +1,6 @@
 import type { Tool } from '@modelcontextprotocol/server';
 import { tool } from '@server/registry/tool-builder';
-
-const transformsEnum = [
-  'constant_fold',
-  'string_decrypt',
-  'dead_code_remove',
-  'control_flow_flatten',
-  'rename_vars',
-] as const;
+import { SUPPORTED_TRANSFORMS } from '@server/domains/transform/transform-kinds';
 
 export const transformTools: Tool[] = [
   tool('ast_transform_preview', (t) =>
@@ -16,7 +9,11 @@ export const transformTools: Tool[] = [
         'Preview lightweight AST-like transforms (string/regex based) and return before/after diff.',
       )
       .string('code', 'Source code to transform.')
-      .array('transforms', { type: 'string', enum: transformsEnum }, 'Ordered transform list.')
+      .array(
+        'transforms',
+        { type: 'string', enum: SUPPORTED_TRANSFORMS },
+        'Ordered transform list.',
+      )
       .boolean('preview', 'Whether to generate line diff output.', { default: true })
       .required('code', 'transforms')
       .query(),
@@ -25,7 +22,11 @@ export const transformTools: Tool[] = [
     t
       .desc('Create and store an in-memory transform chain.')
       .string('name', 'Chain name.')
-      .array('transforms', { type: 'string', enum: transformsEnum }, 'Ordered transform list.')
+      .array(
+        'transforms',
+        { type: 'string', enum: SUPPORTED_TRANSFORMS },
+        'Ordered transform list.',
+      )
       .string('description', 'Optional chain description.')
       .required('name', 'transforms'),
   ),
@@ -37,9 +38,22 @@ export const transformTools: Tool[] = [
       .string('chainName', 'Use a saved transform chain by name.')
       .array(
         'transforms',
-        { type: 'string', enum: transformsEnum },
+        { type: 'string', enum: SUPPORTED_TRANSFORMS },
         'Direct transform list (used when chainName is not provided).',
       ),
+  ),
+  tool('ast_transform_beautify', (t) =>
+    t
+      .desc(
+        'Pretty-print minified or obfuscated JavaScript: re-emit the parsed source with standard 2-space indentation and normalised spacing. Formatting only — the AST is preserved, so program semantics do not change. Unparseable input is returned unchanged.',
+      )
+      .string('code', 'Direct source code input.')
+      .string(
+        'scriptId',
+        'Target script ID from page debugger context (used when code is not provided).',
+      )
+      .boolean('includeDiff', 'Include a line diff between input and output.', { default: false })
+      .query(),
   ),
   tool('crypto_extract_standalone', (t) =>
     t
