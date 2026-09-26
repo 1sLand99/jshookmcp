@@ -288,16 +288,17 @@ vi.mock('@server/domains/browser/handlers/camoufox-flow', () => ({
 
 // ── Delegation chain mocks for handlers.impl files that re-export from .impl.core ──
 
-// encoding, graphql, network, process, sourcemap, streaming, transform, workflow
-// have handlers.impl.core.ts -> handlers.impl.core.runtime.ts chains
+// One mock per domain whose `handlers.ts` barrel re-exports a constructor from a
+// deeper `handlers.impl.*` module. Keep this list aligned with the modules that
+// actually exist: a `vi.mock` for a deleted module is silently inert, so a
+// stale entry hides the fact that the real module is no longer in the chain.
+// (network/handlers.impl.core.runtime was deleted as dead code on 2026-08-09;
+// barrel-exports.test.ts already dropped its mock, this file had not.)
 vi.mock('@server/domains/encoding/handlers.impl.core.runtime', () => ({
   EncodingToolHandlers: vi.fn().mockImplementation(() => ({})),
 }));
 vi.mock('@server/domains/graphql/handlers.impl.core.runtime', () => ({
   GraphQLToolHandlers: vi.fn().mockImplementation(() => ({})),
-}));
-vi.mock('@server/domains/network/handlers.impl.core.runtime', () => ({
-  AdvancedToolHandlers: vi.fn().mockImplementation(() => ({})),
 }));
 vi.mock('@server/domains/process/handlers.impl.core.runtime', () => ({
   ProcessToolHandlers: vi.fn().mockImplementation(() => ({})),
@@ -307,9 +308,6 @@ vi.mock('@server/domains/sourcemap/handlers.impl.sourcemap-main', () => ({
 }));
 vi.mock('@server/domains/streaming/handlers.impl.streaming-sse', () => ({
   StreamingToolHandlersSse: vi.fn().mockImplementation(() => ({})),
-}));
-vi.mock('@server/domains/transform/handlers.impl.transform-crypto', () => ({
-  TransformToolHandlersCrypto: vi.fn().mockImplementation(() => ({})),
 }));
 vi.mock('@server/domains/workflow/handlers.impl.workflow-batch', () => ({
   WorkflowHandlersBatch: vi.fn().mockImplementation(() => ({})),
@@ -322,17 +320,38 @@ describe('Domain handler delegation (handlers.ts)', () => {
     vi.clearAllMocks();
   });
 
-  // Pure re-export handlers.ts files: they just re-export from handlers.impl
+  // Pure re-export handlers.ts files: they just re-export from handlers.impl.
+  //
+  // `exportNames` is the COMPLETE expected export set, asserted with toEqual
+  // rather than toContain. The point of that check is to fail when a barrel
+  // leaks an export nobody intended — which is exactly what happens when a
+  // `handlers.base*` shim is deleted and its re-exports stay behind. `toContain`
+  // cannot catch that, because it is a strict subset of the assertion on the
+  // line above it. process/handlers.ts is the one barrel with a wider surface
+  // than a single constructor; the rest are one-name barrels.
   const pureReExportDomains = [
-    { domain: 'analysis', exportName: 'CoreAnalysisHandlers' },
-    { domain: 'encoding', exportName: 'EncodingToolHandlers' },
-    { domain: 'graphql', exportName: 'GraphQLToolHandlers' },
-    { domain: 'network', exportName: 'AdvancedToolHandlers' },
-    { domain: 'process', exportName: 'ProcessToolHandlers' },
-    { domain: 'sourcemap', exportName: 'SourcemapToolHandlers' },
-    { domain: 'streaming', exportName: 'StreamingToolHandlers' },
-    { domain: 'transform', exportName: 'TransformToolHandlers' },
-    { domain: 'workflow', exportName: 'WorkflowHandlers' },
+    { domain: 'analysis', exportNames: ['CoreAnalysisHandlers'] },
+    { domain: 'encoding', exportNames: ['EncodingToolHandlers'] },
+    { domain: 'graphql', exportNames: ['GraphQLToolHandlers'] },
+    { domain: 'network', exportNames: ['AdvancedToolHandlers'] },
+    {
+      domain: 'process',
+      exportNames: [
+        'ProcessToolHandlers',
+        'ProcessHandlersBase',
+        'ProcessToolHandlersRuntime',
+        'ProcessManagementHandlers',
+        'MemoryOperationHandlers',
+        'InjectionHandlers',
+        'validatePid',
+        'requireString',
+        'requirePositiveNumber',
+      ],
+    },
+    { domain: 'sourcemap', exportNames: ['SourcemapToolHandlers'] },
+    { domain: 'streaming', exportNames: ['StreamingToolHandlers'] },
+    { domain: 'transform', exportNames: ['TransformToolHandlers'] },
+    { domain: 'workflow', exportNames: ['WorkflowHandlers'] },
   ] as const;
 
   // Lazy loader map — avoids Vite dynamic-import-vars warning
@@ -355,18 +374,18 @@ describe('Domain handler delegation (handlers.ts)', () => {
   }
 
   describe.each(pureReExportDomains)(
-    '$domain/handlers.ts re-exports $exportName',
-    ({ domain, exportName }) => {
-      it(`exports ${exportName} as a constructor function`, async () => {
+    '$domain/handlers.ts re-exports $exportNames',
+    ({ domain, exportNames }) => {
+      it(`exports ${exportNames[0]} as a constructor function`, async () => {
         const mod = await loadHandlerModule(domain);
-        expect(mod[exportName]).toBeDefined();
-        expect(typeof mod[exportName]).toBe('function');
+        expect(mod[exportNames[0]]).toBeDefined();
+        expect(typeof mod[exportNames[0]]).toBe('function');
       });
 
-      it(`has no unexpected exports besides ${exportName}`, async () => {
+      it(`has no unexpected exports besides ${exportNames.join(', ')}`, async () => {
         const mod = await loadHandlerModule(domain);
         const exportedNames = Object.keys(mod).filter((k) => k !== '__esModule');
-        expect(exportedNames).toContain(exportName);
+        expect(exportedNames.toSorted()).toEqual(exportNames.toSorted());
       });
     },
   );

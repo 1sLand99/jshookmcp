@@ -145,9 +145,6 @@ vi.mock('@server/domains/graphql/handlers.impl', () => ({
 vi.mock('@server/domains/network/handlers.impl.core.runtime.intercept', () => ({
   AdvancedToolHandlersIntercept: vi.fn().mockImplementation(() => ({})),
 }));
-vi.mock('@server/domains/network/handlers.impl.core.runtime.replay', () => ({
-  AdvancedToolHandlersRuntime: vi.fn().mockImplementation(() => ({})),
-}));
 vi.mock('@server/domains/process/handlers.impl', () => ({
   ProcessToolHandlers: vi.fn().mockImplementation(() => ({})),
 }));
@@ -156,9 +153,6 @@ vi.mock('@server/domains/sourcemap/handlers.impl.sourcemap-main', () => ({
 }));
 vi.mock('@server/domains/streaming/handlers.impl.streaming-sse', () => ({
   StreamingToolHandlersSse: vi.fn().mockImplementation(() => ({})),
-}));
-vi.mock('@server/domains/transform/handlers.impl.transform-crypto', () => ({
-  TransformToolHandlersCrypto: vi.fn().mockImplementation(() => ({})),
 }));
 vi.mock('@server/domains/workflow/handlers.impl.workflow-batch', () => ({
   WorkflowHandlersBatch: vi.fn().mockImplementation(() => ({})),
