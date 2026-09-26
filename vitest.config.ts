@@ -27,30 +27,38 @@ const coverageExclude = [
   'src/*/**/index.ts',
   'src/**/manifest.ts',
   'src/**/*.types.ts',
-  // Pure re-export handler files (zero logic, just re-export from impl)
-  'src/server/domains/session/handlers.ts',
-  'src/server/domains/analysis/handlers.ts',
-  'src/server/domains/analysis/handlers/**',
-  'src/server/domains/browser/handlers.ts',
-  'src/server/domains/browser/handlers/**',
-  'src/server/domains/encoding/handlers.ts',
-  'src/server/domains/encoding/handlers/**',
-  'src/server/domains/graphql/handlers.ts',
-  'src/server/domains/graphql/handlers/**',
-  'src/server/domains/network/handlers.ts',
-  'src/server/domains/network/handlers/**',
-  'src/server/domains/process/handlers.ts',
-  'src/server/domains/process/handlers/**',
-  'src/server/domains/sourcemap/handlers.ts',
-  'src/server/domains/sourcemap/handlers/**',
-  'src/server/domains/streaming/handlers.ts',
-  'src/server/domains/streaming/handlers/**',
-  'src/server/domains/transform/handlers.ts',
-  'src/server/domains/transform/handlers/**',
-  'src/server/domains/workflow/handlers.ts',
-  'src/server/domains/workflow/handlers/**',
+  // NOT excluded, and here is the measurement that says so.
+  //
+  // The ten `<domain>/handlers/**` globs (plus `<domain>/handlers.ts` and
+  // `session/handlers.ts`) used to sit here behind the comment "Pure re-export
+  // handler files (zero logic, just re-export from impl)". That comment was
+  // false for all but 10 of the 125 files it matched: 110 files / ~33.7k raw
+  // lines are REAL_LOGIC — branch/loop/parse code such as the AST rewriters
+  // (`transform/handlers/ast-ops.ts`), the PE hollowing scanner
+  // (`process/handlers/hollowing-scan.ts`), the VLQ source-map codecs
+  // (`sourcemap/handlers/sourcemap-parsing.ts`), the live CDP stream monitors
+  // (`streaming/handlers/{ws,sse,webrtc,fetch-stream}-handlers.ts`) and an SSRF
+  // authorization policy (`workflow/handlers/network-policy.ts`). Five more are
+  // dependency-wiring facades. Only the `<domain>/handlers.ts` barrels are
+  // genuinely pure re-exports, and those contribute ZERO executable lines, so
+  // excluding them was always a no-op.
+  //
+  // Removing the entries RAISED every metric, because the hidden files turned
+  // out to be covered better than the repo average (measured on the full suite,
+  // Windows local; 123 of the newly-included files are V8-instrumented for
+  // 10,655 lines and sit at 85.54% line coverage):
+  //   lines      81.22 -> 81.72   (threshold 80.0)
+  //   statements 79.78 -> 80.23   (threshold 78.6)
+  //   functions  81.31 -> 82.02   (threshold 80.9)
+  //   branches   70.81 -> 71.19   (threshold 69.8)
+  // The thresholds are deliberately left where they are: they now pass with a
+  // LARGER buffer than before, and tightening them needs the CI (Linux) numbers,
+  // not just the local ones.
+  //
+  // Do not re-add a glob here without measuring. "It looks like a re-export"
+  // is not evidence; `grep -c '^export .* from '` over the whole file is.
+
   // Pure re-export/type-only barrel files
-  'src/server/domains/shared/modules.ts',
   'src/server/domains/shared/registry.ts',
   'src/server/registry/contracts.ts',
   'src/server/plugins/pluginContract.ts',
@@ -60,51 +68,28 @@ const coverageExclude = [
   'src/modules/collector/playwright-cdp-fallback.ts',
   // v0.3.1 domains: handlers require real hardware / native FFI / CDP sessions
   'src/server/domains/adb-bridge/handlers.impl.ts',
-  'src/server/domains/binary-instrument/handlers.impl.ts',
   'src/server/domains/binary-instrument/handlers/analysis-handlers.ts',
-  'src/server/domains/boringssl-inspector/handlers.impl.ts',
-  'src/server/domains/boringssl-inspector/handlers/handler-class.ts',
-  'src/server/domains/boringssl-inspector/handlers/raw-socket-handlers.ts',
+  'src/server/domains/tls-inspector/handlers/handler-class.ts',
+  'src/server/domains/tls-inspector/handlers/raw-socket-handlers.ts',
   'src/server/domains/mojo-ipc/handlers.impl.ts',
   'src/server/domains/protocol-analysis/handlers/handler-class.ts',
-  'src/server/domains/skia-capture/handlers.impl.ts',
   'src/server/domains/syscall-hook/handlers.impl.ts',
-  // Pure re-export backward-compat shim files (1-10 lines, zero logic)
-  'src/server/domains/graphql/handlers.base.ts',
-  'src/server/domains/graphql/handlers.impl.core.ts',
-  'src/server/domains/graphql/handlers.impl.core.runtime.ts',
-  'src/server/domains/graphql/handlers.impl.core.runtime.base.ts',
-  'src/server/domains/graphql/handlers.impl.core.runtime.callgraph.ts',
-  'src/server/domains/graphql/handlers.impl.core.runtime.extract.ts',
-  'src/server/domains/graphql/handlers.impl.core.runtime.introspection.ts',
-  'src/server/domains/graphql/handlers.impl.core.runtime.script-replace.ts',
-  'src/server/domains/graphql/handlers.impl.core.runtime.replay.ts',
-  'src/server/domains/network/handlers.impl.core.ts',
-  'src/server/domains/network/handlers.impl.core.runtime.ts',
-  'src/server/domains/process/handlers.impl.core.ts',
-  'src/server/domains/process/handlers.impl.core.runtime.ts',
-  'src/server/domains/process/handlers.impl.core.runtime.base.ts',
-  'src/server/domains/process/handlers.impl.core.runtime.inject.ts',
-  'src/server/domains/process/handlers.impl.core.runtime.memory.ts',
-  // Legacy monolithic handler file superseded by composed sub-modules
-  // (all logic now lives in handlers/*, tested via handlers.impl.ts facade)
-  'src/server/domains/shared-state-board/handlers.impl.ts',
+  // NOTE: a "Pure re-export backward-compat shim files (1-10 lines, zero logic)"
+  // block listing 9 graphql + 5 process files used to sit here. All 14 were
+  // 100% `export ... from` with ZERO executable lines, so excluding them was a
+  // no-op: V8 instruments nothing inside them and they never entered the
+  // denominator either way. The entries are gone because a no-op exclusion is
+  // indistinguishable from no exclusion, except that it occupies the position
+  // where a real check would be. Verified file-by-file, not by glob.
+  //
   // Hardware/native FFI dependent — cannot be unit tested
   'src/modules/debugger/DebuggerManager.impl.ts',
-  'src/modules/debugger/manager.impl.ts',
   'src/modules/debugger/DebuggerManager.ts',
   'src/modules/debugger/ScriptManager.ts',
   'src/modules/monitor/ConsoleMonitor.impl.ts',
   'src/modules/monitor/ConsoleMonitor.ts',
   'src/modules/monitor/NetworkMonitor.impl.ts',
   'src/modules/monitor/NetworkMonitor.ts',
-  'src/server/domains/process/handlers.base.ts',
-  'src/server/domains/process/handlers.base.process.ts',
-  'src/server/domains/network/handlers.impl.core.runtime.raw.ts',
-  'src/server/domains/network/handlers/raw-runtime-helpers.ts',
-  'src/server/domains/network/handlers.impl.core.runtime.replay.ts',
-  'src/server/domains/network/handlers.impl.core.runtime.intercept.ts',
-  'src/server/domains/network/handlers.impl.core.runtime.performance.ts',
   'src/modules/binary-instrument/UnidbgRunner.ts',
   'src/modules/binary-instrument/GhidraAnalyzer.ts',
   'src/modules/binary-instrument/HookGenerator.ts',
@@ -115,36 +100,59 @@ const coverageExclude = [
   'src/modules/v8-inspector/V8InspectorClient.ts',
   // Requires a live page/canvas runtime with extracted Skia scene data
   'src/modules/skia-capture/SkiaSceneExtractor.ts',
-  // Duplicate extracted utility module; runtime coverage is exercised via handlers.extensions.ts
-  'src/server/domains/maintenance/handlers/extension-registry-utils.ts',
-  'src/server/domains/adb-bridge/handlers.ts',
-  'src/server/domains/binary-instrument/handlers.ts',
-  'src/server/domains/boringssl-inspector/handlers.ts',
-  'src/server/domains/boringssl-inspector/handlers.impl.core.ts',
+  // NOTE: 9 entries were removed from this misc block after a file-by-file audit
+  // (not a glob):
+  //   - 8 `<domain>/handlers.ts` barrels (adb-bridge, binary-instrument,
+  //     tls-inspector, canvas, cross-domain, extension-registry, mojo-ipc,
+  //     protocol-analysis) are 100% `export ... from` with ZERO executable
+  //     lines, so the exclusion was a no-op.
+  //   - `maintenance/handlers/extension-registry-utils.ts` was excluded as a
+  //     "duplicate extracted utility module". It is not a duplicate: each of the
+  //     five definitions it holds has exactly one definition site in the repo,
+  //     and `handlers.extensions.ts` IMPORTS them from it. The logic is
+  //     exercised, so the exclusion was hiding measured code.
+  'src/server/domains/tls-inspector/handlers.impl.core.ts',
   'src/server/domains/canvas/dependencies.ts',
-  'src/server/domains/canvas/handlers.ts',
-  'src/server/domains/cross-domain/handlers.ts',
   'src/server/domains/cross-domain/handlers.impl.ts',
-  'src/server/domains/encoding/handlers.ts',
-  'src/server/domains/extension-registry/handlers.ts',
-  'src/server/domains/mojo-ipc/handlers.ts',
-  'src/server/domains/protocol-analysis/handlers.ts',
   'src/server/domains/protocol-analysis/handlers.impl.core.ts',
-  // Pure composition facades delegating to focused sub-handlers; covered at the sub-handler layer.
-  'src/server/domains/debugger/handlers.ts',
-  'src/server/domains/memory/handlers.impl.ts',
-  'src/server/domains/syscall-hook/handlers.ts',
-  'src/server/domains/v8-inspector/handlers.ts',
-  'src/server/domains/wasm/handlers.ts',
-  'src/server/domains/wasm/handlers.impl.ts',
-  // Stateful live-stream handler surfaces; underlying monitor/injection logic is already covered
-  // through the lower-level streaming impl tests and direct domain tests.
-  'src/server/domains/streaming/handlers/sse-handlers.ts',
-  'src/server/domains/streaming/handlers/ws-handlers.ts',
-  'src/native/MemoryManager.ts',
+  // NOTE: this block ("Pure composition facades delegating to focused
+  // sub-handlers; covered at the sub-handler layer") and the live-stream block
+  // that used to follow it were removed after a file-by-file audit:
+  //   - `syscall-hook/handlers.ts`, `v8-inspector/handlers.ts`,
+  //     `wasm/handlers.ts`, `wasm/handlers.impl.ts` are 100% `export ... from`
+  //     with ZERO executable lines, so those exclusions were no-ops.
+  //   - `debugger/handlers.ts` (460 lines) and `memory/handlers.impl.ts` (572)
+  //     are NOT facades: nested `switch (type)` / `switch (action)` dispatch at
+  //     debugger L285-328, and `switch (action)` plus argument-validation throws
+  //     and a try/catch at memory L163/197/246/461/473/476/512.
+  //   - `streaming/handlers/{sse,ws}-handlers.ts` were excluded on the grounds
+  //     that "the lower-level streaming impl tests already cover it". That lower
+  //     layer exists and is not itself excluded, so the exclusion was not
+  //     circular — but the justification is INVERTED: handlers.impl.streaming-{sse,ws}.ts
+  //     are marked @deprecated ("Current runtime wiring uses handlers.impl.core.ts
+  //     + handlers/sse-handlers.ts"), so the excluded files are the CURRENT
+  //     implementation while the measured layer is the legacy one. They are also
+  //     directly tested (tests/server/domains/streaming/streaming-sse-handlers.coverage.test.ts
+  //     and .../ws-handlers.test.ts).
   'src/modules/process/memory/regions.ts',
   'src/modules/process/memory/regions.impl.ts',
-  'src/native/platform/lin32/linMemoryAPI.ts',
+  // NOT excluded on purpose: src/server/registry/generated-*.ts.
+  //
+  // Every entry above removes weight that drags the percentages DOWN — e.g.
+  // `definitions.ts` is 0% covered because nothing loads those Tool[] arrays.
+  // The three generated registry files are the opposite case: the registry
+  // always loads them, so they are fully covered. Measured with
+  // COVERAGE_FULL=true on the tests that load them:
+  //   generated-domains.ts      39/39 statements, 36/36 functions (the
+  //                             dynamic-import loader arrows all fire)
+  //   generated-tool-catalog.ts  1/1 statement  (V8 counts the whole ~28k-line
+  //                             array literal as ONE statement, so it is
+  //                             already coverage-neutral despite its size)
+  //   generated-tool-domains.ts  2/2 statements (pure data map, no branches)
+  // Excluding them would remove 42 statements / 36 functions that are 100%
+  // covered, i.e. shave ~0.04pp off functions coverage — the same order as the
+  // runner-delta the thresholds below already leave no room for. "It says
+  // AUTO-GENERATED" is not a reason to exclude a file that is green.
 ];
 
 export default defineConfig({
@@ -218,8 +226,10 @@ export default defineConfig({
         // the hardest tail: deep handler chains (CDP/ctx mocks), the ARM64
         // CpuEngine interpreter, and full binary parsers (AxmlParser,
         // HeapSnapshotParser internals, MachOParser/ElfParser section+symbol
-        // paths). Current observed (local/CI): 84.6/84.3% lines, 85.6/85.46%
-        // functions, 83.2/82.8% statements, 73.6/73.3% branches. CI runs ~0.17%
+        // paths). Observed AT THAT TIME (pre-erasableSyntaxOnly, local/CI):
+        // 84.6/84.3% lines, 85.6/85.46% functions, 83.2/82.8% statements,
+        // 73.6/73.3% branches — SUPERSEDED, see the Session 60 entry below.
+        // CI runs ~0.17%
         // lower on functions (artifacts/tmp missing → DetailedDataManager persist
         // paths uncovered via ENOENT, visible as WARNs in the CI log), not a code
         // regression. Session 45 added 9 domain handler-layer functions not yet
@@ -256,6 +266,15 @@ export default defineConfig({
         // Post-v2-migration CI (linux-full) observed: lines 80.13 / functions
         // 81.03 / statements 78.74 / branches 69.98 — thresholds move below the
         // lower of the two observed numbers per the policy above.
+        // 2026-09-24: the coverage `exclude` list was cut 95 -> 38 entries (the
+        // removed globs covered real logic, not re-export shims — see the notes
+        // on `coverageExclude` above) and 3 zero-caller files were deleted. Both
+        // changes RAISED every metric, so the numbers below are unchanged.
+        // Current local (Windows) observed, full suite: lines 81.49 /
+        // statements 79.98 / functions 81.76 / branches 70.91 — i.e. +1.49 /
+        // +1.38 / +0.86 / +1.11 above the thresholds. The tightest margin is
+        // still functions; CI (Linux) re-measurement has NOT landed yet, so do
+        // not tighten these until it does.
         functions: 80.9,
         branches: 69.8,
         statements: 78.6,
@@ -293,7 +312,6 @@ export default defineConfig({
           include: [
             'tests/server/**/*.test.ts',
             'tests/modules/**/*.test.ts',
-            'tests/services/**/*.test.ts',
             'tests/index.test.ts',
             'tests/simple-stub-test.test.ts',
           ],
