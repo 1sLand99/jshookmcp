@@ -8,6 +8,9 @@
 // syscall-hook remain 9.9 (B-class honest boundaries requiring Mac/Linux
 // real hardware / heavy native deps — not CI-verifiable on Windows).
 
+import fs from 'node:fs';
+import path from 'node:path';
+
 const SCORES = {
   'adb-bridge': [
     10.0,
@@ -21,7 +24,7 @@ const SCORES = {
     10.0,
     '44 tools, Frida spawn/resume, real Interceptor.attach generation, Unidbg/Ghidra/IDA/JADX + Session 58 frida memory scan/read + apktool build/sign `a4fa2d62` → 10.0 + frida spawn interceptors `99c7127e`',
   ],
-  'boringssl-inspector': [
+  'tls-inspector': [
     10.0,
     '28 tools, Phase 0 honesty fix + Phase 2 MCP-safe wrappers + Session 41 ssl-key-log + chrome-detect + format export',
   ],
