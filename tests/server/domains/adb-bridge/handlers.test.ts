@@ -86,6 +86,54 @@ describe('ADBBridgeHandlers', () => {
     expect(parsed.devices[0].state).toBe('device');
   });
 
+  it('emits adb:device_connected for attached devices and skips offline ones', async () => {
+    mockExecFile([
+      {
+        stdout: [
+          'List of devices attached',
+          'emulator-5554          device product:sdk_gphone64_arm64 model:sdk_gphone64_arm64 device:emu64a',
+          'R58M12345XY            offline',
+          '',
+        ].join('\n'),
+      },
+    ]);
+
+    const emit = vi.fn();
+    handlers.setEventBus({ emit } as never);
+
+    await handlers.handleDeviceList({});
+
+    // The activation layer boosts this domain off `adb:device_connected`, and
+    // nothing else emits it. A subscription-only test cannot detect a missing
+    // emitter — which is exactly how this event went unemitted, leaving the
+    // boost rule inert, without a single test failing.
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect(emit.mock.calls[0]![0]).toBe('adb:device_connected');
+    expect(emit.mock.calls[0]![1]).toMatchObject({
+      serial: 'emulator-5554',
+      model: 'sdk_gphone64_arm64',
+    });
+  });
+
+  it('falls back to the serial as model when adb reports none', async () => {
+    mockExecFile([
+      {
+        stdout: ['List of devices attached', 'R58M12345XY            device', ''].join('\n'),
+      },
+    ]);
+
+    const emit = vi.fn();
+    handlers.setEventBus({ emit } as never);
+
+    await handlers.handleDeviceList({});
+
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect(emit.mock.calls[0]![1]).toMatchObject({
+      serial: 'R58M12345XY',
+      model: 'R58M12345XY',
+    });
+  });
+
   it('keeps wrapper responses un-nested for successful device listing', async () => {
     mockExecFile([
       {
