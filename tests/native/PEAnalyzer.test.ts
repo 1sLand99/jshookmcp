@@ -6,6 +6,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // ── Build Synthetic PE Data ──
 
@@ -131,6 +134,16 @@ function buildMockPE(): Buffer {
 }
 const mockPE = buildMockPE();
 
+// The disk image that `detectInlineHooks` compares against memory is read from
+// `mod.path`, which the mocked `GetModuleFileNameEx` supplies. Both the fixture
+// and the mock therefore have to agree on an ABSOLUTE path outside the
+// repository: a bare `'test.exe'` resolves against `process.cwd()`, which is the
+// repository root under vitest, so the fixture was written into the working tree
+// and only removed when the `afterEach` unlink happened to succeed — leaving a
+// 16 KB stray `test.exe` behind for anything that interrupted the run.
+const PE_FIXTURE_DIR = join(tmpdir(), 'jshookmcp-pe-analyzer');
+const PE_FIXTURE_PATH = join(PE_FIXTURE_DIR, 'test.exe');
+
 vi.mock('@native/Win32API', () => ({
   openProcessForMemory: vi.fn(() => 1n),
   CloseHandle: vi.fn(() => true),
@@ -146,7 +159,9 @@ vi.mock('@native/Win32API', () => ({
     count: 1,
   })),
   GetModuleBaseName: vi.fn(() => 'test.exe'),
-  GetModuleFileNameEx: vi.fn(() => 'test.exe'),
+  // Absolute on purpose — see PE_FIXTURE_PATH. `name` stays 'test.exe' so the
+  // moduleName filter and the reported `moduleName` keep their existing shape.
+  GetModuleFileNameEx: vi.fn(() => PE_FIXTURE_PATH),
   GetModuleInformation: vi.fn(() => ({
     success: true,
     info: { lpBaseOfDll: 0n, SizeOfImage: 16384, EntryPoint: 0x1000n },
@@ -775,15 +790,12 @@ describe('PEAnalyzer', () => {
 
   describe('detectInlineHooks', () => {
     beforeEach(async () => {
-      const fs = await import('node:fs/promises');
-      await fs.writeFile('test.exe', mockPE);
+      await mkdir(PE_FIXTURE_DIR, { recursive: true });
+      await writeFile(PE_FIXTURE_PATH, mockPE);
     });
 
     afterEach(async () => {
-      const fs = await import('node:fs/promises');
-      try {
-        await fs.unlink('test.exe');
-      } catch {}
+      await rm(PE_FIXTURE_PATH, { force: true });
     });
 
     it('should scan all modules if no moduleName is provided', async () => {
@@ -806,12 +818,12 @@ describe('PEAnalyzer', () => {
     });
 
     it('should skip hook detection if disk data is truncated', async () => {
-      const fs = await import('node:fs/promises');
-      await fs.writeFile('test.exe', Buffer.from(mockPE.subarray(0, 4180)));
+      // Overwrite the fixture the beforeEach wrote with a truncated variant —
+      // that truncation is the whole point of this case, so it cannot come from
+      // the shared setup.
+      await writeFile(PE_FIXTURE_PATH, Buffer.from(mockPE.subarray(0, 4180)));
       const detections = await analyzer.detectInlineHooks(1234, 'test.exe');
       expect(detections.length).toBe(0);
-      // Wait, 'test.exe' is already cleaned up by the beforeEach/afterEach!
-      // I'll just write it manually during execution.
     });
 
     it('should directly cover true branch of isPE32Plus and Math.min > 16', async () => {
