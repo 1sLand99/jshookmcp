@@ -106,8 +106,14 @@ export const MCP_TOOL_MAX_ACTIVE_TOOLS = int('MCP_TOOL_MAX_ACTIVE_TOOLS', 50);
  * were being pruned long before their declared TTL. Defaults now align with
  * the TTL semantics:
  *   - AUTO_INACTIVITY_MS   = 15 min (auto-activated, soft-evict before TTL cap)
- *   - MANUAL_INACTIVITY_MS = 30 min (manual activations live for the full TTL)
+ *   - MANUAL_INACTIVITY_MS = 30 min (inactivity leash for a manual activation)
  *   - CHECK_INTERVAL_MS    = 60 s   (frequency of the prune sweep)
+ *
+ * MANUAL_INACTIVITY_MS is an INACTIVITY ceiling, not a TTL: an
+ * `activate_domain({ ttlMinutes })` past 30 min is still retired after 30 min
+ * without tool activity. Only `ttlMinutes: 0` (no expiry) and the base profile
+ * tier are exempt. Raise it above ACTIVATION_TTL_MINUTES if you want a
+ * caller-supplied TTL to be authoritative.
  */
 export const AUTOPRUNE_AUTO_INACTIVITY_MS = int('AUTOPRUNE_AUTO_INACTIVITY_MS', 15 * 60_000);
 export const AUTOPRUNE_MANUAL_INACTIVITY_MS = int('AUTOPRUNE_MANUAL_INACTIVITY_MS', 30 * 60_000);

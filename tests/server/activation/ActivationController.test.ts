@@ -331,15 +331,17 @@ describe('activation/ActivationController', () => {
     controller.dispose();
   });
 
-  it('handles auto-pruner callback without errors', async () => {
+  it('auto-prune callback is a safe no-op for a domain with no TTL entry', async () => {
+    // The prune callback delegates to deactivateDomainOnExpiry, which bails out
+    // on an empty TTL map. That is the common case — only domains activated via
+    // handleActivateDomain get a TTL entry — so it must not throw. The callback's
+    // real effect is asserted in ActivationController.autoprune.test.ts.
+    const ctxWithTtlMap = { ...mockCtx, domainTtlEntries: new Map() };
     const { ActivationController } = await import('@server/activation/ActivationController');
-    const controller = new ActivationController(eventBus, mockCtx as never);
+    const controller = new ActivationController(eventBus, ctxWithTtlMap as never);
 
-    // Trigger pruner's onPrune callback manually to hit the logger line
     const pruner = controller.getAutoPruner();
-    (pruner as any).onPrune('debugger');
-
-    expect(controller).toBeDefined();
+    expect(() => (pruner as any).onPrune('debugger')).not.toThrow();
 
     controller.dispose();
   });
@@ -386,67 +388,15 @@ describe('activation/ActivationController', () => {
   });
 });
 
-describe('activation/getPlatformFilteredTools', () => {
-  it('returns all tools on Windows', async () => {
-    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
-    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
-
-    const { getPlatformFilteredTools } = await import('@server/activation/ActivationController');
-    const tools = [
-      {
-        name: 'pe_headers',
-        description: 'PE analysis',
-        inputSchema: { type: 'object' as const, properties: {} },
-      },
-      {
-        name: 'page_navigate',
-        description: 'Navigate',
-        inputSchema: { type: 'object' as const, properties: {} },
-      },
-    ];
-
-    const filtered = getPlatformFilteredTools(tools);
-    expect(filtered.length).toBe(2);
-
-    if (originalPlatform) {
-      Object.defineProperty(process, 'platform', originalPlatform);
-    }
-  });
-
-  it('filters Win32-only tools on non-Windows platforms', async () => {
-    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
-    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
-
-    // Need fresh import after changing platform
-    vi.resetModules();
-    const { getPlatformFilteredTools } = await import('@server/activation/ActivationController');
-    const tools = [
-      {
-        name: 'pe_headers',
-        description: 'PE analysis',
-        inputSchema: { type: 'object' as const, properties: {} },
-      },
-      {
-        name: 'page_navigate',
-        description: 'Navigate',
-        inputSchema: { type: 'object' as const, properties: {} },
-      },
-      {
-        name: 'inject_patch',
-        description: 'Inject code',
-        inputSchema: { type: 'object' as const, properties: {} },
-      },
-    ];
-
-    const filtered = getPlatformFilteredTools(tools);
-    expect(filtered.length).toBe(1);
-    expect(filtered[0]!.name).toBe('page_navigate');
-
-    if (originalPlatform) {
-      Object.defineProperty(process, 'platform', originalPlatform);
-    }
-  });
-
+// The two `getPlatformFilteredTools` tests that used to live here asserted the
+// behaviour of a prefix table (`pe_`, `anticheat_`, `speedhack_`,
+// `hw_breakpoint_`, `inject_`) against fixtures that were invented for the test
+// (`pe_headers`, `inject_patch`). Four of those five prefixes matched zero real
+// tools, and the function had no production caller — real platform filtering
+// happens per-domain at registration (`WIN32_ONLY_TOOLS` in the `memory`,
+// `process` and `syscall-hook` manifests). The function is gone; the table went
+// with it.
+describe('activation/ActivationController branch coverage', () => {
   it('covers remaining branch edges manually', async () => {
     const { ActivationController } = await import('@server/activation/ActivationController');
     const { EventBus: EventBusLocal } = await import('@server/EventBus');

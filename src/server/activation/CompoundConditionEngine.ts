@@ -117,7 +117,7 @@ const DEFAULT_COMPOUND_CONDITIONS: CompoundCondition[] = [
   {
     id: 'tls-capture-to-network',
     name: 'TLS keylog captured → network replay prep',
-    conditions: [{ type: 'domain_active', domain: 'boringssl-inspector' }],
+    conditions: [{ type: 'domain_active', domain: 'tls-inspector' }],
     boostDomains: ['network'],
     priority: 12,
   },

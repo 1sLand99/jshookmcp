@@ -3,16 +3,21 @@
  *
  * Subscribes to EventBus events and automatically:
  * - Boosts relevant domains when event patterns are detected (e.g., breakpoint → debugger)
- * - Filters tools based on runtime platform (macOS vs Windows)
  * - Enforces debounced cool-down (default 30s) to prevent feedback loops
  * - Tracks domain activity for auto-pruning (delegated to AutoPruner)
  *
+ * Platform filtering is NOT done here: each domain's manifest drops its
+ * Win32-only tools at registration time (see `WIN32_ONLY_TOOLS` in the
+ * `memory`, `process` and `syscall-hook` manifests), so a platform-ineligible
+ * tool never reaches a tool list in the first place.
+ *
  * Requirements addressed: BOOST-01, BOOST-02, BOOST-03, BOOST-04
  */
-import type { Tool } from '@modelcontextprotocol/server';
 import type { EventBus, ServerEventMap } from '@server/EventBus';
 import type { MCPServerContext } from '@server/MCPServer.context';
 import { handleActivateDomain } from '@server/MCPServer.search.handlers.domain';
+import { deactivateDomainOnExpiry } from '@server/MCPServer.activation.ttl';
+import type { ToolResponse } from '@server/types';
 import type { ActivationControllerOptions, BoostRule, EventRecord } from './types';
 import { CompoundConditionEngine, type ConditionState } from './CompoundConditionEngine';
 import { PredictiveBooster } from './PredictiveBooster';
@@ -27,6 +32,33 @@ import {
   ACTIVATION_EVENT_HISTORY_MAX,
   ACTIVATION_TTL_MINUTES,
 } from '@src/constants';
+
+/**
+ * True only when `handleActivateDomain` actually activated the domain.
+ *
+ * It reports failure by returning `{ success: false, error }` inside a text
+ * content block rather than by throwing, and it does not set `isError` on
+ * those paths — so neither "did not throw" nor `isError` is a valid success
+ * test. The `success` field in the JSON payload is the only reliable signal.
+ * Anything unparseable is treated as failure, so a future response shape
+ * cannot silently promote a failed boost to an auto-activation.
+ */
+function isSuccessfulActivation(response: ToolResponse): boolean {
+  const text = response.content?.find((part) => part.type === 'text')?.text;
+  if (typeof text !== 'string') {
+    return false;
+  }
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      (parsed as { success?: unknown }).success === true
+    );
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Default boost rules mapping events to domain activations.
@@ -73,7 +105,7 @@ const DEFAULT_BOOST_RULES: BoostRule[] = [
   },
   {
     eventPattern: 'tls:keylog_started',
-    targetDomains: ['boringssl-inspector'],
+    targetDomains: ['tls-inspector'],
     threshold: 1,
     windowMs: ACTIVATION_BOOST_WINDOW_MS,
     priority: 10,
@@ -123,33 +155,22 @@ const DEFAULT_BOOST_RULES: BoostRule[] = [
 ];
 
 /**
- * Domains that are Windows-only (skip on macOS/Linux).
- * Derived from the project architecture: Win32-specific tools.
+ * Read-only accessor for the default rule table, used by
+ * `scripts/audit-event-contracts.mjs`.
+ *
+ * That audit exists because nothing else can validate these event names. The
+ * `[key: string]: unknown` index signature on `ServerEventMap`
+ * (`src/server/EventBus.ts`) widens `keyof ServerEventMap` to `string |
+ * number`, so typing `eventPattern` as `keyof ServerEventMap` would accept any
+ * string at all — the check would read as a guarantee while providing none.
+ *
+ * A rule naming an event that no code ever emits therefore compiles, loads and
+ * subscribes without a single failure. That is exactly how
+ * `adb:device_connected` sat inert: the emitter was deleted in b428982b, the
+ * tool was restored in e36194d9 without it, and `listenerCount()` stayed 1.
  */
-const WIN32_ONLY_TOOL_PREFIXES = [
-  'pe_', // PE analysis
-  'anticheat_', // Anti-cheat detection
-  'speedhack_', // Speedhack
-  'hw_breakpoint_', // Hardware breakpoints
-  'inject_', // Code injection
-];
-
-/**
- * Filter tools based on the current platform.
- * Removes Windows-only tools when running on macOS/Linux.
- */
-export function getPlatformFilteredTools(tools: Tool[]): Tool[] {
-  const platform = process.platform;
-
-  if (platform === 'win32') {
-    // On Windows, all tools are available
-    return tools;
-  }
-
-  // On non-Windows platforms, filter out Win32-only tools
-  return tools.filter((tool) => {
-    return !WIN32_ONLY_TOOL_PREFIXES.some((prefix) => tool.name.startsWith(prefix));
-  });
+export function getDefaultBoostRules(): readonly BoostRule[] {
+  return DEFAULT_BOOST_RULES;
 }
 
 export class ActivationController {
@@ -207,8 +228,17 @@ export class ActivationController {
     this.predictiveBooster = new PredictiveBooster();
 
     const baseDomains = new Set(getProfileDomains(ctx.baseTier));
+    // The callback is the whole point of AutoPruner. It used to only log, so
+    // the sweep announced a prune (log + `activation:domain_pruned`) while
+    // every tool stayed activated and routed — the event asserted a state
+    // change that never happened. Delegate to the TTL teardown instead of
+    // duplicating it: it is generation-guarded against stale timers and is a
+    // safe no-op when the domain has no TTL entry.
     this.autoPruner = new AutoPruner(eventBus, baseDomains, (domain) => {
       logger.info(`[ActivationController] Auto-pruning domain "${domain}"`);
+      void deactivateDomainOnExpiry(this.ctx, domain).catch((err) => {
+        logger.error(`[ActivationController] Auto-prune of domain "${domain}" failed:`, err);
+      });
     });
 
     this.subscribe();
@@ -325,10 +355,31 @@ export class ActivationController {
 
     logger.info(`[ActivationController] Boosting domain "${domain}" — reason: ${reason}`);
 
-    await handleActivateDomain(this.ctx, {
+    const result = await handleActivateDomain(this.ctx, {
       domain,
       ttlMinutes: ACTIVATION_TTL_MINUTES,
     });
+
+    // This is the only auto-activation path (`attemptBoost` serves predictive
+    // boosting, boost rules and compound conditions), so it is where a domain
+    // becomes "auto-activated" and earns the shorter inactivity leash. Without
+    // this call `autoActivatedDomains` stayed empty for the life of the
+    // process and AUTOPRUNE_AUTO_INACTIVITY_MS was unreachable.
+    //
+    // Gated on the returned `success` flag, NOT on the absence of a throw:
+    // handleActivateDomain reports a rejected domain by RETURNING
+    // `{ success: false, error }` (unknown domain, or an empty domain name) and
+    // never throws, so "did not throw" would mark a domain that was never
+    // activated as auto-activated — seeding lastActivity and letting the
+    // pruner later emit `activation:domain_pruned` for a domain that never
+    // existed in the registry.
+    if (!isSuccessfulActivation(result)) {
+      logger.warn(
+        `[ActivationController] Boost of domain "${domain}" did not succeed; not marking auto-activated`,
+      );
+      return;
+    }
+    this.autoPruner.markAutoActivated(domain);
 
     await this.eventBus.emit('activation:domain_boosted', {
       domain,
