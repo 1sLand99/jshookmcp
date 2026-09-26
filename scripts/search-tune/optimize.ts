@@ -12,7 +12,14 @@
  * constants.ts are re-evaluated from process.env on every trial.
  *
  * Usage:
- *   npx tsx scripts/search-tune/optimize.ts [--seed 42] [--phase1-trials 800]
+ *   npx tsx scripts/search-tune/optimize.ts [--seed 42] [--phase1-trials 800] [--dataset fixture|realtime]
+ *   --dataset fixture  (default) phases evaluate against the synthetic fixture
+ *                      (phase 1/2 lexical cases, phase 3 profile-tier, phase 4
+ *                      rerank-state).
+ *   --dataset realtime phases 1-4 all evaluate against real traffic history
+ *                      persisted at ~/.jshookmcp/state/search-quality.json
+ *                      (records with usedTool+usedToolRank only). Fails fast
+ *                      if no usable records have accumulated yet.
  */
 import { execFile } from 'node:child_process';
 import { mkdir, appendFile, readFile, writeFile } from 'node:fs/promises';
@@ -206,6 +213,29 @@ async function runWorker(): Promise<void> {
   } else if (spec.dataset === 'profile-tier') {
     // Phase 3: both profile-tier cases + rerank-state cases to give rerank params signal
     evalCases = [...profileCases, ...rerankStateCases] as EvalCaseExt[];
+  } else if (spec.dataset === 'realtime') {
+    // Phase B3: real traffic history. Cases run on the FULL registry engine —
+    // their idealTools are real tool names from recorded usage, most of which
+    // don't exist in the 85-tool fixture subset. Cases whose idealTool is no
+    // longer registered (renamed/removed tools) are unanswerable noise.
+    const { loadRealtimeDataset } = await import('../../scripts/search-tune/datasets/realtime');
+    const realtime = await loadRealtimeDataset();
+    const fullToolNames = new Set(allTools.map((t) => t.name));
+    const usable = realtime.cases.filter(
+      (c) => c.idealTool !== undefined && fullToolNames.has(c.idealTool),
+    );
+    if (usable.length < realtime.cases.length) {
+      process.stderr.write(
+        `[realtime] dropped ${realtime.cases.length - usable.length}/${realtime.cases.length} cases: idealTool not in registry (renamed/removed tool)\n`,
+      );
+    }
+    if (usable.length === 0) {
+      // Fail the trial instead of evaluating zero cases: a score-0 "winner"
+      // would let garbage params reach .env via applyToEnv.
+      process.stdout.write(JSON.stringify({ error: 'realtime: no usable cases' }) + '\n');
+      process.exit(1);
+    }
+    evalCases = usable.map((c) => ({ ...c, useFullEngine: true })) as EvalCaseExt[];
   } else {
     // Phase 4: rerank-state only
     evalCases = rerankStateCases as EvalCaseExt[];
@@ -316,7 +346,7 @@ function aggregateMetrics(cms: CaseMetrics[]) {
 interface TrialSpec {
   trialId: string;
   phase: 1 | 2 | 3 | 4;
-  dataset: 'search-quality' | 'profile-tier' | 'rerank-state';
+  dataset: 'search-quality' | 'profile-tier' | 'rerank-state' | 'realtime';
   params: Record<string, number>;
   seed: number;
 }
@@ -343,6 +373,7 @@ interface OptimizeOptions {
   phase1Trials: number;
   phase2TopN: number;
   concurrency: number;
+  dataset: 'fixture' | 'realtime';
 }
 
 function parseOptions(): OptimizeOptions {
@@ -351,12 +382,20 @@ function parseOptions(): OptimizeOptions {
     const idx = args.indexOf(flag);
     return idx >= 0 && idx + 1 < args.length ? args[idx + 1]! : fallback;
   };
+  const datasetRaw = get('--dataset', 'fixture');
+  const dataset =
+    datasetRaw === 'fixture' ? 'fixture' : datasetRaw === 'realtime' ? 'realtime' : null;
+  if (dataset === null) {
+    console.error(`Unknown --dataset "${datasetRaw}". Expected "fixture" (default) or "realtime".`);
+    process.exit(1);
+  }
   return {
     seed: parseInt(get('--seed', '42'), 10),
     outDir: get('--out-dir', 'artifacts/search-tuning'),
     phase1Trials: parseInt(get('--phase1-trials', '800'), 10),
     phase2TopN: parseInt(get('--phase2-top-n', '20'), 10),
     concurrency: parseInt(get('--concurrency', String(CPU_COUNT)), 10),
+    dataset,
   };
 }
 
@@ -463,6 +502,25 @@ async function orchestrate(): Promise<void> {
   const outFile = pathResolve(options.outDir, 'trials.jsonl');
   await mkdir(options.outDir, { recursive: true });
 
+  // Realtime dataset (--dataset realtime): verify usable traffic exists BEFORE
+  // spawning any trials — evaluating zero cases would make every trial score 0
+  // and auto-apply garbage params to .env.
+  if (options.dataset === 'realtime') {
+    const { loadRealtimeDataset } = await import('./datasets/realtime');
+    const realtime = await loadRealtimeDataset();
+    if (realtime.cases.length === 0) {
+      console.error(
+        `[realtime] no usable evaluation cases in ${realtime.sourceFile} — ` +
+          'the snapshot is missing or contains no SearchQueryRecord with usedTool+usedToolRank. ' +
+          'Run the server to accumulate search traffic, then retry, or drop --dataset to use the synthetic fixture.',
+      );
+      process.exit(1);
+    }
+    console.log(
+      `[realtime] evaluating against ${realtime.cases.length} real-traffic cases from ${realtime.sourceFile}`,
+    );
+  }
+
   // Clear old results
   await writeFile(outFile, '', 'utf-8');
 
@@ -482,7 +540,7 @@ async function orchestrate(): Promise<void> {
     p1Specs.push({
       trialId: `p1-${String(i).padStart(4, '0')}`,
       phase: 1,
-      dataset: 'search-quality',
+      dataset: options.dataset === 'realtime' ? 'realtime' : 'search-quality',
       params: params as Record<string, number>,
       seed: options.seed + i,
     });
@@ -508,7 +566,7 @@ async function orchestrate(): Promise<void> {
       p2Specs.push({
         trialId: `p2-${String(p2idx).padStart(4, '0')}`,
         phase: 2,
-        dataset: 'search-quality',
+        dataset: options.dataset === 'realtime' ? 'realtime' : 'search-quality',
         params: params as Record<string, number>,
         seed: options.seed + 10000 + p2idx,
       });
@@ -539,7 +597,7 @@ async function orchestrate(): Promise<void> {
     p3Specs.push({
       trialId: `p3-${String(i).padStart(4, '0')}`,
       phase: 3,
-      dataset: 'profile-tier',
+      dataset: options.dataset === 'realtime' ? 'realtime' : 'profile-tier',
       params: merged as Record<string, number>,
       seed: options.seed + 20000 + i,
     });
@@ -563,7 +621,7 @@ async function orchestrate(): Promise<void> {
     p4Specs.push({
       trialId: `p4-${String(i).padStart(4, '0')}`,
       phase: 4,
-      dataset: 'rerank-state',
+      dataset: options.dataset === 'realtime' ? 'realtime' : 'rerank-state',
       params: merged as Record<string, number>,
       seed: options.seed + 30000 + i,
     });

@@ -25,7 +25,8 @@ export type SearchCaseTag =
   | 'binary-instrument'
   | 'adb-bridge'
   | 'mojo-ipc'
-  | 'syscall-hook';
+  | 'syscall-hook'
+  | 'realtime';
 
 export interface SearchExpectation {
   readonly tool: string;
