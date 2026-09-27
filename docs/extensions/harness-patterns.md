@@ -52,7 +52,7 @@ export default defineWorkflow(
         steps: [
           {
             pattern: "analyze|investigate|recover",
-            tools: ["analysis_understand_code", "trace_export"],
+            tools: ["understand_code", "trace_record"],
           },
         ],
       })
@@ -72,12 +72,12 @@ export default defineWorkflow(
                           .step(
                             toolStep(
                               "route-a",
-                              "analysis_understand_code",
+                              "understand_code",
                               (t) => t.input({ mode: "route-a" }),
                             ),
                           )
                           .step(
-                            toolStep("route-b", "trace_export", (t) =>
+                            toolStep("route-b", "trace_record", (t) =>
                               t.input({ mode: "route-b" }),
                             ),
                           )
@@ -94,7 +94,7 @@ export default defineWorkflow(
                     .whenFalse(
                       toolStep(
                         "fallback-route",
-                        "analysis_understand_code",
+                        "understand_code",
                         (t) => t.input({ mode: "single" }),
                       ),
                     ),
@@ -143,8 +143,8 @@ export default defineWorkflow(
                   .step(
                     sequenceStep("cand-1", (c1) =>
                       c1
-                        .tool("produce-1", "analysis_understand_code")
-                        .tool("falsify-1", "debugger_disassemble", (t) =>
+                        .tool("produce-1", "understand_code")
+                        .tool("falsify-1", "debugger_step", (t) =>
                           t.input({ attack: "find-flaws" }),
                         ),
                     ),
@@ -153,8 +153,8 @@ export default defineWorkflow(
                   .step(
                     sequenceStep("cand-2", (c2) =>
                       c2
-                        .tool("produce-2", "trace_export")
-                        .tool("falsify-2", "protocol_analyze", (t) =>
+                        .tool("produce-2", "trace_record")
+                        .tool("falsify-2", "proto_auto_detect", (t) =>
                           t.input({ attack: "find-flaws" }),
                         ),
                     ),
@@ -213,10 +213,10 @@ export default defineWorkflow(
                       .step(
                         parallelStep("subproblems", (sp) =>
                           sp
-                            .step(toolStep("sub-a", "trace_export"))
-                            .step(toolStep("sub-b", "network_capture"))
+                            .step(toolStep("sub-a", "trace_record"))
+                            .step(toolStep("sub-b", "network_enable"))
                             .step(
-                              toolStep("sub-c", "analysis_understand_code"),
+                              toolStep("sub-c", "understand_code"),
                             ),
                         ),
                       )
