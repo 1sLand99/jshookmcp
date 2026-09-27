@@ -190,159 +190,171 @@ interface CapturedRequest {
   postData?: string;
 }
 
+/** Push a finding unless an identical prefix was already recorded for this source. */
+function pushAuthFinding(
+  findings: AuthFinding[],
+  seen: Set<string>,
+  dedupeKey: string,
+  finding: AuthFinding,
+): void {
+  if (seen.has(dedupeKey)) return;
+  seen.add(dedupeKey);
+  findings.push(finding);
+}
+
+/** Signing-scheme hits first, then generic auth headers, with Cookie split per cookie. */
+function collectHeaderFindings(
+  req: CapturedRequest,
+  findings: AuthFinding[],
+  seen: Set<string>,
+): void {
+  const headers = req.headers ?? {};
+  const consumedHeaderKeys = new Set<string>();
+  for (const match of matchSigningHeaders(headers)) {
+    consumedHeaderKeys.add(match.header.toLowerCase());
+    pushAuthFinding(findings, seen, `signature:${match.scheme}:${match.value.slice(0, 8)}`, {
+      header: match.header,
+      value_masked: maskSecret(match.value),
+      request_url: req.url,
+      confidence: match.confidence,
+      source: 'signature',
+      scheme: match.scheme,
+    });
+  }
+
+  for (const [k, v] of Object.entries(headers)) {
+    const lk = k.toLowerCase();
+    if (!AUTH_HEADER_KEYS.includes(lk)) continue;
+    if (consumedHeaderKeys.has(lk)) continue;
+    if (!v || v.length < 4) continue;
+
+    if (lk === 'cookie') {
+      for (const part of v.split(';')) {
+        const eqIdx = part.indexOf('=');
+        if (eqIdx === -1) continue;
+        const name = part.slice(0, eqIdx).trim();
+        const val = part.slice(eqIdx + 1).trim();
+        if (!val || val.length < 8) continue;
+        pushAuthFinding(findings, seen, `cookie:${name}:${val.slice(0, 8)}`, {
+          header: `cookie[${name}]`,
+          value_masked: maskSecret(val),
+          request_url: req.url,
+          confidence: scoreValue(val),
+          source: 'cookie',
+        });
+      }
+      continue;
+    }
+
+    pushAuthFinding(findings, seen, `header:${lk}:${v.slice(0, 8)}`, {
+      header: k,
+      value_masked: maskSecret(v),
+      request_url: req.url,
+      confidence: scoreValue(v),
+      source: 'header',
+    });
+  }
+}
+
+/** Signing params and token-like query params. Invalid URLs contribute nothing. */
+function collectQueryFindings(
+  req: CapturedRequest,
+  findings: AuthFinding[],
+  seen: Set<string>,
+): void {
+  let u: URL;
+  try {
+    u = new URL(req.url);
+  } catch {
+    return;
+  }
+
+  for (const match of matchSigningQueryParams(u.searchParams)) {
+    pushAuthFinding(findings, seen, `signature:${match.scheme}:${match.value.slice(0, 8)}`, {
+      header: match.header,
+      value_masked: maskSecret(match.value),
+      request_url: req.url,
+      confidence: match.confidence * 0.9,
+      source: 'signature',
+      scheme: match.scheme,
+    });
+  }
+
+  for (const [k, v] of u.searchParams.entries()) {
+    if (!TOKEN_BODY_KEYS.test(k)) continue;
+    if (!v || v.length < 8) continue;
+    pushAuthFinding(findings, seen, `query:${k}:${v.slice(0, 8)}`, {
+      header: k,
+      value_masked: maskSecret(v),
+      request_url: req.url,
+      confidence: scoreValue(v) * 0.9,
+      source: 'query',
+    });
+  }
+}
+
+/**
+ * JSON first, then form-urlencoded (e.g. an OAuth2 token endpoint's
+ * `grant_type=...&client_assertion=...`). Signature fields are recognised
+ * before the generic token sweep.
+ */
+function collectBodyFindings(
+  req: CapturedRequest,
+  findings: AuthFinding[],
+  seen: Set<string>,
+): void {
+  if (!req.postData) return;
+
+  let bodyEntries: Map<string, string> | null = null;
+  try {
+    const parsed = JSON.parse(req.postData);
+    if (parsed && typeof parsed === 'object') {
+      bodyEntries = new Map<string, string>();
+      for (const [k, v] of Object.entries(parsed)) {
+        if (typeof v === 'string') bodyEntries.set(k, v);
+      }
+      if (bodyEntries.size === 0) bodyEntries = null;
+    }
+  } catch {
+    // not JSON — try form-urlencoded below
+  }
+  if (!bodyEntries) {
+    bodyEntries = parseFormBody(req.postData);
+  }
+  if (!bodyEntries) return;
+
+  for (const match of matchSigningBodyFields(bodyEntries)) {
+    pushAuthFinding(findings, seen, `signature:${match.scheme}:${match.value.slice(0, 8)}`, {
+      header: match.header,
+      value_masked: maskSecret(match.value),
+      request_url: req.url,
+      confidence: match.confidence * 0.85,
+      source: 'signature',
+      scheme: match.scheme,
+    });
+  }
+
+  for (const [k, v] of bodyEntries) {
+    if (!TOKEN_BODY_KEYS.test(k)) continue;
+    if (typeof v !== 'string' || v.length < 8) continue;
+    pushAuthFinding(findings, seen, `body:${k}:${v.slice(0, 8)}`, {
+      header: k,
+      value_masked: maskSecret(v),
+      request_url: req.url,
+      confidence: scoreValue(v) * 0.85,
+      source: 'body',
+    });
+  }
+}
+
 export function extractAuthFromRequests(requests: CapturedRequest[]): AuthFinding[] {
   const findings: AuthFinding[] = [];
   const seen = new Set<string>();
 
   for (const req of requests) {
-    const headers = req.headers ?? {};
-
-    // ── Signing-scheme recognition (runs before generic extraction so signature
-    // values are surfaced as high-confidence findings with a named scheme, and
-    // their header keys are marked as consumed to avoid a duplicate generic hit).
-    const consumedHeaderKeys = new Set<string>();
-    for (const match of matchSigningHeaders(headers)) {
-      consumedHeaderKeys.add(match.header.toLowerCase());
-      const dedupeKey = `signature:${match.scheme}:${match.value.slice(0, 8)}`;
-      if (seen.has(dedupeKey)) continue;
-      seen.add(dedupeKey);
-      findings.push({
-        header: match.header,
-        value_masked: maskSecret(match.value),
-        request_url: req.url,
-        confidence: match.confidence,
-        source: 'signature',
-        scheme: match.scheme,
-      });
-    }
-
-    for (const [k, v] of Object.entries(headers)) {
-      const lk = k.toLowerCase();
-      if (!AUTH_HEADER_KEYS.includes(lk)) continue;
-      if (consumedHeaderKeys.has(lk)) continue;
-      if (!v || v.length < 4) continue;
-
-      // For Cookie header, extract individual cookies
-      if (lk === 'cookie') {
-        for (const part of v.split(';')) {
-          const eqIdx = part.indexOf('=');
-          if (eqIdx === -1) continue;
-          const name = part.slice(0, eqIdx).trim();
-          const val = part.slice(eqIdx + 1).trim();
-          if (!val || val.length < 8) continue;
-          const dedupeKey = `cookie:${name}:${val.slice(0, 8)}`;
-          if (seen.has(dedupeKey)) continue;
-          seen.add(dedupeKey);
-          findings.push({
-            header: `cookie[${name}]`,
-            value_masked: maskSecret(val),
-            request_url: req.url,
-            confidence: scoreValue(val),
-            source: 'cookie',
-          });
-        }
-        continue;
-      }
-
-      const dedupeKey = `header:${lk}:${v.slice(0, 8)}`;
-      if (seen.has(dedupeKey)) continue;
-      seen.add(dedupeKey);
-      findings.push({
-        header: k,
-        value_masked: maskSecret(v),
-        request_url: req.url,
-        confidence: scoreValue(v),
-        source: 'header',
-      });
-    }
-
-    try {
-      const u = new URL(req.url);
-
-      for (const match of matchSigningQueryParams(u.searchParams)) {
-        const dedupeKey = `signature:${match.scheme}:${match.value.slice(0, 8)}`;
-        if (seen.has(dedupeKey)) continue;
-        seen.add(dedupeKey);
-        findings.push({
-          header: match.header,
-          value_masked: maskSecret(match.value),
-          request_url: req.url,
-          confidence: match.confidence * 0.9,
-          source: 'signature',
-          scheme: match.scheme,
-        });
-      }
-
-      for (const [k, v] of u.searchParams.entries()) {
-        if (!TOKEN_BODY_KEYS.test(k)) continue;
-        if (!v || v.length < 8) continue;
-        const dedupeKey = `query:${k}:${v.slice(0, 8)}`;
-        if (seen.has(dedupeKey)) continue;
-        seen.add(dedupeKey);
-        findings.push({
-          header: k,
-          value_masked: maskSecret(v),
-          request_url: req.url,
-          confidence: scoreValue(v) * 0.9,
-          source: 'query',
-        });
-      }
-    } catch {
-      // invalid URL, skip
-    }
-
-    if (req.postData) {
-      // Try JSON first, then fall back to form-urlencoded (e.g. OAuth2 token
-      // endpoint `grant_type=...&client_assertion=...`). Signature findings
-      // from either body shape are recognised before the generic token sweep.
-      let bodyEntries: Map<string, string> | null = null;
-      try {
-        const parsed = JSON.parse(req.postData);
-        if (parsed && typeof parsed === 'object') {
-          bodyEntries = new Map<string, string>();
-          for (const [k, v] of Object.entries(parsed)) {
-            if (typeof v === 'string') bodyEntries.set(k, v);
-          }
-          if (bodyEntries.size === 0) bodyEntries = null;
-        }
-      } catch {
-        // not JSON — try form-urlencoded below
-      }
-      if (!bodyEntries) {
-        bodyEntries = parseFormBody(req.postData);
-      }
-
-      if (bodyEntries) {
-        for (const match of matchSigningBodyFields(bodyEntries)) {
-          const dedupeKey = `signature:${match.scheme}:${match.value.slice(0, 8)}`;
-          if (seen.has(dedupeKey)) continue;
-          seen.add(dedupeKey);
-          findings.push({
-            header: match.header,
-            value_masked: maskSecret(match.value),
-            request_url: req.url,
-            confidence: match.confidence * 0.85,
-            source: 'signature',
-            scheme: match.scheme,
-          });
-        }
-
-        for (const [k, v] of bodyEntries) {
-          if (!TOKEN_BODY_KEYS.test(k)) continue;
-          if (typeof v !== 'string' || v.length < 8) continue;
-          const dedupeKey = `body:${k}:${v.slice(0, 8)}`;
-          if (seen.has(dedupeKey)) continue;
-          seen.add(dedupeKey);
-          findings.push({
-            header: k,
-            value_masked: maskSecret(v),
-            request_url: req.url,
-            confidence: scoreValue(v) * 0.85,
-            source: 'body',
-          });
-        }
-      }
-    }
+    collectHeaderFindings(req, findings, seen);
+    collectQueryFindings(req, findings, seen);
+    collectBodyFindings(req, findings, seen);
   }
 
   return findings.toSorted((a, b) => b.confidence - a.confidence);

@@ -141,6 +141,138 @@ async function dispatchMetaTool(
   }
 }
 
+/**
+ * Accept three argument formats, plus a flat spread:
+ * 1. { args: { ... } }        — schema-defined name
+ * 2. { parameters: "{...}" }  — JSON-serialized string (some MCP clients)
+ * 3. { arguments: "{...}" }   — MCP clients that stringify the wrapper
+ * 4. { url: ..., method: ... } — spread flat (params are top-level keys)
+ *
+ * The arguments wrapper is never silently dropped: the client sent it
+ * explicitly, so an unusable value is reported instead of invoking the tool
+ * with empty arguments.
+ */
+/** A plain object argument wrapper, or null when the value is not one. */
+function asArgsObject(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/** The `parameters` wrapper accepts an object or a JSON string, never an error. */
+function parseParametersWrapper(value: unknown): Record<string, unknown> {
+  const asObject = asArgsObject(value);
+  if (asObject) return asObject;
+  if (typeof value !== 'string' || value.trim().length === 0) return {};
+  try {
+    const parsed = asArgsObject(JSON.parse(value));
+    return parsed ?? {};
+  } catch {
+    /* malformed parameters JSON — treated as no arguments */
+    return {};
+  }
+}
+
+/**
+ * The `arguments` wrapper is never silently dropped: the client sent it
+ * explicitly, so an unusable value is reported instead of calling the tool
+ * with empty arguments.
+ */
+function parseArgumentsWrapper(value: unknown): {
+  toolArgs: Record<string, unknown>;
+  wrapperError: string | null;
+} {
+  if (typeof value === 'string') {
+    if (value.trim().length === 0) {
+      return { toolArgs: {}, wrapperError: 'arguments must be a non-empty JSON string' };
+    }
+    try {
+      const parsed = asArgsObject(JSON.parse(value));
+      return parsed
+        ? { toolArgs: parsed, wrapperError: null }
+        : { toolArgs: {}, wrapperError: 'arguments must decode to a JSON object' };
+    } catch {
+      return { toolArgs: {}, wrapperError: 'arguments must be valid JSON' };
+    }
+  }
+  const asObject = asArgsObject(value);
+  return asObject
+    ? { toolArgs: asObject, wrapperError: null }
+    : { toolArgs: {}, wrapperError: 'arguments must be a JSON object or a JSON string' };
+}
+
+function resolveCallToolArgs(args: Record<string, unknown>): {
+  toolArgs: Record<string, unknown>;
+  wrapperError: string | null;
+} {
+  let toolArgs: Record<string, unknown> = {};
+  let wrapperError: string | null = null;
+
+  const argsObject = asArgsObject(args.args);
+  if (argsObject) {
+    toolArgs = argsObject;
+  } else if (args.parameters !== undefined) {
+    toolArgs = parseParametersWrapper(args.parameters);
+  } else if (args.arguments !== undefined) {
+    ({ toolArgs, wrapperError } = parseArgumentsWrapper(args.arguments));
+  }
+
+  // Format 4 only applies when none of the three wrappers was provided.
+  if (
+    Object.keys(toolArgs).length === 0 &&
+    !('args' in args) &&
+    !('parameters' in args) &&
+    !('arguments' in args)
+  ) {
+    for (const [k, v] of Object.entries(args)) {
+      if (k !== 'name') {
+        toolArgs[k] = v;
+      }
+    }
+  }
+
+  return { toolArgs, wrapperError };
+}
+
+/**
+ * Activate a known-but-unregistered tool so clients that cannot see
+ * tools/list_changed (and search-tier sessions) can still call it. Returns
+ * false when the tool is absent from the catalog or the registry is down.
+ */
+async function autoActivateCallTool(
+  ctx: MCPServerContext,
+  name: string,
+  searchCatalog: Awaited<ReturnType<typeof loadSearchCatalog>>,
+  callMetadata: ReturnType<typeof buildCallToolMetadata>,
+): Promise<boolean> {
+  try {
+    const catalogEntry = searchCatalog.entryByName.get(name);
+    if (!catalogEntry) return false;
+    const { activateToolNames } = await import('@server/MCPServer.search.handlers.activate');
+    const domain = catalogEntry.domain;
+    if (domain && !ctx.enabledDomains.has(domain)) {
+      const { handleActivateDomain } = await import('@server/MCPServer.search.handlers.domain');
+      try {
+        await handleActivateDomain(ctx, {
+          domain,
+          ttlMinutes: (await import('@src/constants')).ACTIVATION_TTL_MINUTES,
+        });
+      } catch {
+        /* fall through to individual activation */
+      }
+    }
+    if (!ctx.router.has(name)) {
+      await activateToolNames(ctx, [name]);
+    }
+    callMetadata.wasAutoActivated = true;
+    callMetadata.activatedTools = [name];
+    return true;
+  } catch {
+    /* registry not initialised — fall through to error */
+    return false;
+  }
+}
+
 export async function handleCallTool(
   ctx: MCPServerContext,
   args: Record<string, unknown>,
@@ -160,76 +292,7 @@ export async function handleCallTool(
   }
 
   const name = normalizeToolName(rawName);
-  // Accept three argument formats:
-  // 1. { args: { ... } }                — schema-defined name
-  // 2. { parameters: "{...}" }          — JSON-serialized string (some MCP clients)
-  // 3. { arguments: "{...}" }           — MCP clients that stringify the wrapper
-  // 4. { url: ..., method: ... }        — spread flat (params are top-level keys, no wrapper)
-  let toolArgs: Record<string, unknown> = {};
-  let wrapperError: string | null = null;
-  const argsValue = args.args;
-  const parametersValue = args.parameters;
-  const argumentsValue = args.arguments;
-
-  if (argsValue && typeof argsValue === 'object' && !Array.isArray(argsValue)) {
-    toolArgs = argsValue as Record<string, unknown>;
-  } else if (parametersValue !== undefined) {
-    if (parametersValue && typeof parametersValue === 'object' && !Array.isArray(parametersValue)) {
-      toolArgs = parametersValue as Record<string, unknown>;
-    } else if (typeof parametersValue === 'string' && parametersValue.trim().length > 0) {
-      try {
-        const parsed = JSON.parse(parametersValue);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          toolArgs = parsed as Record<string, unknown>;
-        }
-      } catch {
-        /* malformed parameters JSON — treated as no arguments */
-      }
-    }
-  } else if (argumentsValue !== undefined) {
-    // The arguments wrapper must never be silently dropped: the client
-    // explicitly sent it, so an unusable value is reported instead of
-    // invoking the tool with empty arguments.
-    if (typeof argumentsValue === 'string') {
-      if (argumentsValue.trim().length === 0) {
-        wrapperError = 'arguments must be a non-empty JSON string';
-      } else {
-        try {
-          const parsed = JSON.parse(argumentsValue);
-          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-            toolArgs = parsed as Record<string, unknown>;
-          } else {
-            wrapperError = 'arguments must decode to a JSON object';
-          }
-        } catch {
-          wrapperError = 'arguments must be valid JSON';
-        }
-      }
-    } else if (
-      argumentsValue &&
-      typeof argumentsValue === 'object' &&
-      !Array.isArray(argumentsValue)
-    ) {
-      toolArgs = argumentsValue as Record<string, unknown>;
-    } else {
-      wrapperError = 'arguments must be a JSON object or a JSON string';
-    }
-  }
-
-  // Format 4 (spread flat): only when neither args, parameters, nor arguments was
-  // provided, and no wrapper was successfully parsed — collect remaining keys as tool arguments.
-  if (
-    Object.keys(toolArgs).length === 0 &&
-    !('args' in args) &&
-    !('parameters' in args) &&
-    !('arguments' in args)
-  ) {
-    for (const [k, v] of Object.entries(args)) {
-      if (k !== 'name') {
-        toolArgs[k] = v;
-      }
-    }
-  }
+  const { toolArgs, wrapperError } = resolveCallToolArgs(args);
 
   if (wrapperError && Object.keys(toolArgs).length === 0) {
     return asTextResponse(
@@ -258,33 +321,7 @@ export async function handleCallTool(
   // but not yet activated (e.g., when search returned 0 results and domain
   // fallback activation was triggered).
   if (!ctx.router.has(name)) {
-    let autoActivated = false;
-    try {
-      const catalogEntry = searchCatalog.entryByName.get(name);
-      if (catalogEntry) {
-        const { activateToolNames } = await import('@server/MCPServer.search.handlers.activate');
-        const domain = catalogEntry.domain;
-        if (domain && !ctx.enabledDomains.has(domain)) {
-          const { handleActivateDomain } = await import('@server/MCPServer.search.handlers.domain');
-          try {
-            await handleActivateDomain(ctx, {
-              domain,
-              ttlMinutes: (await import('@src/constants')).ACTIVATION_TTL_MINUTES,
-            });
-          } catch {
-            /* fall through to individual activation */
-          }
-        }
-        if (!ctx.router.has(name)) {
-          await activateToolNames(ctx, [name]);
-        }
-        callMetadata.wasAutoActivated = true;
-        callMetadata.activatedTools = [name];
-        autoActivated = true;
-      }
-    } catch {
-      /* registry not initialised — fall through to error */
-    }
+    const autoActivated = await autoActivateCallTool(ctx, name, searchCatalog, callMetadata);
 
     if (!autoActivated) {
       return asTextResponse(

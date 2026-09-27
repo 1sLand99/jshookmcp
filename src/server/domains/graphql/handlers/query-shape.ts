@@ -120,165 +120,191 @@ function detectCycle(fragmentRefs: Map<string, string[]>): boolean {
   return false;
 }
 
+interface QueryScanState {
+  operationType: GraphQLOperationType;
+  operationName: string | null;
+  depth: number;
+  breadthByLevel: number[];
+  totalFields: number;
+  parenDepth: number;
+  bracketDepth: number;
+  lastToken: string;
+  inFragmentBody: boolean;
+  currentFragmentName: string | null;
+  fragmentDefinitions: number;
+  spreads: number;
+  inlineFragments: number;
+  fragmentRefs: Map<string, string[]>;
+}
+
+function createQueryScanState(): QueryScanState {
+  return {
+    operationType: 'unknown',
+    operationName: null,
+    depth: -1,
+    breadthByLevel: [],
+    totalFields: 0,
+    parenDepth: 0,
+    bracketDepth: 0,
+    lastToken: '',
+    inFragmentBody: false,
+    currentFragmentName: null,
+    fragmentDefinitions: 0,
+    spreads: 0,
+    inlineFragments: 0,
+    fragmentRefs: new Map<string, string[]>(),
+  };
+}
+
+/** Delimiter tokens adjust depth and never count as fields. Returns true when consumed. */
+function consumeDelimiter(state: QueryScanState, token: string): boolean {
+  switch (token) {
+    case '(':
+      state.parenDepth += 1;
+      break;
+    case ')':
+      if (state.parenDepth > 0) state.parenDepth -= 1;
+      break;
+    case '[':
+      state.bracketDepth += 1;
+      break;
+    case ']':
+      if (state.bracketDepth > 0) state.bracketDepth -= 1;
+      break;
+    case '{':
+      state.depth += 1;
+      if (state.breadthByLevel[state.depth] === undefined) state.breadthByLevel[state.depth] = 0;
+      break;
+    case '}':
+      if (state.depth === 0 && state.inFragmentBody) {
+        state.inFragmentBody = false;
+        state.currentFragmentName = null;
+      }
+      if (state.depth >= 0) state.depth -= 1;
+      break;
+    case ',':
+      break;
+    default:
+      return false;
+  }
+  state.lastToken = token;
+  return true;
+}
+
+/** `...Name` spreads and `... on Type` inline fragments. Returns true when consumed. */
+function consumeSpread(state: QueryScanState, tokens: string[], index: number): boolean {
+  if (tokens[index] !== '...') return false;
+  const next = tokens[index + 1];
+  if (next === 'on') {
+    state.inlineFragments += 1;
+  } else if (next !== undefined && IDENT_RE.test(next) && state.currentFragmentName) {
+    state.spreads += 1;
+    const refs = state.fragmentRefs.get(state.currentFragmentName) ?? [];
+    refs.push(next);
+    state.fragmentRefs.set(state.currentFragmentName, refs);
+  } else if (next !== undefined && IDENT_RE.test(next)) {
+    state.spreads += 1;
+  }
+  state.lastToken = '...';
+  return true;
+}
+
+/**
+ * Operation keyword and name, plus `fragment Name on Type`. Only the first
+ * significant token can open the operation — GraphQL requires it (or the
+ * shorthand `{`) at the document start. Returns true when consumed.
+ */
+function consumeDefinition(state: QueryScanState, tokens: string[], index: number): boolean {
+  const token = tokens[index];
+  if (token === undefined) return false;
+
+  if (index === 0 && OPERATION_KEYWORDS.has(token)) {
+    state.operationType = token as GraphQLOperationType;
+    state.lastToken = token;
+    return true;
+  }
+
+  if (OPERATION_KEYWORDS.has(state.lastToken) && IDENT_RE.test(token)) {
+    state.operationName = token;
+    state.lastToken = token;
+    return true;
+  }
+
+  if (token === 'fragment' && state.depth < 0) {
+    const next = tokens[index + 1];
+    if (next && IDENT_RE.test(next) && next !== 'on') {
+      state.currentFragmentName = next;
+      state.fragmentDefinitions += 1;
+      state.fragmentRefs.set(next, []);
+      state.inFragmentBody = true; // armed; the body brace is consumed next
+    }
+    state.lastToken = 'fragment';
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * A follower identifier inside the operation body is a field unless the prior
+ * token marks it as an alias target (`:`), a type name (`on`), or a directive
+ * (`@`). Fragment bodies feed cycle detection instead of breadth.
+ */
+function consumeField(state: QueryScanState, token: string): void {
+  if (
+    state.depth >= 0 &&
+    !state.inFragmentBody &&
+    IDENT_RE.test(token) &&
+    !NON_FIELD_PRIOR.has(state.lastToken)
+  ) {
+    if (state.operationType === 'unknown') state.operationType = 'query'; // shorthand `{ ... }`
+    state.breadthByLevel[state.depth] = (state.breadthByLevel[state.depth] ?? 0) + 1;
+    state.totalFields += 1;
+  }
+  state.lastToken = token;
+}
+
 export function analyzeQueryShape(query: string): QueryShape {
   const stripped = stripLiterals(typeof query === 'string' ? query : '');
   const tokens = tokenize(stripped);
-
-  let operationType: GraphQLOperationType = 'unknown';
-  let operationName: string | null = null;
-
-  let depth = -1;
-  const breadthByLevel: number[] = [];
-  let totalFields = 0;
-
-  let parenDepth = 0;
-  let bracketDepth = 0;
-  let lastToken = '';
-
-  // Fragment bodies are tracked separately: their fields do not inflate the
-  // operation breadth, but their spreads feed cycle detection.
-  let inFragmentBody = false;
-  let currentFragmentName: string | null = null;
-  let fragmentDefinitions = 0;
-  let spreads = 0;
-  let inlineFragments = 0;
-  const fragmentRefs = new Map<string, string[]>();
+  const state = createQueryScanState();
 
   for (let i = 0; i < tokens.length; i += 1) {
     const token = tokens[i];
     if (!token) continue;
-
-    if (token === '(') {
-      parenDepth += 1;
-      lastToken = '(';
-      continue;
-    }
-    if (token === ')') {
-      if (parenDepth > 0) parenDepth -= 1;
-      lastToken = ')';
-      continue;
-    }
-    if (token === '[') {
-      bracketDepth += 1;
-      lastToken = '[';
-      continue;
-    }
-    if (token === ']') {
-      if (bracketDepth > 0) bracketDepth -= 1;
-      lastToken = ']';
-      continue;
-    }
-    if (parenDepth > 0 || bracketDepth > 0) continue;
-
-    if (token === '{') {
-      depth += 1;
-      if (breadthByLevel[depth] === undefined) breadthByLevel[depth] = 0;
-      lastToken = '{';
-      continue;
-    }
-    if (token === '}') {
-      if (depth === 0 && inFragmentBody) {
-        inFragmentBody = false;
-        currentFragmentName = null;
-      }
-      if (depth >= 0) depth -= 1;
-      lastToken = '}';
-      continue;
-    }
-    if (token === ',') {
-      lastToken = ',';
-      continue;
-    }
-    if (token === '...') {
-      const next = tokens[i + 1];
-      if (next === 'on') {
-        inlineFragments += 1;
-      } else if (next !== undefined && IDENT_RE.test(next)) {
-        spreads += 1;
-        if (currentFragmentName) {
-          const refs = fragmentRefs.get(currentFragmentName) ?? [];
-          refs.push(next);
-          fragmentRefs.set(currentFragmentName, refs);
-        }
-      }
-      lastToken = '...';
-      continue;
-    }
-
-    // Operation keyword — GraphQL requires the operation (or shorthand `{`)
-    // at the document start, so only the first significant token counts.
-    if (i === 0 && OPERATION_KEYWORDS.has(token)) {
-      operationType = token as GraphQLOperationType;
-      lastToken = token;
-      continue;
-    }
-
-    // Operation name follows the keyword.
-    if (OPERATION_KEYWORDS.has(lastToken) && IDENT_RE.test(token)) {
-      operationName = token;
-      lastToken = token;
-      continue;
-    }
-
-    // Fragment definition: `fragment Name on Type { ... }` (may follow the operation).
-    if (token === 'fragment' && depth < 0) {
-      const next = tokens[i + 1];
-      if (next && IDENT_RE.test(next) && next !== 'on') {
-        currentFragmentName = next;
-        fragmentDefinitions += 1;
-        fragmentRefs.set(next, []);
-        inFragmentBody = true; // armed; the body brace is consumed next
-      }
-      lastToken = 'fragment';
-      continue;
-    }
-
+    if (consumeDelimiter(state, token)) continue;
+    if (state.parenDepth > 0 || state.bracketDepth > 0) continue;
+    if (consumeSpread(state, tokens, i)) continue;
+    if (consumeDefinition(state, tokens, i)) continue;
     if (token === 'on' || token === '@') {
-      lastToken = token;
+      state.lastToken = token;
       continue;
     }
-
-    // Field counting — operation body only (fragment bodies feed cycle detection).
-    // A follower identifier is a field unless the prior token marks it as an
-    // alias target (`:`), a type name (`on`), or a directive (`@`). Sibling
-    // fields separated only by whitespace (no comma) are still counted.
-    if (depth >= 0 && !inFragmentBody && IDENT_RE.test(token)) {
-      if (NON_FIELD_PRIOR.has(lastToken)) {
-        lastToken = token;
-        continue;
-      }
-      if (operationType === 'unknown') operationType = 'query'; // shorthand `{ ... }`
-      breadthByLevel[depth] = (breadthByLevel[depth] ?? 0) + 1;
-      totalFields += 1;
-      lastToken = token;
-      continue;
-    }
-
-    lastToken = token;
+    consumeField(state, token);
   }
 
   // Trim trailing zero levels left by deep-but-empty fragment bodies.
-  let realDepth = breadthByLevel.length;
-  while (realDepth > 0 && (breadthByLevel[realDepth - 1] ?? 0) === 0) {
+  let realDepth = state.breadthByLevel.length;
+  while (realDepth > 0 && (state.breadthByLevel[realDepth - 1] ?? 0) === 0) {
     realDepth -= 1;
   }
-  const trimmedBreadth = breadthByLevel.slice(0, realDepth);
+  const trimmedBreadth = state.breadthByLevel.slice(0, realDepth);
   const maxBreadth = trimmedBreadth.reduce((max, b) => (b > max ? b : max), 0);
   const costScore = trimmedBreadth.reduce((sum, b, level) => sum + b * (level + 1), 0);
 
   return {
-    operationType,
-    operationName,
+    operationType: state.operationType,
+    operationName: state.operationName,
     depth: realDepth,
     breadthByLevel: trimmedBreadth,
     maxBreadth,
-    totalFields,
+    totalFields: state.totalFields,
     costScore,
     fragments: {
-      definitions: fragmentDefinitions,
-      spreads,
-      inline: inlineFragments,
+      definitions: state.fragmentDefinitions,
+      spreads: state.spreads,
+      inline: state.inlineFragments,
     },
-    hasCycle: detectCycle(fragmentRefs),
+    hasCycle: detectCycle(state.fragmentRefs),
   };
 }

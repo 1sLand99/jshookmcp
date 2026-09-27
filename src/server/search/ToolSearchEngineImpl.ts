@@ -328,6 +328,149 @@ export class ToolSearchEngine {
     }
   }
 
+  /**
+   * When the query is verbose, keep only the tokens with the highest IDF.
+   * Rare tokens carry more signal; out-of-vocabulary tokens are noise.
+   */
+  private distillQueryTokens(queryTokens: string[]): string[] {
+    if (queryTokens.length <= 6) return queryTokens;
+    const inVocab = queryTokens.filter((t) => this.invertedIndex.has(t));
+    if (inVocab.length < 3) return queryTokens;
+    const scored = inVocab.map((t) => {
+      const df = this.invertedIndex.get(t)!.length;
+      const idf = Math.log((this.docCount - df + 0.5) / (df + 0.5) + 1);
+      return { token: t, idf };
+    });
+    scored.sort((a, b) => b.idf - a.idf);
+    const kept = new Set(scored.slice(0, 6).map((s) => s.token));
+    return queryTokens.filter((t) => kept.has(t));
+  }
+
+  /**
+   * If the query names a known tool and uses an invocation verb, return that
+   * tool so it can be promoted to top-1. Probes the name index with the
+   * query's n-grams instead of scanning every tool name.
+   */
+  private findExplicitToolMention(query: string): string | null {
+    const lower = query.toLowerCase();
+    const hasInvokeVerb = /(?:\b(?:call|use|run|invoke|execute)\b|调用|执行|使用|运行)/i.test(
+      lower,
+    );
+    if (!hasInvokeVerb) return null;
+
+    const wordCharIdent = /[a-z0-9_]/;
+    const wordCharPlain = /[a-z0-9]/;
+    const tokens = lower.split(/[^a-z0-9_]+/).filter((t) => t.length > 0);
+    const maxN = Math.min(tokens.length, 5);
+
+    let bestTool: string | null = null;
+    let bestIdx = Number.POSITIVE_INFINITY;
+
+    for (let n = 1; n <= maxN; n++) {
+      for (let start = 0; start <= tokens.length - n; start++) {
+        const candidate = tokens.slice(start, start + n).join('_');
+
+        let idx = -1;
+        if (this.docNameIndex.has(candidate)) {
+          idx = findDelimitedIndex(lower, candidate, wordCharIdent);
+        }
+        if (idx < 0 && n > 1) {
+          idx = findDelimitedIndex(lower, candidate.replace(/_/g, '-'), wordCharPlain);
+          if (idx < 0) {
+            idx = findDelimitedIndex(lower, candidate.replace(/_/g, ' '), wordCharPlain);
+          }
+        }
+        if (idx < 0) continue;
+
+        if (idx < bestIdx || (idx === bestIdx && candidate.length > (bestTool?.length ?? 0))) {
+          bestTool = candidate;
+          bestIdx = idx;
+        }
+      }
+    }
+
+    return bestTool;
+  }
+
+  /** Exact-name, coverage/precision, domain, category, and per-tool multipliers. */
+  private applyLexicalScoreAdjustments(
+    scores: Float64Array,
+    query: string,
+    queryTokens: string[],
+    intentToolBonuses: Map<string, number>,
+    categoryDomainBoosts: Map<string, number>,
+  ): void {
+    const queryNormalised = query.toLowerCase().replace(/[\s-]+/g, '_');
+    const queryTokenSet = new Set(queryTokens);
+
+    for (let i = 0; i < this.docCount; i++) {
+      const doc = this.docs[i]!;
+      const intentBonus = intentToolBonuses.get(doc.name) ?? 0;
+      if (scores[i]! <= 0 && intentBonus <= 0) continue;
+
+      if (doc.name === queryNormalised) {
+        scores[i]! *= SEARCH_EXACT_NAME_MATCH_MULTIPLIER;
+        continue;
+      }
+
+      let matchedCount = 0;
+      for (const qt of queryTokens) {
+        if (doc.nameTokenSet.has(qt)) matchedCount++;
+      }
+      if (matchedCount > 0 && doc.nameTokenCount > 0 && queryTokenSet.size > 0) {
+        const coverage = matchedCount / doc.nameTokenCount;
+        const precision = matchedCount / queryTokenSet.size;
+        scores[i]! *= 1 + SEARCH_COVERAGE_PRECISION_FACTOR * coverage * precision;
+      }
+
+      const domainMultiplier = doc.domain ? (this.domainScoreMultipliers?.get(doc.domain) ?? 1) : 1;
+      if (domainMultiplier !== 1) scores[i]! *= domainMultiplier;
+
+      if (doc.domain && categoryDomainBoosts.size > 0) {
+        const categoryBoost = categoryDomainBoosts.get(doc.domain);
+        if (categoryBoost !== undefined && categoryBoost > 1) scores[i]! *= categoryBoost;
+      }
+
+      const toolMultiplier = this.toolScoreMultipliers?.get(doc.name) ?? 1;
+      if (toolMultiplier !== 1) scores[i]! *= toolMultiplier;
+    }
+  }
+
+  /** Lift an explicitly named tool above everything else. */
+  private promoteExplicitMention(scores: Float64Array, explicitToolMention: string | null): void {
+    if (!explicitToolMention) return;
+    const explicitIdx = this.docNameIndex.get(explicitToolMention);
+    if (explicitIdx === undefined) return;
+    let maxScore = 0;
+    for (let i = 0; i < this.docCount; i++) {
+      if (scores[i]! > maxScore) maxScore = scores[i]!;
+    }
+    scores[explicitIdx]! += Math.max(1, maxScore + 1);
+  }
+
+  private collectRankedResults(
+    scores: Float64Array,
+    activeToolNames: ReadonlySet<string> | undefined,
+    topK: number,
+  ): ToolSearchResult[] {
+    const active = activeToolNames ?? new Set<string>();
+    const candidates: ToolSearchResult[] = [];
+    for (let i = 0; i < this.docCount; i++) {
+      if (scores[i]! > 0) {
+        const doc = this.docs[i]!;
+        candidates.push({
+          name: doc.name,
+          domain: doc.domain,
+          shortDescription: doc.shortDescription,
+          score: Math.round(scores[i]! * 1000) / 1000,
+          isActive: active.has(doc.name),
+        });
+      }
+    }
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates.slice(0, topK);
+  }
+
   async search(
     query: string,
     topK = 10,
@@ -337,8 +480,8 @@ export class ToolSearchEngine {
   ): Promise<ToolSearchResult[]> {
     const searchStartTime = performance.now();
 
-    // Tokenise without synonyms first, distill, then expand.
-    let queryTokens = this.bm25Scorer.tokenise(query);
+    // Tokenise without synonyms first, then keep only the most informative.
+    let queryTokens = this.distillQueryTokens(this.bm25Scorer.tokenise(query));
     if (queryTokens.length === 0) {
       return [];
     }
@@ -380,64 +523,8 @@ export class ToolSearchEngine {
       .filter((t) => !queryTokens.includes(t));
     queryTokens.push(...synonymTokens);
 
-    // ── Explicit tool name mention short-circuit (Scheme 1) ──
-    // If the user explicitly mentions a known tool name *and* uses an
-    // invocation verb, promote that tool to top-1.  Instead of scanning
-    // every tool name (O(N) indexOf per search), we reverse-index from
-    // the query: split into word tokens, generate consecutive n-grams,
-    // and probe docNameIndex in O(1).  Typical queries have 3-10 tokens,
-    // so the inner loop shrinks from 1096 iterations to ~25-55.
-    const explicitToolMention = (() => {
-      const lower = query.toLowerCase();
-      const hasInvokeVerb = /(?:\b(?:call|use|run|invoke|execute)\b|调用|执行|使用|运行)/i.test(
-        lower,
-      );
-      if (!hasInvokeVerb) return null;
+    const explicitToolMention = this.findExplicitToolMention(query);
 
-      const wordCharIdent = /[a-z0-9_]/;
-      const wordCharPlain = /[a-z0-9]/;
-
-      // Split on non-identifier characters, preserving snake_case tokens.
-      const tokens = lower.split(/[^a-z0-9_]+/).filter((t) => t.length > 0);
-      const maxN = Math.min(tokens.length, 5); // longest tool name has 5 segments
-
-      let bestTool: string | null = null;
-      let bestIdx = Number.POSITIVE_INFINITY;
-
-      for (let n = 1; n <= maxN; n++) {
-        for (let start = 0; start <= tokens.length - n; start++) {
-          const candidate = tokens.slice(start, start + n).join('_');
-
-          // Base snake_case form — if it's a known tool name, verify
-          // exact position with identifier-boundary matching.
-          let idx = -1;
-          if (this.docNameIndex.has(candidate)) {
-            idx = findDelimitedIndex(lower, candidate, wordCharIdent);
-          }
-
-          // Kebab-case / space-separated variants for multi-segment names.
-          if (idx < 0 && n > 1) {
-            const kebab = candidate.replace(/_/g, '-');
-            idx = findDelimitedIndex(lower, kebab, wordCharPlain);
-            if (idx < 0) {
-              const spaced = candidate.replace(/_/g, ' ');
-              idx = findDelimitedIndex(lower, spaced, wordCharPlain);
-            }
-          }
-
-          if (idx < 0) continue;
-
-          if (idx < bestIdx || (idx === bestIdx && candidate.length > (bestTool?.length ?? 0))) {
-            bestTool = candidate;
-            bestIdx = idx;
-          }
-        }
-      }
-
-      return bestTool;
-    })();
-
-    // ── Cache check (§4.3 CSAPC) — value-versioned invalidation ──
     // A cached entry stays valid while the live vector weight drifts within
     // SEARCH_CACHE_VECTOR_WEIGHT_TOLERANCE of the weight recorded at insert
     // time. Avoids the full flush that the previous epoch counter caused.
@@ -474,53 +561,14 @@ export class ToolSearchEngine {
 
     // ── Query category adaptive domain weights (§4.1.3 task-type encoding) ──
     const categoryDomainBoosts = this.bm25Scorer.detectQueryCategoryBoosts(query);
+    this.applyLexicalScoreAdjustments(
+      scores,
+      query,
+      queryTokens,
+      intentToolBonuses,
+      categoryDomainBoosts,
+    );
 
-    const queryNormalised = query.toLowerCase().replace(/[\s-]+/g, '_');
-    const queryTokenSet = new Set(queryTokens);
-
-    for (let i = 0; i < this.docCount; i++) {
-      const doc = this.docs[i]!;
-      const intentBonus = intentToolBonuses.get(doc.name) ?? 0;
-      if (scores[i]! <= 0 && intentBonus <= 0) continue;
-
-      if (doc.name === queryNormalised) {
-        scores[i]! *= SEARCH_EXACT_NAME_MATCH_MULTIPLIER;
-        continue;
-      }
-
-      // Reuse precomputed nameTokenSet
-      let matchedCount = 0;
-      for (const qt of queryTokens) {
-        if (doc.nameTokenSet.has(qt)) matchedCount++;
-      }
-
-      if (matchedCount > 0 && doc.nameTokenCount > 0 && queryTokenSet.size > 0) {
-        const coverage = matchedCount / doc.nameTokenCount;
-        const precision = matchedCount / queryTokenSet.size;
-        scores[i]! *= 1 + SEARCH_COVERAGE_PRECISION_FACTOR * coverage * precision;
-      }
-
-      // External domain multipliers (e.g. workflow boost from MCPServer.search)
-      const domainMultiplier = doc.domain ? (this.domainScoreMultipliers?.get(doc.domain) ?? 1) : 1;
-      if (domainMultiplier !== 1) {
-        scores[i]! *= domainMultiplier;
-      }
-
-      // Category-adaptive domain boost (internal, from query analysis)
-      if (doc.domain && categoryDomainBoosts.size > 0) {
-        const categoryBoost = categoryDomainBoosts.get(doc.domain);
-        if (categoryBoost !== undefined && categoryBoost > 1) {
-          scores[i]! *= categoryBoost;
-        }
-      }
-
-      const toolMultiplier = this.toolScoreMultipliers?.get(doc.name) ?? 1;
-      if (toolMultiplier !== 1) {
-        scores[i]! *= toolMultiplier;
-      }
-    }
-
-    // ── Curated intent-routing bonuses ──
     // Applied BEFORE graph expansion so intent-targeted tools contribute
     // to affinity / domain-hub expansion, preventing zero-score dead zone.
     this.applyIntentBonusBand(scores, intentToolBonuses);
@@ -537,42 +585,9 @@ export class ToolSearchEngine {
     // capabilities when lexical evidence is strong, but prevents them from
     // crowding the top of workflow/search tier results.
     this.applyTierPenalty(scores, visibleDomains, profile);
+    this.promoteExplicitMention(scores, explicitToolMention);
 
-    // ── Explicit tool mention promotion (Scheme 1) ──
-    if (explicitToolMention) {
-      const explicitIdx = this.docNameIndex.get(explicitToolMention);
-      if (explicitIdx !== undefined) {
-        let maxScore = 0;
-        for (let i = 0; i < this.docCount; i++) {
-          const s = scores[i]!;
-          if (s > maxScore) {
-            maxScore = s;
-          }
-        }
-        const bump = Math.max(1, maxScore + 1);
-        scores[explicitIdx]! += bump;
-      }
-    }
-
-    // ── Collect and sort results ──
-    const active = activeToolNames ?? new Set<string>();
-    const candidates: ToolSearchResult[] = [];
-
-    for (let i = 0; i < this.docCount; i++) {
-      if (scores[i]! > 0) {
-        const doc = this.docs[i]!;
-        candidates.push({
-          name: doc.name,
-          domain: doc.domain,
-          shortDescription: doc.shortDescription,
-          score: Math.round(scores[i]! * 1000) / 1000,
-          isActive: active.has(doc.name),
-        });
-      }
-    }
-
-    candidates.sort((a, b) => b.score - a.score);
-    let results = candidates.slice(0, topK);
+    let results = this.collectRankedResults(scores, activeToolNames, topK);
 
     // ── Re-ranker: rule-based precision re-ranking ──
     if (results.length > 1) {

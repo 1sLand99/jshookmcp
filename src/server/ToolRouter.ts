@@ -138,6 +138,95 @@ import { buildCallToolCommand, generateExampleArgs } from '@server/ToolRouter.re
 
 // ── Main Router Orchestrator ──
 
+/** Merge a promoted tool list ahead of the raw search results, dropping duplicates. */
+function promoteAheadOfSearch(
+  promoted: ToolSearchResult[],
+  searchResults: ToolSearchResult[],
+): ToolSearchResult[] {
+  const promotedNames = new Set(promoted.map((tool) => tool.name));
+  const otherResults = searchResults.filter((result) => !promotedNames.has(result.name));
+  return [...promoted, ...otherResults];
+}
+
+/**
+ * Turn a detected workflow, route, or cross-domain cluster into an ordered
+ * recommendation list. Falls back to the raw search results when nothing
+ * structural matched.
+ */
+function assembleRoutedResults(
+  task: string,
+  ctx: import('@server/MCPServer.context').MCPServerContext,
+  searchResults: ToolSearchResult[],
+  availableToolNames: Set<string>,
+  routingState: RoutingState,
+  workflow: WorkflowRule | null,
+  routeMatch: ReturnType<typeof matchWorkflowRoute>,
+  crossDomainPattern: ReturnType<typeof detectCrossDomainFromDependencies>,
+): { results: ToolSearchResult[]; presetPlannedToolNames: Set<string> | null } {
+  let presetPlannedToolNames: Set<string> | null = null;
+  let results: ToolSearchResult[];
+
+  if (crossDomainPattern) {
+    const workflowTools = crossDomainPattern.tools
+      .filter((name) => availableToolNames.has(name))
+      .map((name, index) => ({
+        name,
+        domain: getToolDomainFromContext(name, ctx),
+        shortDescription:
+          searchResults.find((r) => r.name === name)?.shortDescription ??
+          ctx.extensionToolsByName.get(name)?.tool.description ??
+          '',
+        score: crossDomainPattern.priority - index * 0.01,
+        isActive: isToolActive(name, ctx),
+      }));
+    results = promoteAheadOfSearch(workflowTools, searchResults);
+    logger.info('[ToolRouter] Cross-domain workflow detected', {
+      pattern: crossDomainPattern.id,
+      domains: crossDomainPattern.domains,
+    });
+  } else if (routeMatch?.workflow.route.kind === 'preset') {
+    const presetTools = buildPresetRecommendations(
+      routeMatch,
+      routingState,
+      ctx,
+      availableToolNames,
+    );
+    presetPlannedToolNames = new Set(presetTools.map((tool) => tool.name));
+    results = promoteAheadOfSearch(presetTools, searchResults);
+  } else if (routeMatch?.workflow.route.kind === 'workflow') {
+    const workflowResult = buildWorkflowRouteRecommendation(routeMatch, ctx);
+    results = promoteAheadOfSearch([workflowResult], searchResults);
+  } else if (workflow) {
+    const statelessWorkflow = isStatelessComputeTask(task);
+    const workflowSequence = buildWorkflowToolSequence(workflow, routingState, availableToolNames);
+    const workflowTools = workflowSequence.map((name, index) => ({
+      name,
+      domain: getToolDomainFromContext(name, ctx),
+      shortDescription:
+        searchResults.find((r) => r.name === name)?.shortDescription ??
+        ctx.extensionToolsByName.get(name)?.tool.description ??
+        '',
+      score: (statelessWorkflow ? 90 : workflow.priority) - index * 0.01,
+      isActive: isToolActive(name, ctx),
+    }));
+    results = promoteAheadOfSearch(workflowTools, searchResults);
+  } else if (task && !isBrowserOrNetworkTask(task, workflow) && !isMaintenanceTask(task)) {
+    const statelessRecommendations = buildStatelessComputeRecommendations(
+      task,
+      ctx,
+      availableToolNames,
+    );
+    results =
+      statelessRecommendations.length > 0
+        ? promoteAheadOfSearch(statelessRecommendations, searchResults)
+        : [...searchResults];
+  } else {
+    results = [...searchResults];
+  }
+
+  return { results, presetPlannedToolNames };
+}
+
 export async function routeToolRequest(
   request: RouterRequest,
   ctx: import('@server/MCPServer.context').MCPServerContext,
@@ -155,8 +244,6 @@ export async function routeToolRequest(
   const routingState = await getRoutingState(ctx);
   const availableToolNames = getAvailableToolNames(ctx);
   const routeMatch = matchWorkflowRoute(task, ctx);
-  let presetPlannedToolNames: Set<string> | null = null;
-
   const searchResults = await searchEngine.search(
     task,
     maxRecommendations * 2,
@@ -165,95 +252,32 @@ export async function routeToolRequest(
     getBaseTier(ctx),
   );
 
-  // ── Cross-domain structural workflow detection (§4.1.5) ──
-  // When no explicit workflow/route matched but top results cluster across
-  // complementary domains, infer a coordinated tool sequence from domain topology.
+  // When nothing structural matched, the raw search results stand.
   const crossDomainPattern =
     !routeMatch && !workflow
       ? detectCrossDomainFromDependencies(searchResults.slice(0, 10), availableToolNames)
       : null;
 
-  let finalResults: ToolSearchResult[] = [];
-  if (crossDomainPattern) {
-    const workflowTools = crossDomainPattern.tools
-      .filter((name) => availableToolNames.has(name))
-      .map((name, index) => ({
-        name,
-        domain: getToolDomainFromContext(name, ctx),
-        shortDescription:
-          searchResults.find((r) => r.name === name)?.shortDescription ??
-          ctx.extensionToolsByName.get(name)?.tool.description ??
-          '',
-        score: crossDomainPattern.priority - index * 0.01,
-        isActive: isToolActive(name, ctx),
-      }));
-
-    const workflowNames = new Set(crossDomainPattern.tools);
-    const otherResults = searchResults.filter((result) => !workflowNames.has(result.name));
-    finalResults = [...workflowTools, ...otherResults];
-    logger.info('[ToolRouter] Cross-domain workflow detected', {
-      pattern: crossDomainPattern.id,
-      domains: crossDomainPattern.domains,
-    });
-  } else if (routeMatch?.workflow.route.kind === 'preset') {
-    const presetTools = buildPresetRecommendations(
-      routeMatch,
-      routingState,
-      ctx,
-      availableToolNames,
-    );
-    presetPlannedToolNames = new Set(presetTools.map((tool) => tool.name));
-    const presetNames = new Set(presetTools.map((tool) => tool.name));
-    const otherResults = searchResults.filter((result) => !presetNames.has(result.name));
-    finalResults = [...presetTools, ...otherResults];
-  } else if (routeMatch?.workflow.route.kind === 'workflow') {
-    const workflowResult = buildWorkflowRouteRecommendation(routeMatch, ctx);
-    const otherResults = searchResults.filter((result) => result.name !== workflowResult.name);
-    finalResults = [workflowResult, ...otherResults];
-  } else if (workflow) {
-    const statelessWorkflow = isStatelessComputeTask(task);
-    const workflowSequence = buildWorkflowToolSequence(workflow, routingState, availableToolNames);
-    const workflowTools = workflowSequence.map((name, index) => ({
-      name,
-      domain: getToolDomainFromContext(name, ctx),
-      shortDescription:
-        searchResults.find((r) => r.name === name)?.shortDescription ??
-        ctx.extensionToolsByName.get(name)?.tool.description ??
-        '',
-      score: (statelessWorkflow ? 90 : workflow.priority) - index * 0.01,
-      isActive: isToolActive(name, ctx),
-    }));
-
-    const workflowNames = new Set(workflowSequence);
-    const otherResults = searchResults.filter((result) => !workflowNames.has(result.name));
-    finalResults = [...workflowTools, ...otherResults];
-  } else if (task && !isBrowserOrNetworkTask(task, workflow) && !isMaintenanceTask(task)) {
-    const statelessRecommendations = buildStatelessComputeRecommendations(
-      task,
-      ctx,
-      availableToolNames,
-    );
-    if (statelessRecommendations.length > 0) {
-      const statelessNames = new Set(statelessRecommendations.map((tool) => tool.name));
-      const otherResults = searchResults.filter((result) => !statelessNames.has(result.name));
-      finalResults = [...statelessRecommendations, ...otherResults];
-    } else {
-      finalResults = [...searchResults];
-    }
-  } else {
-    finalResults = [...searchResults];
-  }
+  const assembled = assembleRoutedResults(
+    task,
+    ctx,
+    searchResults,
+    availableToolNames,
+    routingState,
+    workflow,
+    routeMatch,
+    crossDomainPattern,
+  );
+  let finalResults = assembled.results;
+  const presetPlannedToolNames = assembled.presetPlannedToolNames;
 
   const dedupedResults: ToolSearchResult[] = [];
   const seenNames = new Set<string>();
   for (const result of finalResults) {
-    if (seenNames.has(result.name)) {
-      continue;
-    }
+    if (seenNames.has(result.name)) continue;
     seenNames.add(result.name);
     dedupedResults.push(result);
   }
-
   finalResults = rerankResultsForContext(dedupedResults, task, workflow, routingState);
 
   if (context.preferredDomain && finalResults.length > 0) {

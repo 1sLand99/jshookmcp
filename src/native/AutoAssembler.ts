@@ -400,16 +400,15 @@ export class AutoAssembler {
     }
   }
 
-  private async executeCommand(
+  private async executeMemoryLifecycleCommand(
     cmd: AAParsedCommand,
     ctx: AAExecutionContext,
+    args: string[],
     symbols: Map<string, bigint>,
     allocations: Map<string, string>,
     registeredSymbols: Map<string, string>,
     labels: Map<string, string>,
   ): Promise<AACommandResult> {
-    const args = splitArgs(cmd.rawArgs);
-
     switch (cmd.command) {
       case 'ALLOC': {
         if (args.length < 2) {
@@ -467,6 +466,20 @@ export class AutoAssembler {
         };
       }
 
+      default: {
+        throw new Error(`Unknown command: ${cmd.command}`);
+      }
+    }
+  }
+
+  private async executeSymbolCommand(
+    cmd: AAParsedCommand,
+    args: string[],
+    symbols: Map<string, bigint>,
+    registeredSymbols: Map<string, string>,
+    labels: Map<string, string>,
+  ): Promise<AACommandResult> {
+    switch (cmd.command) {
       case 'LABEL': {
         if (args.length < 1) {
           throw new Error('LABEL(name) requires name');
@@ -516,6 +529,36 @@ export class AutoAssembler {
         };
       }
 
+      case 'DEFINE': {
+        if (args.length < 2) {
+          throw new Error('DEFINE(name, value) requires name and value');
+        }
+        const name = args[0]!.trim();
+        const value = this.resolve(args[1]!, symbols);
+        symbols.set(name, value);
+        return {
+          command: 'DEFINE',
+          line: cmd.line,
+          success: true,
+          message: `DEFINE "${name}" = 0x${value.toString(16).toUpperCase()}`,
+          detail: { name, value: `0x${value.toString(16).toUpperCase()}` },
+        };
+      }
+
+      default: {
+        throw new Error(`Unknown command: ${cmd.command}`);
+      }
+    }
+  }
+
+  private async executeScanAssertCommand(
+    cmd: AAParsedCommand,
+    ctx: AAExecutionContext,
+    args: string[],
+    symbols: Map<string, bigint>,
+    labels: Map<string, string>,
+  ): Promise<AACommandResult> {
+    switch (cmd.command) {
       case 'AOBSCAN': {
         if (args.length < 2) {
           throw new Error('AOBSCAN(name, pattern) requires name and pattern');
@@ -568,37 +611,19 @@ export class AutoAssembler {
         };
       }
 
-      case 'CREATETHREAD': {
-        if (args.length < 1) {
-          throw new Error('CREATETHREAD(address) requires address');
-        }
-        const addr = this.resolve(args[0]!, symbols);
-        await ctx.createThread(addr);
-        return {
-          command: 'CREATETHREAD',
-          line: cmd.line,
-          success: true,
-          message: `Thread created at 0x${addr.toString(16).toUpperCase()}`,
-          detail: { address: `0x${addr.toString(16).toUpperCase()}` },
-        };
+      default: {
+        throw new Error(`Unknown command: ${cmd.command}`);
       }
+    }
+  }
 
-      case 'DEFINE': {
-        if (args.length < 2) {
-          throw new Error('DEFINE(name, value) requires name and value');
-        }
-        const name = args[0]!.trim();
-        const value = this.resolve(args[1]!, symbols);
-        symbols.set(name, value);
-        return {
-          command: 'DEFINE',
-          line: cmd.line,
-          success: true,
-          message: `DEFINE "${name}" = 0x${value.toString(16).toUpperCase()}`,
-          detail: { name, value: `0x${value.toString(16).toUpperCase()}` },
-        };
-      }
-
+  private async executeMemoryAccessCommand(
+    cmd: AAParsedCommand,
+    ctx: AAExecutionContext,
+    args: string[],
+    symbols: Map<string, bigint>,
+  ): Promise<AACommandResult> {
+    switch (cmd.command) {
       case 'FULLACCESS': {
         if (args.length < 2) {
           throw new Error('FULLACCESS(address, size) requires address and size');
@@ -659,6 +684,34 @@ export class AutoAssembler {
         };
       }
 
+      default: {
+        throw new Error(`Unknown command: ${cmd.command}`);
+      }
+    }
+  }
+
+  private async executeThreadOrUnsupportedCommand(
+    cmd: AAParsedCommand,
+    ctx: AAExecutionContext,
+    args: string[],
+    symbols: Map<string, bigint>,
+  ): Promise<AACommandResult> {
+    switch (cmd.command) {
+      case 'CREATETHREAD': {
+        if (args.length < 1) {
+          throw new Error('CREATETHREAD(address) requires address');
+        }
+        const addr = this.resolve(args[0]!, symbols);
+        await ctx.createThread(addr);
+        return {
+          command: 'CREATETHREAD',
+          line: cmd.line,
+          success: true,
+          message: `Thread created at 0x${addr.toString(16).toUpperCase()}`,
+          detail: { address: `0x${addr.toString(16).toUpperCase()}` },
+        };
+      }
+
       case 'INCLUDE': {
         throw new Error('INCLUDE is not supported for security — load files manually');
       }
@@ -669,6 +722,49 @@ export class AutoAssembler {
         );
       }
 
+      default: {
+        throw new Error(`Unknown command: ${cmd.command}`);
+      }
+    }
+  }
+
+  private async executeCommand(
+    cmd: AAParsedCommand,
+    ctx: AAExecutionContext,
+    symbols: Map<string, bigint>,
+    allocations: Map<string, string>,
+    registeredSymbols: Map<string, string>,
+    labels: Map<string, string>,
+  ): Promise<AACommandResult> {
+    const args = splitArgs(cmd.rawArgs);
+
+    switch (cmd.command) {
+      case 'ALLOC':
+      case 'DEALLOC':
+        return this.executeMemoryLifecycleCommand(
+          cmd,
+          ctx,
+          args,
+          symbols,
+          allocations,
+          registeredSymbols,
+          labels,
+        );
+      case 'LABEL':
+      case 'REGISTERSYMBOL':
+      case 'DEFINE':
+        return this.executeSymbolCommand(cmd, args, symbols, registeredSymbols, labels);
+      case 'AOBSCAN':
+      case 'ASSERT':
+        return this.executeScanAssertCommand(cmd, ctx, args, symbols, labels);
+      case 'FULLACCESS':
+      case 'READMEM':
+      case 'WRITEMEM':
+        return this.executeMemoryAccessCommand(cmd, ctx, args, symbols);
+      case 'CREATETHREAD':
+      case 'INCLUDE':
+      case 'LOADBINARY':
+        return this.executeThreadOrUnsupportedCommand(cmd, ctx, args, symbols);
       default: {
         throw new Error(`Unknown command: ${cmd.command}`);
       }

@@ -1076,9 +1076,7 @@ export function getConfig(): Config {
   };
 }
 
-export function validateConfig(config: Config): { valid: boolean; errors: string[] } {
-  const errors: string[] = [];
-
+function validateServerConfig(config: Config, errors: string[]): void {
   if (config.server.port < 1 || config.server.port > 65_535) {
     errors.push('server.port must be between 1 and 65535');
   }
@@ -1119,7 +1117,9 @@ export function validateConfig(config: Config): { valid: boolean; errors: string
   if (config.server.http.maxSseInFlight < 1) {
     errors.push('server.http.maxSseInFlight must be at least 1');
   }
+}
 
+function validateMcpBrowserSessionConfig(config: Config, errors: string[]): void {
   if (config.mcp.browserSessionQueueMaxPending < 1) {
     errors.push('mcp.browserSessionQueueMaxPending must be at least 1');
   } else if (config.mcp.browserSessionQueueMaxPending > 100_000) {
@@ -1187,7 +1187,9 @@ export function validateConfig(config: Config): { valid: boolean; errors: string
   if (config.mcp.browserSessionCostEwmaAlpha <= 0 || config.mcp.browserSessionCostEwmaAlpha > 1) {
     errors.push('mcp.browserSessionCostEwmaAlpha must be greater than 0 and at most 1');
   }
+}
 
+function validateMcpBrowserFleetConfig(config: Config, errors: string[]): void {
   if (!config.mcp.browserFleetWorkerId.trim()) {
     errors.push('mcp.browserFleetWorkerId must not be empty');
   }
@@ -1212,14 +1214,18 @@ export function validateConfig(config: Config): { valid: boolean; errors: string
   } else if (config.mcp.browserFleetMaxLocalLeases > 1_000_000) {
     errors.push('mcp.browserFleetMaxLocalLeases must be at most 1000000');
   }
+}
 
+function validateMcpToolActivationConfig(config: Config, errors: string[]): void {
   if (config.mcp.toolActivationBudgetTokens < 1) {
     errors.push('mcp.toolActivationBudgetTokens must be at least 1');
   }
   if (config.mcp.toolActivationMaxTools < 1) {
     errors.push('mcp.toolActivationMaxTools must be at least 1');
   }
+}
 
+function validatePerformanceConfig(config: Config, errors: string[]): void {
   if (config.performance.maxConcurrentAnalysis < 1) {
     errors.push('maxConcurrentAnalysis must be at least 1');
   } else if (config.performance.maxConcurrentAnalysis > 32) {
@@ -1231,13 +1237,17 @@ export function validateConfig(config: Config): { valid: boolean; errors: string
   } else if (config.performance.maxCodeSizeMB > 500) {
     errors.push('maxCodeSizeMB must be at most 500');
   }
+}
 
+function validatePuppeteerConfig(config: Config, errors: string[]): void {
   if (config.puppeteer.timeout < 1000) {
     errors.push('puppeteer.timeout must be at least 1000ms');
   } else if (config.puppeteer.timeout > 300_000) {
     errors.push('puppeteer.timeout must be at most 300000ms');
   }
+}
 
+function validateToolExecutionRules(config: Config, errors: string[]): void {
   for (const [index, rule] of (config.toolExecution?.rules ?? []).entries()) {
     if (typeof rule.tool !== 'string' || rule.tool.trim().length === 0) {
       errors.push(`toolExecution.rules[${index}].tool must be a non-empty string`);
@@ -1250,11 +1260,15 @@ export function validateConfig(config: Config): { valid: boolean; errors: string
       errors.push(`toolExecution.rules[${index}].action must be "allow" or "deny"`);
     }
   }
+}
 
+function validateCacheConfig(config: Config, errors: string[]): void {
   if (config.cache.ttl < 0) {
     errors.push('cache.ttl must be non-negative');
   }
+}
 
+function validateOffloaderConfig(config: Config, errors: string[]): void {
   if ((config.offloader?.detailThreshold ?? 1) < 1) {
     errors.push('offloader.detailThreshold must be at least 1');
   }
@@ -1267,7 +1281,9 @@ export function validateConfig(config: Config): { valid: boolean; errors: string
   ) {
     errors.push('offloader.fileThreshold must not be less than offloader.detailThreshold');
   }
+}
 
+function validateReverseEngineeringConfig(config: Config, errors: string[]): void {
   const reverse = config.reverseEngineering;
   if (reverse.transformWorkbench.defaultPreviewBytes > reverse.transformWorkbench.maxPreviewBytes) {
     errors.push('reverseEngineering default preview must not exceed max preview');
@@ -1287,6 +1303,9 @@ export function validateConfig(config: Config): { valid: boolean; errors: string
   if (reverse.dex.artifactDefaultLimit > reverse.dex.artifactMaxLimit) {
     errors.push('reverseEngineering DEX default artifact limit must not exceed the maximum');
   }
+}
+
+function validateSearchConfig(config: Config, errors: string[]): void {
   if (
     config.search.vectorCosineWeight !== undefined &&
     (config.search.vectorCosineWeight < 0 || config.search.vectorCosineWeight > 10)
@@ -1317,6 +1336,20 @@ export function validateConfig(config: Config): { valid: boolean; errors: string
       errors.push(`search.intentToolBoostRules contains invalid regex: ${rule.pattern}`);
     }
   }
+}
 
+export function validateConfig(config: Config): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  validateServerConfig(config, errors);
+  validateMcpBrowserSessionConfig(config, errors);
+  validateMcpBrowserFleetConfig(config, errors);
+  validateMcpToolActivationConfig(config, errors);
+  validatePerformanceConfig(config, errors);
+  validatePuppeteerConfig(config, errors);
+  validateToolExecutionRules(config, errors);
+  validateCacheConfig(config, errors);
+  validateOffloaderConfig(config, errors);
+  validateReverseEngineeringConfig(config, errors);
+  validateSearchConfig(config, errors);
   return { valid: errors.length === 0, errors };
 }

@@ -26,6 +26,217 @@ import {
 
 // ── Private helpers ──
 
+async function resolveElectronScanRoot(appPath: string): Promise<{
+  absoluteAppPath: string;
+  scanRoot: string;
+}> {
+  const absoluteAppPath = resolve(appPath);
+  const appStats = await stat(absoluteAppPath);
+  const scanRoot = appStats.isDirectory() ? absoluteAppPath : dirname(absoluteAppPath);
+  return { absoluteAppPath, scanRoot };
+}
+
+async function locateAndParseAppAsar(scanRoot: string): Promise<{
+  asarPath: string | null;
+  asarBuffer: Buffer | null;
+  parsedAsar: ParsedAsar | null;
+}> {
+  const asarCandidates = [
+    join(scanRoot, 'resources', 'app.asar'),
+    join(scanRoot, 'Contents', 'Resources', 'app.asar'),
+    join(scanRoot, 'app.asar'),
+  ];
+
+  let asarPath: string | null = null;
+  for (const candidate of asarCandidates) {
+    if (!(await pathExists(candidate))) {
+      continue;
+    }
+    const candidateStats = await stat(candidate);
+    if (candidateStats.isFile()) {
+      asarPath = candidate;
+      break;
+    }
+  }
+
+  let asarBuffer: Buffer | null = null;
+  let parsedAsar: ParsedAsar | null = null;
+
+  if (asarPath) {
+    try {
+      asarBuffer = await readFile(asarPath);
+      parsedAsar = parseAsarBuffer(asarBuffer);
+    } catch (error) {
+      logger.warn('electron_inspect_app failed to parse asar', {
+        asarPath,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      asarBuffer = null;
+      parsedAsar = null;
+    }
+  }
+
+  return { asarPath, asarBuffer, parsedAsar };
+}
+
+async function loadElectronPackageJson(
+  parsedAsar: ParsedAsar | null,
+  asarBuffer: Buffer | null,
+  scanRoot: string,
+): Promise<{
+  packageJson: Record<string, unknown> | null;
+  packageJsonPath: string;
+  packageSource: 'filesystem' | 'asar' | 'none';
+}> {
+  let packageJson: Record<string, unknown> | null = null;
+  let packageJsonPath = '';
+  let packageSource: 'filesystem' | 'asar' | 'none' = 'none';
+
+  if (parsedAsar && asarBuffer) {
+    const packageEntry = parsedAsar.files.find(
+      (entry) => entry.path === 'package.json' || entry.path.endsWith('/package.json'),
+    );
+
+    if (packageEntry) {
+      const packageText = readAsarEntryText(asarBuffer, parsedAsar, packageEntry.path);
+
+      if (packageText) {
+        try {
+          const parsed = JSON.parse(packageText) as unknown;
+          if (isRecord(parsed)) {
+            packageJson = parsed;
+            packageJsonPath = packageEntry.path;
+            packageSource = 'asar';
+          }
+        } catch (error) {
+          logger.warn('electron_inspect_app invalid package.json in asar', {
+            packagePath: packageEntry.path,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+  }
+
+  if (!packageJson) {
+    const packageCandidates = [
+      join(scanRoot, 'package.json'),
+      join(scanRoot, 'app', 'package.json'),
+      join(scanRoot, 'resources', 'app', 'package.json'),
+      join(scanRoot, 'Contents', 'Resources', 'app', 'package.json'),
+    ];
+
+    for (const candidate of packageCandidates) {
+      const candidateJson = await readJsonFileSafe(candidate);
+      if (candidateJson) {
+        packageJson = candidateJson;
+        packageJsonPath = candidate;
+        packageSource = 'filesystem';
+        break;
+      }
+    }
+  }
+
+  return { packageJson, packageJsonPath, packageSource };
+}
+
+async function loadElectronMainScript(
+  packageSource: 'filesystem' | 'asar' | 'none',
+  parsedAsar: ParsedAsar | null,
+  asarBuffer: Buffer | null,
+  packageJsonPath: string,
+  mainEntry: string,
+): Promise<{ mainScriptSource: string; mainScriptPath: string }> {
+  let mainScriptSource = '';
+  let mainScriptPath = '';
+
+  if (packageSource === 'asar' && parsedAsar && asarBuffer) {
+    const packageBase = packageJsonPath.length > 0 ? dirname(packageJsonPath) : '';
+    const candidateMainPaths = Array.from(
+      new Set([
+        sanitizeArchiveRelativePath(join(packageBase, mainEntry)),
+        sanitizeArchiveRelativePath(mainEntry),
+        sanitizeArchiveRelativePath(basename(mainEntry)),
+      ]),
+    ).filter((value) => value.length > 0);
+
+    for (const candidate of candidateMainPaths) {
+      const text = readAsarEntryText(asarBuffer, parsedAsar, candidate);
+      if (typeof text === 'string') {
+        mainScriptSource = text;
+        mainScriptPath = candidate;
+        break;
+      }
+    }
+
+    if (mainScriptSource.length === 0) {
+      const fallbackEntry = parsedAsar.files.find(
+        (entry) => basename(entry.path) === basename(mainEntry),
+      );
+      if (fallbackEntry) {
+        const fallbackText = readAsarEntryText(asarBuffer, parsedAsar, fallbackEntry.path);
+        if (typeof fallbackText === 'string') {
+          mainScriptSource = fallbackText;
+          mainScriptPath = fallbackEntry.path;
+        }
+      }
+    }
+  } else if (packageSource === 'filesystem') {
+    const packageDir = dirname(packageJsonPath);
+    const absoluteMainPath = resolve(packageDir, mainEntry);
+
+    if (await pathExists(absoluteMainPath)) {
+      const mainStats = await stat(absoluteMainPath);
+      if (mainStats.isFile()) {
+        try {
+          mainScriptSource = await readFile(absoluteMainPath, 'utf-8');
+          mainScriptPath = absoluteMainPath;
+        } catch (error) {
+          logger.warn('electron_inspect_app failed to read main script', {
+            absoluteMainPath,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+  }
+
+  return { mainScriptSource, mainScriptPath };
+}
+
+async function collectElectronPreloads(
+  mainScriptSource: string,
+  parsedAsar: ParsedAsar | null,
+  scanRoot: string,
+): Promise<{ preloadScripts: Set<string>; devToolsEnabled: boolean }> {
+  const parsedHints =
+    mainScriptSource.length > 0
+      ? parseBrowserWindowHints(mainScriptSource)
+      : { preloadScripts: [], devToolsEnabled: null };
+
+  const preloadScripts = new Set<string>(parsedHints.preloadScripts);
+
+  if (preloadScripts.size === 0 && parsedAsar) {
+    for (const entry of parsedAsar.files) {
+      const lowerPath = entry.path.toLowerCase();
+      if (lowerPath.includes('preload') && extname(lowerPath) === '.js') {
+        preloadScripts.add(entry.path);
+      }
+    }
+  }
+
+  if (preloadScripts.size === 0) {
+    const filesystemPreloads = await findFilesystemPreloadScripts(scanRoot);
+    for (const preload of filesystemPreloads) {
+      preloadScripts.add(preload);
+    }
+  }
+
+  const devToolsEnabled = parsedHints.devToolsEnabled !== null ? parsedHints.devToolsEnabled : true;
+
+  return { preloadScripts, devToolsEnabled };
+}
+
 // ── Public handler class ──
 
 export class ElectronHandlers {
@@ -152,93 +363,13 @@ export class ElectronHandlers {
         throw new Error('appPath is required');
       }
 
-      const absoluteAppPath = resolve(appPath);
-      const appStats = await stat(absoluteAppPath);
-      const scanRoot = appStats.isDirectory() ? absoluteAppPath : dirname(absoluteAppPath);
-
-      const asarCandidates = [
-        join(scanRoot, 'resources', 'app.asar'),
-        join(scanRoot, 'Contents', 'Resources', 'app.asar'),
-        join(scanRoot, 'app.asar'),
-      ];
-
-      let asarPath: string | null = null;
-      for (const candidate of asarCandidates) {
-        if (!(await pathExists(candidate))) {
-          continue;
-        }
-        const candidateStats = await stat(candidate);
-        if (candidateStats.isFile()) {
-          asarPath = candidate;
-          break;
-        }
-      }
-
-      let asarBuffer: Buffer | null = null;
-      let parsedAsar: ParsedAsar | null = null;
-
-      if (asarPath) {
-        try {
-          asarBuffer = await readFile(asarPath);
-          parsedAsar = parseAsarBuffer(asarBuffer);
-        } catch (error) {
-          logger.warn('electron_inspect_app failed to parse asar', {
-            asarPath,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          asarBuffer = null;
-          parsedAsar = null;
-        }
-      }
-
-      let packageJson: Record<string, unknown> | null = null;
-      let packageJsonPath = '';
-      let packageSource: 'filesystem' | 'asar' | 'none' = 'none';
-
-      if (parsedAsar && asarBuffer) {
-        const packageEntry = parsedAsar.files.find(
-          (entry) => entry.path === 'package.json' || entry.path.endsWith('/package.json'),
-        );
-
-        if (packageEntry) {
-          const packageText = readAsarEntryText(asarBuffer, parsedAsar, packageEntry.path);
-
-          if (packageText) {
-            try {
-              const parsed = JSON.parse(packageText) as unknown;
-              if (isRecord(parsed)) {
-                packageJson = parsed;
-                packageJsonPath = packageEntry.path;
-                packageSource = 'asar';
-              }
-            } catch (error) {
-              logger.warn('electron_inspect_app invalid package.json in asar', {
-                packagePath: packageEntry.path,
-                error: error instanceof Error ? error.message : String(error),
-              });
-            }
-          }
-        }
-      }
-
-      if (!packageJson) {
-        const packageCandidates = [
-          join(scanRoot, 'package.json'),
-          join(scanRoot, 'app', 'package.json'),
-          join(scanRoot, 'resources', 'app', 'package.json'),
-          join(scanRoot, 'Contents', 'Resources', 'app', 'package.json'),
-        ];
-
-        for (const candidate of packageCandidates) {
-          const candidateJson = await readJsonFileSafe(candidate);
-          if (candidateJson) {
-            packageJson = candidateJson;
-            packageJsonPath = candidate;
-            packageSource = 'filesystem';
-            break;
-          }
-        }
-      }
+      const { absoluteAppPath, scanRoot } = await resolveElectronScanRoot(appPath);
+      const { asarPath, asarBuffer, parsedAsar } = await locateAndParseAppAsar(scanRoot);
+      const { packageJson, packageJsonPath, packageSource } = await loadElectronPackageJson(
+        parsedAsar,
+        asarBuffer,
+        scanRoot,
+      );
 
       if (!packageJson) {
         return toTextResponse({
@@ -256,91 +387,22 @@ export class ElectronHandlers {
         typeof packageJson.main === 'string' && packageJson.main.trim().length > 0
           ? packageJson.main.trim()
           : 'index.js';
-
       const version = typeof packageJson.version === 'string' ? packageJson.version : null;
-
       const dependenciesRaw = packageJson.dependencies;
       const dependencies = isRecord(dependenciesRaw) ? Object.keys(dependenciesRaw).toSorted() : [];
 
-      let mainScriptSource = '';
-      let mainScriptPath = '';
-
-      if (packageSource === 'asar' && parsedAsar && asarBuffer) {
-        const packageBase = packageJsonPath.length > 0 ? dirname(packageJsonPath) : '';
-        const candidateMainPaths = Array.from(
-          new Set([
-            sanitizeArchiveRelativePath(join(packageBase, mainEntry)),
-            sanitizeArchiveRelativePath(mainEntry),
-            sanitizeArchiveRelativePath(basename(mainEntry)),
-          ]),
-        ).filter((value) => value.length > 0);
-
-        for (const candidate of candidateMainPaths) {
-          const text = readAsarEntryText(asarBuffer, parsedAsar, candidate);
-          if (typeof text === 'string') {
-            mainScriptSource = text;
-            mainScriptPath = candidate;
-            break;
-          }
-        }
-
-        if (mainScriptSource.length === 0) {
-          const fallbackEntry = parsedAsar.files.find(
-            (entry) => basename(entry.path) === basename(mainEntry),
-          );
-          if (fallbackEntry) {
-            const fallbackText = readAsarEntryText(asarBuffer, parsedAsar, fallbackEntry.path);
-            if (typeof fallbackText === 'string') {
-              mainScriptSource = fallbackText;
-              mainScriptPath = fallbackEntry.path;
-            }
-          }
-        }
-      } else if (packageSource === 'filesystem') {
-        const packageDir = dirname(packageJsonPath);
-        const absoluteMainPath = resolve(packageDir, mainEntry);
-
-        if (await pathExists(absoluteMainPath)) {
-          const mainStats = await stat(absoluteMainPath);
-          if (mainStats.isFile()) {
-            try {
-              mainScriptSource = await readFile(absoluteMainPath, 'utf-8');
-              mainScriptPath = absoluteMainPath;
-            } catch (error) {
-              logger.warn('electron_inspect_app failed to read main script', {
-                absoluteMainPath,
-                error: error instanceof Error ? error.message : String(error),
-              });
-            }
-          }
-        }
-      }
-
-      const parsedHints =
-        mainScriptSource.length > 0
-          ? parseBrowserWindowHints(mainScriptSource)
-          : { preloadScripts: [], devToolsEnabled: null };
-
-      const preloadScripts = new Set<string>(parsedHints.preloadScripts);
-
-      if (preloadScripts.size === 0 && parsedAsar) {
-        for (const entry of parsedAsar.files) {
-          const lowerPath = entry.path.toLowerCase();
-          if (lowerPath.includes('preload') && extname(lowerPath) === '.js') {
-            preloadScripts.add(entry.path);
-          }
-        }
-      }
-
-      if (preloadScripts.size === 0) {
-        const filesystemPreloads = await findFilesystemPreloadScripts(scanRoot);
-        for (const preload of filesystemPreloads) {
-          preloadScripts.add(preload);
-        }
-      }
-
-      const devToolsEnabled =
-        parsedHints.devToolsEnabled !== null ? parsedHints.devToolsEnabled : true;
+      const { mainScriptSource, mainScriptPath } = await loadElectronMainScript(
+        packageSource,
+        parsedAsar,
+        asarBuffer,
+        packageJsonPath,
+        mainEntry,
+      );
+      const { preloadScripts, devToolsEnabled } = await collectElectronPreloads(
+        mainScriptSource,
+        parsedAsar,
+        scanRoot,
+      );
 
       return toTextResponse({
         success: true,

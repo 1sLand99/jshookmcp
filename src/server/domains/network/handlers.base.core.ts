@@ -33,6 +33,88 @@ import { ToolError } from '@errors/ToolError';
 import { NETWORK_SMART_HANDLE_THRESHOLD_BYTES } from '@src/constants';
 import type { ToolResponse } from '@server/types';
 
+interface RequestListFilters {
+  url: string | undefined;
+  urlRegex: string | undefined;
+  method: string | undefined;
+  sinceTimestamp: number | undefined;
+  sinceRequestId: string | undefined;
+  tail: number | undefined;
+}
+
+/** Apply the incremental, URL, method, and tail filters. A string result is an error. */
+function filterNetworkRequests(
+  input: NetworkRequestPayload[],
+  filters: RequestListFilters,
+): NetworkRequestPayload[] | string {
+  let requests = input;
+
+  if (filters.sinceRequestId) {
+    const idx = requests.findIndex((r) => r.requestId === filters.sinceRequestId);
+    if (idx >= 0) requests = requests.slice(idx + 1);
+  }
+
+  if (filters.sinceTimestamp !== undefined) {
+    const sinceTimestamp = filters.sinceTimestamp;
+    requests = requests.filter((r) => (r.timestamp ?? 0) > sinceTimestamp);
+  }
+
+  // URL filter: regex takes precedence over substring.
+  if (filters.urlRegex) {
+    if (filters.urlRegex.length > 500) return 'urlRegex too long (max 500 characters)';
+    let re: RegExp;
+    try {
+      re = new RegExp(filters.urlRegex, 'i');
+    } catch {
+      return `Invalid urlRegex pattern: ${filters.urlRegex}`;
+    }
+    // SECURITY: Guard against ReDoS. If the first URL takes >100ms, the
+    // pattern is catastrophically backtracking.
+    if (requests.length > 0) {
+      const start = performance.now();
+      re.test(requests[0]!.url);
+      const elapsed = performance.now() - start;
+      if (elapsed > 100) {
+        return `urlRegex pattern is too expensive (${elapsed.toFixed(0)}ms on first URL). Use a simpler pattern.`;
+      }
+    }
+    requests = requests.filter((req) => re.test(req.url));
+  } else if (filters.url) {
+    const urlLower = filters.url.toLowerCase();
+    requests = requests.filter((req) => req.url.toLowerCase().includes(urlLower));
+  }
+
+  if (filters.method && filters.method.toUpperCase() !== 'ALL') {
+    const method = filters.method.toUpperCase();
+    requests = requests.filter((req) => req.method.toUpperCase() === method);
+  }
+
+  if (filters.tail !== undefined && requests.length > filters.tail) {
+    requests = requests.slice(-filters.tail);
+  }
+
+  return requests;
+}
+
+/** Attach TLS details and the server address captured on each request's response. */
+function enrichRequestsWithResponse(
+  requests: NetworkRequestPayload[],
+  consoleMonitor: ConsoleMonitor,
+): void {
+  for (const req of requests) {
+    const reqId = req.requestId;
+    if (!reqId) continue;
+    const resp = consoleMonitor.getNetworkActivity(reqId)?.response;
+    if (!resp) continue;
+    if (resp.securityDetails) {
+      (req as Record<string, unknown>).securityDetails = resp.securityDetails;
+    }
+    if (resp.remoteAddress) {
+      (req as Record<string, unknown>).serverAddr = resp.remoteAddress;
+    }
+  }
+}
+
 export class NetworkHandlersCore {
   protected collector: CodeCollector;
   protected consoleMonitor: ConsoleMonitor;
@@ -246,7 +328,15 @@ export class NetworkHandlersCore {
       const originalCount = requests.length;
       const allUrls = requests.map((r) => r.url);
 
-      // Determine if any explicit filter is set
+      const filters: RequestListFilters = {
+        url,
+        urlRegex,
+        method,
+        sinceTimestamp,
+        sinceRequestId,
+        tail,
+      };
+      // Any explicit filter disables the default static-resource exclusion.
       const hasAnyFilter = !!(
         url ||
         urlRegex ||
@@ -256,7 +346,6 @@ export class NetworkHandlersCore {
         tail
       );
 
-      // Default type filtering: exclude static resources when no explicit filters are set
       let excludedStaticCount = 0;
       if (!hasAnyFilter) {
         const beforeTypeFilter = requests.length;
@@ -264,76 +353,18 @@ export class NetworkHandlersCore {
         excludedStaticCount = beforeTypeFilter - requests.length;
       }
 
-      // sinceRequestId filter: skip all requests up to and including the given requestId
-      if (sinceRequestId) {
-        const idx = requests.findIndex((r) => r.requestId === sinceRequestId);
-        if (idx >= 0) {
-          requests = requests.slice(idx + 1);
-        }
-      }
+      const filtered = filterNetworkRequests(requests, filters);
+      if (typeof filtered === 'string') return R.fail(filtered).json();
+      requests = filtered;
 
-      // sinceTimestamp filter
-      if (sinceTimestamp !== undefined) {
-        requests = requests.filter((r) => (r.timestamp ?? 0) > sinceTimestamp);
-      }
-
-      // URL filter: regex takes precedence over substring
-      if (urlRegex) {
-        if (urlRegex.length > 500) {
-          return R.fail('urlRegex too long (max 500 characters)').json();
-        }
-        try {
-          const re = new RegExp(urlRegex, 'i');
-          // SECURITY: Guard against ReDoS by testing with a time limit.
-          // If the first URL takes >100ms, the pattern is catastrophically backtracking.
-          if (requests.length > 0) {
-            const start = performance.now();
-            re.test(requests[0]!.url);
-            const elapsed = performance.now() - start;
-            if (elapsed > 100) {
-              return R.fail(
-                `urlRegex pattern is too expensive (${elapsed.toFixed(0)}ms on first URL). Use a simpler pattern.`,
-              ).json();
-            }
-          }
-          requests = requests.filter((req) => re.test(req.url));
-        } catch {
-          return R.fail(`Invalid urlRegex pattern: ${urlRegex}`).json();
-        }
-      } else if (url) {
-        const urlLower = url.toLowerCase();
-        requests = requests.filter((req) => req.url.toLowerCase().includes(urlLower));
-      }
-      if (method && method.toUpperCase() !== 'ALL') {
-        requests = requests.filter((req) => req.method.toUpperCase() === method.toUpperCase());
-      }
-
-      // tail filter: return only the last N results after all other filters
-      if (tail !== undefined && requests.length > tail) {
-        requests = requests.slice(-tail);
-      }
-
-      // Smart sort: prioritize XHR/Fetch/Document over Script/Other
+      // Smart sort: prioritize XHR/Fetch/Document over Script/Other.
       requests.sort(
         (a, b) =>
           (TYPE_SORT_PRIORITY[a.type ?? ''] ?? DEFAULT_SORT_PRIORITY) -
           (TYPE_SORT_PRIORITY[b.type ?? ''] ?? DEFAULT_SORT_PRIORITY),
       );
 
-      // Enrich each request with TLS security details + server address from its captured response.
-      for (const req of requests) {
-        const reqId = req.requestId;
-        if (!reqId) continue;
-        const activity = this.consoleMonitor.getNetworkActivity(reqId);
-        const resp = activity?.response;
-        if (!resp) continue;
-        if (resp.securityDetails) {
-          (req as Record<string, unknown>).securityDetails = resp.securityDetails;
-        }
-        if (resp.remoteAddress) {
-          (req as Record<string, unknown>).serverAddr = resp.remoteAddress;
-        }
-      }
+      enrichRequestsWithResponse(requests, this.consoleMonitor);
 
       const beforeLimit = requests.length;
       requests = requests.slice(offset, offset + limit);

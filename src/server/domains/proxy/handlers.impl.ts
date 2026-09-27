@@ -161,6 +161,120 @@ async function pathExists(p: string): Promise<boolean> {
   }
 }
 
+interface ProxyRuleBuilder {
+  delay: (ms: number) => ProxyRuleBuilder;
+  thenPassThrough: (options?: ForwardOptions) => Promise<{ id: string }>;
+  thenForwardTo: (target: string, options?: ForwardOptions) => Promise<{ id: string }>;
+  thenCloseConnection: () => Promise<{ id: string }>;
+  thenReply: (status: number, body: string) => Promise<{ id: string }>;
+}
+
+interface ProxyRuleServer {
+  forGet: (m: RegExp) => unknown;
+  forPost: (m: RegExp) => unknown;
+  forPut: (m: RegExp) => unknown;
+  forDelete: (m: RegExp) => unknown;
+  forMethod?: (method: string, m: RegExp) => unknown;
+  forAnyRequest: () => unknown;
+}
+
+/** A rule builder exposes `thenCloseConnection`; an error response exposes `content`. */
+function isProxyRuleBuilder(
+  value: ProxyRuleBuilder | ReturnType<typeof ResponseBuilder.error>,
+): value is ProxyRuleBuilder {
+  return typeof (value as { thenCloseConnection?: unknown }).thenCloseConnection === 'function';
+}
+
+/** Pick the mockttp rule builder for the requested method, or an error response. */
+function selectRuleBuilder(
+  server: ProxyRuleServer,
+  method: string,
+  matcher: RegExp,
+): ProxyRuleBuilder | ReturnType<typeof ResponseBuilder.error> {
+  if (method === 'GET') return server.forGet(matcher) as ProxyRuleBuilder;
+  if (method === 'POST') return server.forPost(matcher) as ProxyRuleBuilder;
+  if (method === 'PUT') return server.forPut(matcher) as ProxyRuleBuilder;
+  if (method === 'DELETE') return server.forDelete(matcher) as ProxyRuleBuilder;
+  if (method === 'ANY' || method === '*' || method === 'ALL') {
+    return server.forAnyRequest() as ProxyRuleBuilder;
+  }
+  if (typeof server.forMethod === 'function') {
+    return server.forMethod(method, matcher) as ProxyRuleBuilder;
+  }
+  return ResponseBuilder.error(`Proxy server does not support method-specific rules for ${method}`);
+}
+
+/** Parse and validate the action-specific fields of a proxy_add_rule call. */
+function parseProxyRulePayload(args: Record<string, unknown>):
+  | {
+      ok: true;
+      action: ProxyRuleAction;
+      method: string;
+      urlPattern: string;
+      mockStatus: number | undefined;
+      mockBody: string | undefined;
+      targetUrl: string | undefined;
+      delayMs: number;
+    }
+  | { ok: false; response: ReturnType<typeof ResponseBuilder.error> } {
+  const fail = (error: string) => ({ ok: false as const, response: ResponseBuilder.error(error) });
+
+  const parsedAction = parseRuleAction(args['action']);
+  if (!parsedAction.ok) return fail(parsedAction.error);
+  const action = parsedAction.value;
+
+  const parsedMethod = parseRuleMethod(args);
+  if (!parsedMethod.ok) return fail(parsedMethod.error);
+
+  const parsedUrlPattern = parseOptionalString(args, 'urlPattern', '.*');
+  if (!parsedUrlPattern.ok) return fail(parsedUrlPattern.error);
+
+  let mockStatus: number | undefined;
+  let mockBody: string | undefined;
+  if (action === 'mock_response') {
+    const parsedMockStatus = parseMockStatus(args);
+    if (!parsedMockStatus.ok) return fail(parsedMockStatus.error);
+    mockStatus = parsedMockStatus.value;
+
+    const parsedMockBody = parseOptionalString(args, 'mockBody', '');
+    if (!parsedMockBody.ok) return fail(parsedMockBody.error);
+    mockBody = parsedMockBody.value;
+  }
+
+  let targetUrl: string | undefined;
+  if (action === 'redirect') {
+    const parsedTargetUrl = parseOptionalString(args, 'targetUrl', '');
+    if (!parsedTargetUrl.ok) return fail(parsedTargetUrl.error);
+    const trimmed = parsedTargetUrl.value.trim();
+    if (trimmed === '') return fail('targetUrl is required when action=redirect');
+    // mockttp's thenForwardTo throws if the target includes a path; reject
+    // path/query/fragment up front for a clearer message. Scheme is optional.
+    const withoutScheme = trimmed.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '');
+    if (/[/?#]/.test(withoutScheme)) {
+      return fail(
+        'targetUrl must be a root URL with no path, query, or fragment (e.g. http://host:port); the original request path is preserved',
+      );
+    }
+    targetUrl = trimmed;
+  }
+
+  const rawDelayMs = argNumber(args, 'delayMs') ?? 0;
+  if (!Number.isFinite(rawDelayMs) || !Number.isInteger(rawDelayMs) || rawDelayMs < 0) {
+    return fail('delayMs must be a non-negative integer when provided');
+  }
+
+  return {
+    ok: true,
+    action,
+    method: parsedMethod.value,
+    urlPattern: parsedUrlPattern.value,
+    mockStatus,
+    mockBody,
+    targetUrl,
+    delayMs: rawDelayMs,
+  };
+}
+
 function compileUrlPattern(urlPattern: string): RegExp {
   const trimmed = urlPattern.trim();
   const regexLiteral = /^\/(.+)\/([a-z]*)$/.exec(trimmed);
@@ -403,6 +517,56 @@ function buildForwardTransformResponse(raw: Record<string, unknown>): ForwardTra
  * Returns `undefined` when `forwardOptions` is absent (plain passthrough,
  * byte-identical to prior behavior). Throws on malformed input.
  */
+/** `chainUpstream`: an upstream proxy the forwarded request is chained through. */
+function buildChainUpstream(value: unknown): ChainUpstream {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('forwardOptions.chainUpstream must be an object');
+  }
+  const cu = value as Record<string, unknown>;
+  if (typeof cu['proxyUrl'] !== 'string') {
+    throw new Error(
+      cu['proxyUrl'] === undefined || cu['proxyUrl'] === null
+        ? 'forwardOptions.chainUpstream.proxyUrl is required'
+        : 'forwardOptions.chainUpstream.proxyUrl must be a string',
+    );
+  }
+  const chainUpstream: ChainUpstream = { proxyUrl: cu['proxyUrl'] };
+
+  const noProxy = cu['noProxy'];
+  if (noProxy !== undefined && noProxy !== null) {
+    if (!Array.isArray(noProxy) || noProxy.some((v) => typeof v !== 'string')) {
+      throw new Error('forwardOptions.chainUpstream.noProxy must be an array of strings');
+    }
+    chainUpstream.noProxy = noProxy as string[];
+  }
+  const trustedCAs = cu['trustedCAs'];
+  if (trustedCAs !== undefined && trustedCAs !== null) {
+    if (!Array.isArray(trustedCAs)) {
+      throw new Error('forwardOptions.chainUpstream.trustedCAs must be an array');
+    }
+    chainUpstream.trustedCAs = trustedCAs as Array<{ cert?: string; certPath?: string }>;
+  }
+  return chainUpstream;
+}
+
+/** `callbackScript` cannot be combined with a declarative transform. */
+function buildCallbackScript(value: unknown, hasTransform: boolean): { path: string } | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('forwardOptions.callbackScript must be an object with a path field');
+  }
+  const cb = value as Record<string, unknown>;
+  if (typeof cb['path'] !== 'string' || cb['path'].trim() === '') {
+    throw new Error('forwardOptions.callbackScript.path must be a non-empty string');
+  }
+  if (hasTransform) {
+    throw new Error(
+      'forwardOptions.callbackScript is mutually exclusive with transformRequest/transformResponse',
+    );
+  }
+  return { path: cb['path'] };
+}
+
 function buildForwardOptions(args: Record<string, unknown>): ForwardOptions | undefined {
   const raw = argObject(args, 'forwardOptions');
   if (raw === undefined) return undefined;
@@ -426,58 +590,19 @@ function buildForwardOptions(args: Record<string, unknown>): ForwardOptions | un
     );
   }
 
-  // Parse chainUpstream (optional upstream proxy)
   const chainRaw = raw['chainUpstream'];
   if (chainRaw !== undefined && chainRaw !== null) {
-    if (typeof chainRaw !== 'object' || Array.isArray(chainRaw)) {
-      throw new Error('forwardOptions.chainUpstream must be an object');
-    }
-    const cu = chainRaw as Record<string, unknown>;
-    const chainUpstream: ChainUpstream = {};
-    if (cu['proxyUrl'] !== undefined && cu['proxyUrl'] !== null) {
-      if (typeof cu['proxyUrl'] !== 'string') {
-        throw new Error('forwardOptions.chainUpstream.proxyUrl must be a string');
-      }
-      chainUpstream.proxyUrl = cu['proxyUrl'];
-    } else {
-      throw new Error('forwardOptions.chainUpstream.proxyUrl is required');
-    }
-    const noProxy = cu['noProxy'];
-    if (noProxy !== undefined && noProxy !== null) {
-      if (!Array.isArray(noProxy) || noProxy.some((v) => typeof v !== 'string')) {
-        throw new Error('forwardOptions.chainUpstream.noProxy must be an array of strings');
-      }
-      chainUpstream.noProxy = noProxy as string[];
-    }
-    const trustedCAs = cu['trustedCAs'];
-    if (trustedCAs !== undefined && trustedCAs !== null) {
-      if (!Array.isArray(trustedCAs)) {
-        throw new Error('forwardOptions.chainUpstream.trustedCAs must be an array');
-      }
-      chainUpstream.trustedCAs = trustedCAs as Array<{ cert?: string; certPath?: string }>;
-    }
-    result.chainUpstream = chainUpstream;
+    result.chainUpstream = buildChainUpstream(chainRaw);
   }
 
-  // Parse callbackScript (mutually exclusive with declarative transform)
-  const cbRaw = raw['callbackScript'];
-  if (cbRaw !== undefined && cbRaw !== null) {
-    if (typeof cbRaw !== 'object' || Array.isArray(cbRaw)) {
-      throw new Error('forwardOptions.callbackScript must be an object with a path field');
-    }
-    const cb = cbRaw as Record<string, unknown>;
-    if (typeof cb['path'] !== 'string' || cb['path'].trim() === '') {
-      throw new Error('forwardOptions.callbackScript.path must be a non-empty string');
-    }
-    // Mutual exclusivity: callbackScript cannot be combined with transformRequest/transformResponse
-    if (result.transformRequest || result.transformResponse) {
-      throw new Error(
-        'forwardOptions.callbackScript is mutually exclusive with transformRequest/transformResponse',
-      );
-    }
-    result.callbackScript = { path: cb['path'] };
+  const callbackScript = buildCallbackScript(
+    raw['callbackScript'],
+    Boolean(result.transformRequest || result.transformResponse),
+  );
+  if (callbackScript) {
+    result.callbackScript = callbackScript;
   } else if (!result.transformRequest && !result.transformResponse && !result.chainUpstream) {
-    // No options at all → undefined (plain passthrough)
+    // No options at all → undefined (plain passthrough).
     return undefined;
   }
 
@@ -911,98 +1036,15 @@ export class ProxyHandlers {
       return ResponseBuilder.error('Call proxy_start to acquire a lease before adding rules.');
     }
 
-    const parsedAction = parseRuleAction(args['action']);
-    if (!parsedAction.ok) {
-      return ResponseBuilder.error(parsedAction.error);
-    }
-    const action = parsedAction.value;
-
-    const parsedMethod = parseRuleMethod(args);
-    if (!parsedMethod.ok) {
-      return ResponseBuilder.error(parsedMethod.error);
-    }
-    const method = parsedMethod.value;
-
-    const parsedUrlPattern = parseOptionalString(args, 'urlPattern', '.*');
-    if (!parsedUrlPattern.ok) {
-      return ResponseBuilder.error(parsedUrlPattern.error);
-    }
-    const urlPattern = parsedUrlPattern.value;
-
-    let mockStatus: number | undefined;
-    let mockBody: string | undefined;
-    if (action === 'mock_response') {
-      const parsedMockStatus = parseMockStatus(args);
-      if (!parsedMockStatus.ok) {
-        return ResponseBuilder.error(parsedMockStatus.error);
-      }
-      mockStatus = parsedMockStatus.value;
-
-      const parsedMockBody = parseOptionalString(args, 'mockBody', '');
-      if (!parsedMockBody.ok) {
-        return ResponseBuilder.error(parsedMockBody.error);
-      }
-      mockBody = parsedMockBody.value;
-    }
-
-    let targetUrl: string | undefined;
-    if (action === 'redirect') {
-      const parsedTargetUrl = parseOptionalString(args, 'targetUrl', '');
-      if (!parsedTargetUrl.ok) {
-        return ResponseBuilder.error(parsedTargetUrl.error);
-      }
-      const trimmed = parsedTargetUrl.value.trim();
-      if (trimmed === '') {
-        return ResponseBuilder.error('targetUrl is required when action=redirect');
-      }
-      // mockttp's thenForwardTo throws if the target includes a path; reject
-      // path/query/fragment up front for a clearer message. Scheme is optional.
-      const withoutScheme = trimmed.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '');
-      if (/[/?#]/.test(withoutScheme)) {
-        return ResponseBuilder.error(
-          'targetUrl must be a root URL with no path, query, or fragment (e.g. http://host:port); the original request path is preserved',
-        );
-      }
-      targetUrl = trimmed;
-    }
-
-    const rawDelayMs = argNumber(args, 'delayMs') ?? 0;
-    if (!Number.isFinite(rawDelayMs) || !Number.isInteger(rawDelayMs) || rawDelayMs < 0) {
-      return ResponseBuilder.error('delayMs must be a non-negative integer when provided');
-    }
-    const delayMs = rawDelayMs;
+    const payload = parseProxyRulePayload(args);
+    if (!payload.ok) return payload.response;
+    const { action, method, urlPattern, mockStatus, mockBody, targetUrl, delayMs } = payload;
 
     try {
       const matcher = compileUrlPattern(urlPattern);
-      const server = this.server as {
-        forGet: (m: RegExp) => unknown;
-        forPost: (m: RegExp) => unknown;
-        forPut: (m: RegExp) => unknown;
-        forDelete: (m: RegExp) => unknown;
-        forMethod?: (method: string, m: RegExp) => unknown;
-        forAnyRequest: () => unknown;
-      };
-      type RuleBuilder = {
-        delay: (ms: number) => RuleBuilder;
-        thenPassThrough: (options?: ForwardOptions) => Promise<{ id: string }>;
-        thenForwardTo: (target: string, options?: ForwardOptions) => Promise<{ id: string }>;
-        thenCloseConnection: () => Promise<{ id: string }>;
-        thenReply: (status: number, body: string) => Promise<{ id: string }>;
-      };
-      let builder: RuleBuilder;
-      if (method === 'GET') builder = server.forGet(matcher) as RuleBuilder;
-      else if (method === 'POST') builder = server.forPost(matcher) as RuleBuilder;
-      else if (method === 'PUT') builder = server.forPut(matcher) as RuleBuilder;
-      else if (method === 'DELETE') builder = server.forDelete(matcher) as RuleBuilder;
-      else if (method === 'ANY' || method === '*' || method === 'ALL') {
-        builder = server.forAnyRequest() as RuleBuilder;
-      } else if (typeof server.forMethod === 'function') {
-        builder = server.forMethod(method, matcher) as RuleBuilder;
-      } else {
-        return ResponseBuilder.error(
-          `Proxy server does not support method-specific rules for ${method}`,
-        );
-      }
+      const selected = selectRuleBuilder(this.server as ProxyRuleServer, method, matcher);
+      if (!isProxyRuleBuilder(selected)) return selected;
+      let builder = selected;
 
       // Apply optional latency injection before the terminal step. `builder.delay`
       // is a non-terminal mockttp step that returns the builder chain.
