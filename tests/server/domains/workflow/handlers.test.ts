@@ -18,7 +18,7 @@ const {
   mockLookup: vi.fn(),
 }));
 
-vi.mock('@src/server/domains/network/ssrf-policy', () => ({
+vi.mock('@utils/network/ssrf-policy', () => ({
   isSsrfTarget: mockIsSsrfTarget,
   isPrivateHost: mockIsPrivateHost,
   isLoopbackHost: mockIsLoopbackHost,
