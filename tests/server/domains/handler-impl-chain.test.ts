@@ -151,9 +151,6 @@ vi.mock('@server/domains/process/handlers.impl', () => ({
 vi.mock('@server/domains/sourcemap/handlers.impl.sourcemap-main', () => ({
   SourcemapToolHandlersMain: vi.fn().mockImplementation(() => ({})),
 }));
-vi.mock('@server/domains/streaming/handlers.impl.streaming-sse', () => ({
-  StreamingToolHandlersSse: vi.fn().mockImplementation(() => ({})),
-}));
 vi.mock('@server/domains/workflow/handlers.impl.workflow-batch', () => ({
   WorkflowHandlersBatch: vi.fn().mockImplementation(() => ({})),
 }));

@@ -1,6 +1,6 @@
 /**
  * APK manifest XML parsing utilities.
- * Extracted from analysis-handlers.ts for reuse across APK tools.
+ * Shared APK manifest helpers reused across the APK tools.
  */
 
 export function readXmlAttr(tag: string, attr: string): string | undefined {

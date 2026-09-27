@@ -68,7 +68,6 @@ const coverageExclude = [
   'src/modules/collector/playwright-cdp-fallback.ts',
   // v0.3.1 domains: handlers require real hardware / native FFI / CDP sessions
   'src/server/domains/adb-bridge/handlers.impl.ts',
-  'src/server/domains/binary-instrument/handlers/analysis-handlers.ts',
   'src/server/domains/tls-inspector/handlers/handler-class.ts',
   'src/server/domains/tls-inspector/handlers/raw-socket-handlers.ts',
   'src/server/domains/mojo-ipc/handlers.impl.ts',
@@ -240,8 +239,8 @@ export default defineConfig({
         //   / branches:73 by covering the tail surface — prioritise:
         //     1. HeapSnapshotParser internals (line-format edges, diff deltas)
         //     2. CpuEngine ARM64 instruction execution (needs fixture vectors)
-        //     3. analysis-handlers.ts (1465 lines, currently coverage-excluded —
-        //        re-include once the external-tool mocks exist)
+        //     3. (removed) analysis-handlers.ts was deleted — it was a dead
+        //        duplicate of the live per-tool handler files in this domain
         //     4. The big CDP handler chains (network/v8/streaming — need ctx mocks)
         // Session 60 (2026-08-27): the erasableSyntaxOnly refactor added 185 files /
         // ~1112 net lines of pure-shape changes (enum -> const object, parameter
