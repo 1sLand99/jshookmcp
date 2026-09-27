@@ -208,7 +208,19 @@ async function runWorker(): Promise<void> {
   };
 
   let evalCases: EvalCaseExt[];
-  if (spec.dataset === 'search-quality') {
+  let evolveSlice: EvalCaseExt[] | null = null;
+  let holdoutSlice: EvalCaseExt[] | null = null;
+  if (spec.evaluateHoldout === true && spec.dataset === 'search-quality') {
+    // RRSI: the candidate is tuned on the evolve slice and judged on the
+    // disjoint holdout slice. Both slices come from the SAME split so the two
+    // scores are comparable — scoring evolve on the full fixture and holdout
+    // on a subset would make the gap meaningless.
+    const { splitEvolveHoldout } = await import('./holdout');
+    const split = splitEvolveHoldout(fixture.cases, { evolveRatio: 0.7, seed: 42 });
+    evolveSlice = split.evolve as EvalCaseExt[];
+    holdoutSlice = split.holdout as EvalCaseExt[];
+    evalCases = evolveSlice;
+  } else if (spec.dataset === 'search-quality') {
     evalCases = lexicalCases as EvalCaseExt[];
   } else if (spec.dataset === 'profile-tier') {
     // Phase 3: both profile-tier cases + rerank-state cases to give rerank params signal
@@ -268,11 +280,9 @@ async function runWorker(): Promise<void> {
   // checks) and the rejected-region history, so an evolve winner that stalls
   // or regresses out-of-distribution is never written to .env.
   let holdoutMetrics: AggregateMetrics | null = null;
-  if (spec.evaluateHoldout === true) {
-    const { splitEvolveHoldout } = await import('./holdout');
-    const split = splitEvolveHoldout(fixture.cases, { evolveRatio: 0.7, seed: 42 });
+  if (holdoutSlice !== null) {
     const holdoutCaseMetrics: CaseMetrics[] = [];
-    for (const tc of split.holdout) {
+    for (const tc of holdoutSlice) {
       const results = await fixtureEngine.search(tc.query, tc.topK);
       const reranked = rerankResultsForContext(results, tc.query, null, {
         hasActivePage: false,
@@ -293,6 +303,7 @@ async function runWorker(): Promise<void> {
       params: spec.params,
       metrics,
       holdoutMetrics,
+      holdoutCaseCount: holdoutSlice?.length ?? null,
       elapsedMs: Date.now() - startMs,
     }) + '\n',
   );
@@ -400,6 +411,8 @@ interface TrialResult {
     pAt5: number;
     objectiveScore: number;
   } | null;
+  /** Size of the holdout slice actually scored, for the noise-floor estimate. */
+  holdoutCaseCount?: number | null;
   elapsedMs: number;
 }
 
@@ -618,6 +631,9 @@ async function orchestrate(): Promise<void> {
     console.log(
       `  Best lexical: ${bestLexical.trialId} score=${bestLexical.metrics.objectiveScore.toFixed(4)}`,
     );
+  } else {
+    console.error('[search-tune] no lexical trials succeeded — aborting before .env is touched');
+    process.exit(1);
   }
 
   // RRSI gate: the evolve winner is not trusted until it survives the held-out
@@ -646,15 +662,10 @@ async function orchestrate(): Promise<void> {
     'RRSI holdout verification',
     outFile,
   );
-  const { estimateNoiseFloor } = await import('./critic');
   const { appendRejection, buildRejectionEntry, DEFAULT_HISTORY_PATH } =
     await import('./regression-history');
-  const nHoldout = 31; // splitEvolveHoldout(evolveRatio 0.7, seed 42) on 102 cases → 31 held out
-  const noiseFloor = estimateNoiseFloor(nHoldout);
-  let verifiedBest: TrialResult | null = null;
   const acceptScores: TrialResult[] = [];
-  for (let i = 0; i < holdoutResults.length; i++) {
-    const trial = holdoutResults[i]!;
+  for (const trial of holdoutResults) {
     if (!trial.holdoutMetrics) continue;
     const sourceTrialId = sourceByHoldoutId.get(trial.trialId);
     const evolveScore =
@@ -662,15 +673,13 @@ async function orchestrate(): Promise<void> {
     const holdoutScore = trial.holdoutMetrics.objectiveScore;
     const gap = evolveScore - holdoutScore;
     const reasons: string[] = [];
-    // RRSI critic semantics, evaluated on aggregate metrics because the
-    // orchestrator does not carry per-case arrays across worker processes.
+    // The ONLY reject signal at the aggregate level: evolve beats the disjoint
+    // holdout by more than the tolerance, i.e. the candidate fit the evolve
+    // slice. Small positive gaps are sampling noise on a ~30-case slice and are
+    // not evidence of overfitting; a negative gap means the holdout scored
+    // higher than evolve, which is generalization.
     if (gap > 0.15) {
       reasons.push(`overfit: evolve/holdout gap ${gap.toFixed(3)} > 0.15`);
-    }
-    if (gap < 0 && -gap < noiseFloor) {
-      reasons.push(
-        `no generalization gain: holdout delta ${gap.toFixed(3)} within noise floor ${noiseFloor.toFixed(3)}`,
-      );
     }
     const accepted = reasons.length === 0;
     if (!accepted) {
@@ -692,14 +701,18 @@ async function orchestrate(): Promise<void> {
     }
   }
   if (acceptScores.length > 0) {
-    verifiedBest = acceptScores[0]!;
+    // Pick the accepted candidate with the best HOLDOUT score, not the first
+    // to finish — runTrials returns results in completion order.
+    const verifiedBest = acceptScores.toSorted(
+      (a, b) => (b.holdoutMetrics?.objectiveScore ?? 0) - (a.holdoutMetrics?.objectiveScore ?? 0),
+    )[0]!;
     bestLexical = verifiedBest;
     console.log(
       `  RRSI verified best: ${verifiedBest.trialId} (evolve score ${verifiedBest.metrics.objectiveScore.toFixed(4)} accepted on holdout)`,
     );
   } else {
     console.warn(
-      `  [RRSI] no candidate passed holdout verification (noise floor ${noiseFloor.toFixed(3)}); keeping raw evolve best — rejections logged to ${DEFAULT_HISTORY_PATH}`,
+      `  [RRSI] no candidate passed holdout verification; keeping raw evolve best — rejections logged to ${DEFAULT_HISTORY_PATH}`,
     );
   }
 

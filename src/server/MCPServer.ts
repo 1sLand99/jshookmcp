@@ -786,16 +786,20 @@ export class MCPServer implements MCPServerContext {
     const toolTraceRecorder = new ToolCallTraceRecorder();
     this.toolTraceRecorder = toolTraceRecorder;
     this.toolTraceStop = this.eventBus.on('tool:called', (payload) => {
-      if (payload.sessionId === null) return;
+      // `success` is the canonical outcome (execution.ts derives it from the
+      // explicit success flag when present, else from isError). A null
+      // sessionId is the normal stdio path — record it under the default
+      // session rather than dropping it, otherwise the trace is always empty.
       toolTraceRecorder.recordToolCall(
         {
           toolName: payload.toolName,
           domain: payload.domain,
-          startedAt: Date.parse(payload.timestamp),
+          // timestamp is the call's END time (ISO, taken after return) and
+          // durationMs is a performance.now() delta — subtract to recover the
+          // start so the two fields describe the same interval.
+          startedAt: Date.parse(payload.timestamp) - (payload.durationMs ?? 0),
           durationMs: payload.durationMs ?? 0,
-          ok: payload.success === true && payload.result?.isError !== true,
-          argsSizeBytes: undefined,
-          resultSizeBytes: undefined,
+          ok: payload.success,
         },
         payload.sessionId ?? undefined,
       );
