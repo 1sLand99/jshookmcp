@@ -1,0 +1,38 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "entry": ["scripts/**/*.{mjs,cjs,js,ts,mts}", "vitest.*.config.mts", "vitest.config.ts"],
+  "ignoreUnresolvedImports": [
+    "./worker",
+    "**/unidbg-worker.mjs",
+    "**/EmbeddingWorker.mjs",
+    "../../../tests/server/search/fixtures/search-quality.fixture"
+  ],
+  "ignoreDependencyOverrides": [
+    { "package": "express-rate-limit", "source": "package.json" },
+    { "package": "flatted", "source": "package.json" }
+  ],
+  "rules": {
+    "unused-files": "off",
+    "unused-exports": "warn",
+    "unused-dependencies": "warn",
+    "unused-optional-dependencies": "warn",
+    "unresolved-imports": "warn",
+    "unlisted-dependencies": "warn",
+    "dev-dependencies-in-production": "warn",
+    "circular-dependencies": "warn",
+    "unused-dependency-overrides": "warn"
+  },
+  "health": {
+    "maxCyclomatic": 40,
+    "maxCognitive": 40,
+    "maxCrap": 2000,
+    "maxUnitSize": 250
+  },
+  "duplicates": {
+    "minTokens": 150,
+    "minLines": 25
+  },
+  "audit": {
+    "gate": "new-only"
+  }
+}
