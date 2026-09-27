@@ -238,11 +238,11 @@ export default defineWorkflow(
 
 ## 接线要点
 
-1. **模板文件位置**：外部 workflow 仓库（如 `jshook_workflow_template`）根目录，`export default defineWorkflow(...)` 默认导出，入口文件名 `workflow.ts`（TS-first 编译规约）。
+1. **模板文件位置**：外部 workflow 仓库（如 jshook_workflow_template）根目录，`export default defineWorkflow(...)` 默认导出，入口文件名 `workflow.ts`（TS-first 编译规约）。
 2. **注册**：主进程 `export MCP_WORKFLOW_ROOTS=<path>` 后由 `run_extension_workflow` / `list_extension_workflows` 发现。
 3. **历史谓词**：`last_run_failed:<workflowId>` 是 `WorkflowPredicates` 已注册的谓词 id（读最近 `DEFAULT_HISTORY_WINDOW=10` 次运行）。**首次运行无历史时谓词为 false**（走 whenFalse 分支），符合"新路线先浅试"的语义。**不要**在模板里读 `ctx.history`（类型上不存在）。
 4. **合成步骤的 retry**：`retry({ maxAttempts })` 把验证失败弹回候选阶段（Stellar 的 verifier 反馈路由），`maxAttempts` 防死循环。
-5. **工具名核对**：模板里的工具名（`analysis_understand_code` / `debugger_disassemble` 等）是**占位符**——接入前用 `search_tools` 或 `list_extension_workflows` 核对实际注册名，避免运行期 miss。
+5. **工具名核对**：模板里的工具名（如 analysis_understand_code、debugger_disassemble）是**占位符**——接入前用 `search_tools` 或 `list_extension_workflows` 核对实际注册名，避免运行期 miss。
 6. **不内置特征**：falsifier 的攻击参数只描述意图（`attack: 'find-flaws'`），不携带具体 payload/IOC——符合零内置特征库约束。
 
 ## 与论文的映射（诚实边界）
