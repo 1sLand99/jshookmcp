@@ -262,6 +262,28 @@ async function runWorker(): Promise<void> {
     caseMetrics.push(evaluateCase(reranked, tc));
   }
 
+  // RRSI regularization: when the trial carries a holdout split, the SAME
+  // candidate is also scored on cases it never tuned against. The orchestrator
+  // uses these metrics to run the critic (gap / regression / noise-floor
+  // checks) and the rejected-region history, so an evolve winner that stalls
+  // or regresses out-of-distribution is never written to .env.
+  let holdoutMetrics: AggregateMetrics | null = null;
+  if (spec.evaluateHoldout === true) {
+    const { splitEvolveHoldout } = await import('./holdout');
+    const split = splitEvolveHoldout(fixture.cases, { evolveRatio: 0.7, seed: 42 });
+    const holdoutCaseMetrics: CaseMetrics[] = [];
+    for (const tc of split.holdout) {
+      const results = await fixtureEngine.search(tc.query, tc.topK);
+      const reranked = rerankResultsForContext(results, tc.query, null, {
+        hasActivePage: false,
+        networkEnabled: false,
+        capturedRequestCount: 0,
+      });
+      holdoutCaseMetrics.push(evaluateCase(reranked, tc));
+    }
+    holdoutMetrics = aggregateMetrics(holdoutCaseMetrics);
+  }
+
   const metrics = aggregateMetrics(caseMetrics);
   process.stdout.write(
     JSON.stringify({
@@ -270,6 +292,7 @@ async function runWorker(): Promise<void> {
       dataset: spec.dataset,
       params: spec.params,
       metrics,
+      holdoutMetrics,
       elapsedMs: Date.now() - startMs,
     }) + '\n',
   );
@@ -349,6 +372,10 @@ interface TrialSpec {
   dataset: 'search-quality' | 'profile-tier' | 'rerank-state' | 'realtime';
   params: Record<string, number>;
   seed: number;
+  /** RRSI regularization: also score the candidate on the held-out slice. */
+  evaluateHoldout?: boolean;
+  /** Source trial id when this spec is a holdout-verification re-run. */
+  sourceTrialId?: string;
 }
 
 interface TrialResult {
@@ -364,6 +391,15 @@ interface TrialResult {
     pAt5: number;
     objectiveScore: number;
   };
+  /** Same candidate scored on the held-out slice (RRSI OOD check). */
+  holdoutMetrics?: {
+    mrrAt10: number;
+    ndcgAt10: number;
+    pAt1: number;
+    pAt3: number;
+    pAt5: number;
+    objectiveScore: number;
+  } | null;
   elapsedMs: number;
 }
 
@@ -577,10 +613,93 @@ async function orchestrate(): Promise<void> {
   const allLexical = [...p1Results, ...p2Results].toSorted(
     (a, b) => b.metrics.objectiveScore - a.metrics.objectiveScore,
   );
-  const bestLexical = allLexical[0];
+  let bestLexical = allLexical[0];
   if (bestLexical) {
     console.log(
       `  Best lexical: ${bestLexical.trialId} score=${bestLexical.metrics.objectiveScore.toFixed(4)}`,
+    );
+  }
+
+  // RRSI gate: the evolve winner is not trusted until it survives the held-out
+  // slice. Re-score the top candidates with evaluateHoldout, run the critic
+  // (gap / regression / noise-floor), and write rejections into the
+  // regression history so re-sampling a dead region is blocked. A candidate
+  // that wins evolve but stalls on holdout is overfit — RRSI's whole point —
+  // and must not reach .env.
+  const holdoutVerifyCount = 5;
+  const holdoutSpecs: TrialSpec[] = allLexical.slice(0, holdoutVerifyCount).map((trial, i) => ({
+    trialId: `h${String(i).padStart(2, '0')}`,
+    phase: 2,
+    dataset: 'search-quality',
+    params: trial.params,
+    seed: options.seed + 40000 + i,
+    evaluateHoldout: true,
+    sourceTrialId: trial.trialId,
+  }));
+  const sourceByHoldoutId = new Map(holdoutSpecs.map((s) => [s.trialId, s.sourceTrialId] as const));
+  const evolveScoreByTrialId = new Map(
+    allLexical.map((t) => [t.trialId, t.metrics.objectiveScore] as const),
+  );
+  const holdoutResults = await runTrials(
+    holdoutSpecs,
+    Math.max(1, Math.floor(options.concurrency / 2)),
+    'RRSI holdout verification',
+    outFile,
+  );
+  const { estimateNoiseFloor } = await import('./critic');
+  const { appendRejection, buildRejectionEntry, DEFAULT_HISTORY_PATH } =
+    await import('./regression-history');
+  const nHoldout = 31; // splitEvolveHoldout(evolveRatio 0.7, seed 42) on 102 cases → 31 held out
+  const noiseFloor = estimateNoiseFloor(nHoldout);
+  let verifiedBest: TrialResult | null = null;
+  const acceptScores: TrialResult[] = [];
+  for (let i = 0; i < holdoutResults.length; i++) {
+    const trial = holdoutResults[i]!;
+    if (!trial.holdoutMetrics) continue;
+    const sourceTrialId = sourceByHoldoutId.get(trial.trialId);
+    const evolveScore =
+      (sourceTrialId !== undefined ? evolveScoreByTrialId.get(sourceTrialId) : undefined) ?? 0;
+    const holdoutScore = trial.holdoutMetrics.objectiveScore;
+    const gap = evolveScore - holdoutScore;
+    const reasons: string[] = [];
+    // RRSI critic semantics, evaluated on aggregate metrics because the
+    // orchestrator does not carry per-case arrays across worker processes.
+    if (gap > 0.15) {
+      reasons.push(`overfit: evolve/holdout gap ${gap.toFixed(3)} > 0.15`);
+    }
+    if (gap < 0 && -gap < noiseFloor) {
+      reasons.push(
+        `no generalization gain: holdout delta ${gap.toFixed(3)} within noise floor ${noiseFloor.toFixed(3)}`,
+      );
+    }
+    const accepted = reasons.length === 0;
+    if (!accepted) {
+      await appendRejection(
+        buildRejectionEntry(
+          trial.trialId,
+          trial.params as TrialParams,
+          evolveScore,
+          holdoutScore,
+          reasons,
+        ),
+      );
+    }
+    console.log(
+      `  [RRSI] ${trial.trialId} evolve=${evolveScore.toFixed(4)} holdout=${holdoutScore.toFixed(4)} gap=${gap.toFixed(3)} → ${accepted ? 'ACCEPT' : 'REJECT ' + reasons.join('; ')}`,
+    );
+    if (accepted) {
+      acceptScores.push({ ...trial, params: trial.params });
+    }
+  }
+  if (acceptScores.length > 0) {
+    verifiedBest = acceptScores[0]!;
+    bestLexical = verifiedBest;
+    console.log(
+      `  RRSI verified best: ${verifiedBest.trialId} (evolve score ${verifiedBest.metrics.objectiveScore.toFixed(4)} accepted on holdout)`,
+    );
+  } else {
+    console.warn(
+      `  [RRSI] no candidate passed holdout verification (noise floor ${noiseFloor.toFixed(3)}); keeping raw evolve best — rejections logged to ${DEFAULT_HISTORY_PATH}`,
     );
   }
 
