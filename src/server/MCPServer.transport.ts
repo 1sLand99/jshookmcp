@@ -422,6 +422,34 @@ export async function closeServer(ctx: MCPServerContext): Promise<void> {
     ctx.toolLatencyTracker?.dispose();
     ctx.toolLatencyTracker = null;
 
+    // P2: flush the tool-call trace before shutdown so a killed agent session
+    // still leaves audit evidence behind. `.ccg/traces/` is gitignored — the
+    // trace is machine-local evidence, never repository state.
+    ctx.toolTraceStop?.();
+    ctx.toolTraceStop = null;
+    if (ctx.toolTraceRecorder) {
+      const { mkdir, appendFile } = await import('node:fs/promises');
+      const { resolve } = await import('node:path');
+      const tracesDir = resolve(process.cwd(), '.ccg', 'traces');
+      try {
+        await mkdir(tracesDir, { recursive: true });
+        for (const trace of ctx.toolTraceRecorder.snapshotAll()) {
+          if (trace.entries.length === 0) continue;
+          const fileName = `${trace.sessionId.replace(/[^a-zA-Z0-9_-]/g, '_')}.jsonl`;
+          await appendFile(
+            resolve(tracesDir, fileName),
+            ctx.toolTraceRecorder.toJSONL(trace.sessionId),
+            'utf-8',
+          );
+        }
+      } catch (error) {
+        // Trace flushing must never block shutdown; a failed flush is logged
+        // and the shutdown continues — the trace is evidence, not a gate.
+        logger.warn('[ToolTraceRecorder] failed to flush traces:', error);
+      }
+      ctx.toolTraceRecorder = null;
+    }
+
     // Flush snapshots before any other cleanup
     const getInst =
       typeof ctx.getDomainInstance === 'function' ? ctx.getDomainInstance.bind(ctx) : null;

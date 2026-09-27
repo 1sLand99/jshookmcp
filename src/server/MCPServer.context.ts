@@ -120,6 +120,16 @@ export interface TransportState {
   toolLatencyTracker?: import('@utils/toolLatency').ToolLatencyTracker | null;
   /** Unsubscribe handle for the tool-latency eventBus subscription. */
   toolLatencyStop?: (() => void) | null;
+  /**
+   * Ordered tool-call trace recorder (P2 — action-layer audit), wired in
+   * start() and flushed to `.ccg/traces/` in closeServer(). Optional so
+   * deployments that never wire it (tests, minimal profiles) stay untouched.
+   */
+  toolTraceRecorder?:
+    | import('@server/observability/ToolCallTraceRecorder').ToolCallTraceRecorder
+    | null;
+  /** Unsubscribe handle for the trace-recorder eventBus subscription. */
+  toolTraceStop?: (() => void) | null;
 }
 
 /** Runtime-loaded plugins/workflows/tools from external directories. */

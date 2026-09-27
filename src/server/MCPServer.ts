@@ -27,6 +27,7 @@ import { closeServer, startHttpTransport, startStdioTransport } from '@server/MC
 import { startArtifactRetentionScheduler } from '@utils/artifactRetention';
 import { createLoopLagSampler } from '@utils/loopLag';
 import { createToolLatencyTracker } from '@utils/toolLatency';
+import { ToolCallTraceRecorder } from '@server/observability/ToolCallTraceRecorder';
 import { McpLogTransport } from '@server/transport/McpLogTransport';
 import type { McpLogLevel } from '@server/transport/McpLogTransport';
 import {
@@ -154,6 +155,17 @@ export class MCPServer implements MCPServerContext {
    */
   toolLatencyTracker: import('@utils/toolLatency').ToolLatencyTracker | null = null;
   toolLatencyStop: (() => void) | null = null;
+  /**
+   * Ordered, replayable tool-call trace recorder (P2 — A²E-style action-layer
+   * audit). Buffers tool:called events per session; the offline analyzer
+   * (scripts/audit-tool-traces.mjs) reads the flushed JSONL to compute rule-based
+   * metrics (repetition, plan depth, failure follow-up). Wired in start(), the
+   * trace is flushed to `.ccg/traces/` in closeServer() — same lifecycle as the
+   * latency tracker; the recorder stays in-memory so recording never blocks the
+   * execution path.
+   */
+  toolTraceRecorder: ToolCallTraceRecorder | null = null;
+  toolTraceStop: (() => void) | null = null;
   /** Structured log transport for MCP `notifications/message`. */
   public readonly mcpLog = new McpLogTransport();
   public readonly baseTier: ToolProfile;
@@ -767,6 +779,26 @@ export class MCPServer implements MCPServerContext {
       if (typeof payload.durationMs === 'number') {
         toolLatencyTracker.record(payload.toolName, payload.durationMs);
       }
+    });
+    // P2: ordered tool-call trace for the action-layer audit. Same eventBus
+    // source as the latency tracker — one emit, two consumers — so the trace
+    // and the profiles never disagree about which calls happened.
+    const toolTraceRecorder = new ToolCallTraceRecorder();
+    this.toolTraceRecorder = toolTraceRecorder;
+    this.toolTraceStop = this.eventBus.on('tool:called', (payload) => {
+      if (payload.sessionId === null) return;
+      toolTraceRecorder.recordToolCall(
+        {
+          toolName: payload.toolName,
+          domain: payload.domain,
+          startedAt: Date.parse(payload.timestamp),
+          durationMs: payload.durationMs ?? 0,
+          ok: payload.success === true && payload.result?.isError !== true,
+          argsSizeBytes: undefined,
+          resultSizeBytes: undefined,
+        },
+        payload.sessionId ?? undefined,
+      );
     });
     const transportMode = (this.config.server?.transport ?? MCP_TRANSPORT).toLowerCase();
     if (transportMode === 'http') {
