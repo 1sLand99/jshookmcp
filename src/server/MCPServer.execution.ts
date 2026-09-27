@@ -16,6 +16,7 @@
 import { logger } from '@utils/logger';
 import { asErrorResponse } from '@server/domains/shared/response';
 import { getToolDomain } from '@server/ToolCatalog';
+import { classifyErrorKind } from '@server/observability/ToolCallTraceRecorder';
 import { fastValidateToolArgs } from '@server/registry/compiled-validators';
 import { refreshDomainTtlForTool } from '@server/MCPServer.activation.ttl';
 import { emitBusEvent } from '@server/EventBus';
@@ -436,6 +437,10 @@ export async function executeToolWithTracking(ctx: MCPServerContext, name: strin
       timestamp: new Date().toISOString(),
       success: toolResultSuccess,
       durationMs: toolDurationMs,
+      errorKind: classifyErrorKind({
+        isError: enriched.isError === true,
+        successFlag: toolResultSuccess,
+      }),
       args,
       result: {
         success: toolResultSuccess,
@@ -507,6 +512,22 @@ export async function executeToolWithTracking(ctx: MCPServerContext, name: strin
     instrumentation.emitMetric(MetricNames.toolDurationMs, failureDurationMs, 'histogram', {
       tool: name,
       success: false,
+    });
+    // Failures that throw never reach the success-path `tool:called` emit, so
+    // without this the trace would record only calls that returned — a trace
+    // of the easy calls. Timeouts, validation rejections and gate blocks all
+    // surface here as thrown errors.
+    void ctx.eventBus.emit('tool:called', {
+      toolName: name,
+      domain: getToolDomain(name) ?? null,
+      sessionId: resolveCallSessionId(args),
+      timestamp: new Date().toISOString(),
+      success: false,
+      durationMs: failureDurationMs,
+      errorKind: classifyErrorKind({
+        thrown: true,
+        timedOut: error instanceof Error && /hung|timeout/i.test(error.message),
+      }),
     });
     const admissionError =
       error instanceof BrowserSessionQueueError ||

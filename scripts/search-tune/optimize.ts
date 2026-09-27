@@ -34,6 +34,7 @@ import {
   normalizeParams,
   type TrialParams,
 } from './search-space';
+import { isDuplicateRegion, loadHistory, DEFAULT_TOLERANCE_STEPS } from './regression-history';
 
 const scriptDir = pathResolve(fileURLToPath(import.meta.url), '..');
 const ROOT = pathResolve(scriptDir, '..', '..');
@@ -253,6 +254,20 @@ async function runWorker(): Promise<void> {
     evalCases = rerankStateCases as EvalCaseExt[];
   }
 
+  if (spec.onlyTags !== undefined && spec.onlyTags.length > 0) {
+    const wanted = new Set(spec.onlyTags);
+    const tagged = (fixture.cases as EvalCaseExt[]).filter((c) =>
+      (c as { tags?: readonly string[] }).tags?.some((t) => wanted.has(t)),
+    );
+    if (tagged.length === 0) {
+      process.stdout.write(
+        JSON.stringify({ error: `onlyTags matched no cases: ${spec.onlyTags.join(',')}` }) + '\n',
+      );
+      process.exit(1);
+    }
+    evalCases = tagged;
+  }
+
   const caseMetrics: CaseMetrics[] = [];
 
   for (const tc of evalCases) {
@@ -387,6 +402,12 @@ interface TrialSpec {
   evaluateHoldout?: boolean;
   /** Source trial id when this spec is a holdout-verification re-run. */
   sourceTrialId?: string;
+  /**
+   * Restrict scoring to cases carrying one of these tags. Used by the OOD
+   * domain holdout so the trial measures domains the candidate was never
+   * tuned on, instead of the whole fixture.
+   */
+  onlyTags?: string[];
 }
 
 interface TrialResult {
@@ -582,10 +603,34 @@ async function orchestrate(): Promise<void> {
   );
   console.log(`Using ${options.concurrency} CPU cores, seed=${options.seed}`);
 
+  // RRSI regression history: parameter regions a previous run already rejected.
+  // Resampling them spends a full trial budget to relearn the same rejection,
+  // so candidates landing inside a rejected region are redrawn (bounded, so a
+  // history that blankets the space degrades to plain sampling instead of
+  // looping forever).
+  const rejectionHistory = await loadHistory();
+  const sampleFresh = (phaseDefs: typeof phase1Defs, seed: number): TrialParams => {
+    let params = sampleRandomParams(phaseDefs, seed);
+    for (let attempt = 1; attempt <= 8; attempt++) {
+      const verdict = isDuplicateRegion(params, rejectionHistory, {
+        tolerance: DEFAULT_TOLERANCE_STEPS,
+        defs,
+      });
+      if (!verdict.duplicate) return params;
+      params = sampleRandomParams(phaseDefs, seed + attempt * 1000003);
+    }
+    return params;
+  };
+  if (rejectionHistory.length > 0) {
+    console.log(
+      `[RRSI] ${rejectionHistory.length} rejected region(s) loaded — resampling avoids them`,
+    );
+  }
+
   // Phase 1: Random search
   const p1Specs: TrialSpec[] = [];
   for (let i = 0; i < options.phase1Trials; i++) {
-    const params = sampleRandomParams(phase1Defs, options.seed + i);
+    const params = sampleFresh(phase1Defs, options.seed + i);
     p1Specs.push({
       trialId: `p1-${String(i).padStart(4, '0')}`,
       phase: 1,
@@ -716,12 +761,47 @@ async function orchestrate(): Promise<void> {
     );
   }
 
+  // OOD confirmation: the winning candidate is scored on domains the evolve
+  // split never trained it on (v8-inspector / webgpu / dart-inspector). This is
+  // the benchmark-disjoint check — a candidate that only wins inside the
+  // domains it was tuned against shows up here as a drop. Reported, not gated:
+  // with three domains the slice is too small to reject on.
+  if (options.dataset !== 'realtime' && bestLexical) {
+    const { loadDomainHoldoutDataset } = await import('./datasets/domain-holdout');
+    const ood = await loadDomainHoldoutDataset({
+      holdOutTags: ['v8-inspector', 'webgpu', 'dart-inspector'],
+    });
+    if (ood.cases.length > 0) {
+      const oodResult = await runTrials(
+        [
+          {
+            trialId: 'ood-0',
+            phase: 2,
+            dataset: 'search-quality',
+            params: bestLexical.params,
+            seed: options.seed + 50000,
+            onlyTags: [...ood.heldOutTags],
+          },
+        ],
+        1,
+        'RRSI OOD domain holdout',
+        outFile,
+      );
+      const oodScore = oodResult[0]?.metrics.objectiveScore;
+      if (oodScore !== undefined) {
+        console.log(
+          `  [RRSI] OOD domain holdout (${ood.cases.length} cases, ${ood.heldOutTags.join('/')}): ${oodScore.toFixed(4)} vs in-split ${bestLexical.metrics.objectiveScore.toFixed(4)}`,
+        );
+      }
+    }
+  }
+
   // Phase 3: Profile penalty tuning (profile-tier includes rerank-state cases
   // so rerank params also get partial signal here)
   const p3Specs: TrialSpec[] = [];
   const p3Count = 80;
   for (let i = 0; i < p3Count; i++) {
-    const penaltyParams = sampleRandomParams(phase3Defs, options.seed + 20000 + i);
+    const penaltyParams = sampleFresh(phase3Defs, options.seed + 20000 + i);
     const merged = normalizeParams({
       ...bestLexical.params,
       ...penaltyParams,
@@ -745,7 +825,7 @@ async function orchestrate(): Promise<void> {
   const p4Specs: TrialSpec[] = [];
   const p4Count = 60;
   for (let i = 0; i < p4Count; i++) {
-    const rerankParams = sampleRandomParams(phase4Defs, options.seed + 30000 + i);
+    const rerankParams = sampleFresh(phase4Defs, options.seed + 30000 + i);
     const merged = normalizeParams({
       ...bestPhase3Params,
       ...rerankParams,

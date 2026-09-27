@@ -103,6 +103,12 @@ export interface ServerEventMap {
     success: boolean;
     /** Wall-clock duration of the completed call (ms). Absent on pre-duration emitters. */
     durationMs?: number;
+    /**
+     * Why the call failed, when the pipeline knows. Absent on success and on
+     * emitters that predate error classification. The trace recorder forwards
+     * it verbatim; it never re-derives a cause from the message.
+     */
+    errorKind?: 'timeout' | 'validation' | 'gate' | 'handler' | 'unknown';
     args?: Record<string, unknown>;
     result?: {
       success?: boolean;

@@ -800,6 +800,7 @@ export class MCPServer implements MCPServerContext {
           startedAt: Date.parse(payload.timestamp) - (payload.durationMs ?? 0),
           durationMs: payload.durationMs ?? 0,
           ok: payload.success,
+          ...(payload.errorKind !== undefined ? { errorKind: payload.errorKind } : {}),
         },
         payload.sessionId ?? undefined,
       );
