@@ -10,7 +10,10 @@ exclude = [
   "^https://api\\.star-history\\.com",
   # github.com/stargazers intermittently 404s for token-less scans (GitHub
   # anonymous rate limiting) — the page itself is fine.
-  "^https://github\\.com/vmoranv/jshookmcp/stargazers"
+  "^https://github\\.com/vmoranv/jshookmcp/stargazers",
+  # Sponsor landing page blocks non-browser clients (403 from GitHub-hosted
+  # runners) — the link is a paid placement, not a documentation reference.
+  "^https://www\\.swiftproxy\\.net"
 ]
 exclude_path = [
   "docs/.vitepress/dist/assets/**",
